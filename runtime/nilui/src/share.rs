@@ -12,7 +12,7 @@ impl ShareSheet {
         Self {
             title: title.to_string(),
             file_path: path.to_string(),
-            peers,
+            nearby_peers: peers,
         }
     }
 

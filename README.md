@@ -51,5 +51,8 @@ nilos/
 
 ---
 
-## 📜 License
-NilOS is licensed under Apache-2.0 / MIT for userspace components and GPLv2 for the Linux kernel.
+## 📜 License & Open-Source Guarantee
+
+NilOS is distributed under the **[GNU General Public License v3.0 (GPLv3)](LICENSE)**.
+
+> **Copyleft Protection**: Anyone is free to use, modify, contribute to, and build derivative operating systems from NilOS, provided that all modifications and derivative systems remain **100% free and open-source under the GNU GPLv3 license**.

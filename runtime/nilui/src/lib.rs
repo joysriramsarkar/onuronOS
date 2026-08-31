@@ -6,7 +6,7 @@ pub mod share;
 pub mod a11y;
 pub mod widget;
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 use serde::{Serialize, Deserialize};
@@ -62,7 +62,7 @@ impl<S> App<S> {
         for _ in 0..5 {
             spring.step(&config, 1.0 / 120.0);
             (self.update)(&mut self.state, Ev::Tick(1.0 / 120.0));
-            let root = (self.view)(&self.state);
+            let _root = (self.view)(&self.state);
             std::thread::sleep(Duration::from_millis(8));
         }
         println!("[nilui] App initialized and ready.");

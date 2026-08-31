@@ -1,6 +1,5 @@
 // runtime/nilui/src/state.rs — NILS Handoff State Snapshot Serialization
-use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Read;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use crc32fast::Hasher;
 
@@ -46,7 +45,7 @@ impl SnapshotPayload {
         if magic != NILS_MAGIC {
             return Err("Invalid NILS magic header".into());
         }
-        let version = slice.read_u32::<BigEndian>().map_err(|e| e.to_string())?;
+        let _version = slice.read_u32::<BigEndian>().map_err(|e| e.to_string())?;
         let app_len = slice.read_u16::<BigEndian>().map_err(|e| e.to_string())? as usize;
         let mut app_id_bytes = vec![0u8; app_len];
         slice.read_exact(&mut app_id_bytes).map_err(|e| e.to_string())?;
