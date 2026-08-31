@@ -1,0 +1,6 @@
+[package]
+name = "nilsd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]

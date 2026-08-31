@@ -1,0 +1,4 @@
+;; policy/40-misc.cil — Services Domains
+(type notifyd_t)
+(type nilimed_t)
+(type powerd_t)

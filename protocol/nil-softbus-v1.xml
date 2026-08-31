@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="nil_softbus_v1">
+  <interface name="nil_softbus_manager" version="1">
+    <description summary="NilOS Distributed SoftBus Manager Interface">
+      Enables discovery, cross-device drag-and-drop, state handoff, and remote resource streaming.
+    </description>
+
+    <request name="list_peers">
+      <description summary="Request list of nearby discovered devices"/>
+    </request>
+
+    <request name="send_file">
+      <description summary="Send file payload to remote peer"/>
+      <arg name="peer_id" type="string"/>
+      <arg name="fd" type="fd"/>
+      <arg name="filename" type="string"/>
+    </request>
+
+    <request name="send_handoff">
+      <description summary="Migrate application state snapshot to remote device"/>
+      <arg name="peer_id" type="string"/>
+      <arg name="app_id" type="string"/>
+      <arg name="payload" type="array"/>
+    </request>
+
+    <event name="peer_discovered">
+      <description summary="Notifies client when a new SoftBus device is found"/>
+      <arg name="peer_id" type="string"/>
+      <arg name="name" type="string"/>
+      <arg name="capabilities" type="uint"/>
+    </event>
+
+    <event name="peer_lost">
+      <description summary="Notifies client when a peer goes offline"/>
+      <arg name="peer_id" type="string"/>
+    </event>
+  </interface>
+</protocol>

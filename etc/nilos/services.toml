@@ -1,0 +1,35 @@
+# etc/nilos/services.toml — NilOS Core Service Topology
+[[services]]
+name = "nild"
+exec = "/usr/bin/nild"
+restart = "always"
+
+[[services]]
+name = "nilkeyd"
+exec = "/usr/bin/nilkeyd"
+restart = "always"
+
+[[services]]
+name = "nilbus"
+exec = "/usr/bin/nilbus"
+restart = "always"
+
+[[services]]
+name = "nilshell"
+exec = "/usr/bin/nilshell"
+restart = "always"
+
+[[services]]
+name = "notifyd"
+exec = "/usr/bin/notifyd"
+socket_activation = "/run/nilos/notify.sock"
+
+[[services]]
+name = "nilimed"
+exec = "/usr/bin/nilimed"
+socket_activation = "/run/nilos/ime.sock"
+
+[[services]]
+name = "nilttsd"
+exec = "/usr/bin/nilttsd"
+socket_activation = "/run/nilos/tts.sock"

@@ -1,0 +1,9 @@
+name: SELinux Policy CI
+on: [push, pull_request]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Audit SELinux Policy
+        run: bash security/selinux/ci/audit.sh

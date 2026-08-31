@@ -1,0 +1,6 @@
+# android/agent/nilagent.rc — Android init script for NilOS bridge agent
+service nilagent /system/bin/nilagent
+    class main
+    user root
+    group root system
+    seclabel u:r:nilagent:s0

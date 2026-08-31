@@ -1,0 +1,3 @@
+;; policy/90-neverallow.cil — Inviolate Security Constitution
+;; Apps can never modify immutable /system binaries
+(neverallow nilos_app_t nilinit_t (process (transition)))

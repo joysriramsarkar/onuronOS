@@ -1,0 +1,16 @@
+{
+  "colors": {
+    "primary": "#0D84FF",
+    "background": "#000000",
+    "surface": "#1C1C1E",
+    "text": "#FFFFFF",
+    "accent": "#5E5CE6"
+  },
+  "spring": {
+    "stiffness": 220.0,
+    "damping": 15.0,
+    "mass": 1.0
+  },
+  "corner_radius": 16.0,
+  "blur_radius": 20.0
+}

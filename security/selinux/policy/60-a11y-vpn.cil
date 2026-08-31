@@ -1,0 +1,3 @@
+;; policy/60-a11y-vpn.cil — VPN & Accessibility Rules
+(type vpnd_t)
+(type nilsr_t)

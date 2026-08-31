@@ -1,0 +1,2 @@
+;; policy/30-crypto-updates.cil — fscrypt & Key Management Rules
+(allow nilkeyd_t nilos_app_data_t (dir (getattr search)))

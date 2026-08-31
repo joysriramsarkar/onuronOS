@@ -1,0 +1,3 @@
+# security/selinux/nilos_app.te — Minimalist Strict App Domain
+type nilos_app_t;
+type nilos_app_data_t;

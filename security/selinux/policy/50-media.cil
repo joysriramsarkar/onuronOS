@@ -1,0 +1,3 @@
+;; policy/50-media.cil — Media & Camera Domains
+(type camerad_t)
+(type audiod_t)

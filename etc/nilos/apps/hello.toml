@@ -1,0 +1,5 @@
+[app]
+id = "hello"
+name = "Hello NilOS"
+exec = "/usr/bin/hello"
+icon = "/usr/share/icons/hello.png"

@@ -1,0 +1,7 @@
+# /etc/udev/rules.d/90-nilos.rules — NilOS Device Node Permissions
+KERNEL=="mali*", MODE="0666"
+KERNEL=="kgsl*", MODE="0666"
+KERNEL=="dri/*", MODE="0666"
+KERNEL=="ion", MODE="0666"
+KERNEL=="dma_heap/*", MODE="0666"
+KERNEL=="binder*", MODE="0666"

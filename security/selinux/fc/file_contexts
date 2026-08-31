@@ -1,0 +1,5 @@
+/system/bin/nilinit    u:object_r:nilinit_t:s0
+/system/bin/nild       u:object_r:nild_t:s0
+/system/bin/nilshell   u:object_r:nilshell_t:s0
+/data/app(/.*)?        u:object_r:nilos_app_t:s0
+/data/data(/.*)?       u:object_r:nilos_app_data_t:s0

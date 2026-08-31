@@ -1,0 +1,7 @@
+;; policy/10-domains.cil — System Core Domains
+(type nilinit_t)
+(type nild_t)
+(type nilshell_t)
+(type softbus_t)
+(type nilpkg_t)
+(type nilkeyd_t)

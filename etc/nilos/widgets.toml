@@ -1,0 +1,3 @@
+[widgets.clock]
+app_id = "clockwidget"
+refresh_rate_hz = 1

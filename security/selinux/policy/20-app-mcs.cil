@@ -1,0 +1,3 @@
+;; policy/20-app-mcs.cil — Per-App MCS Category Isolation
+(type nilos_app_t)
+(type nilos_app_data_t)

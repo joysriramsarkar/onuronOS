@@ -1,0 +1,5 @@
+;; policy/00-base.cil — Core Class & Common Permissions
+(class process (fork sigchld sigkill sigstop signal getsched setsched transition))
+(class file (read write create getattr setattr unlink rename open execute execute_no_trans map))
+(class dir (read write create getattr setattr unlink rmdir search add_name remove_name))
+(class unix_stream_socket (create connect bind listen accept read write getattr setattr))

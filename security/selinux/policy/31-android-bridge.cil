@@ -1,0 +1,2 @@
+;; policy/31-android-bridge.cil — Android Container IPC Rules
+(type nilandroidd_t)
