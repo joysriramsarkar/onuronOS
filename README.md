@@ -1,9 +1,82 @@
 # 📘 NilOS (নীল ওএস)
 
-**NilOS** is an open-source, bloat-free, dynamic mobile operating system combining:
-- **Android**: Hardware ecosystem compatibility via Linux LTS kernel & Halium/libhybris bridges + Containerized Android app layer.
-- **HarmonyOS**: Fluid 120Hz declarative UI (NilUI), physics spring animations, and Distributed SoftBus cross-device collaboration.
-- **Linux**: Memory-safe Rust userspace, immutable rootfs, SELinux enforcement, and zero telemetry.
+> **A lightweight, secure, Linux-based mobile OS with a modern Rust userspace and optional Android application compatibility.**
+
+NilOS combines the reliability of the Linux LTS kernel, the memory safety and efficiency of a 100% Rust userspace, a smooth declarative UI shell, and an isolated containerized Android compatibility layer—built with a bloat-free, zero-telemetry philosophy.
+
+---
+
+## 📊 Current Status
+
+| Subsystem / Feature | Maturity | Details |
+|---|---|---|
+| **x86_64 Boot** | 🟢 Complete | Linux LTS 6.6 + `nilinit` PID 1, verified in QEMU |
+| **QEMU Boot & Automation** | 🟢 Complete | Persistent 256 MB `nilos.img` disk + virtio-blk + NAT networking |
+| **NilOS Mobile Shell** | 🟢 Complete | OOBE → Lock Screen → Home Launcher → 8 apps (ANSI-rendered) |
+| **Persistent Storage** | 🟢 Complete | `/data` on `/dev/vda` (ext4), fallback to tmpfs; all user data persists |
+| **OOBE First-Boot Wizard** | 🟢 Complete | Name + PIN setup, writes `/data/nilos/oobe_done` flag |
+| **Lock Screen** | 🟢 Complete | PIN unlock, clock/date/weather display |
+| **Home Launcher** | 🟢 Complete | 8-app grid, status bar, notification shade |
+| **Phone App** | 🟢 Working | Dialer pad, call log, contact list (simulated VoLTE) |
+| **Messages App** | 🟢 Working | E2E SMS threads, compose, persistent storage to `/data/sms/` |
+| **Files App** | 🟢 Working | Live directory browser for `/data`, `/etc`, `/tmp`, `/data/app` |
+| **Settings App** | 🟢 Working | 8 sections (Network, Sound, Display, Security, Battery, Storage, etc.) |
+| **System Supervision** | 🟢 Working | `nilinit` supervises 28 daemons (`nild`, `nilkeyd`, `nilbus`, `netd`, …) |
+| **Package Manager (`nilpkg`)** | 🟢 Working | Signed atomic package install to `/data/app/`, app store UI |
+| **SoftBus Distributed Mesh** | 🟡 Prototype | P2P discovery + QUIC socket via `/run/nilos/bus.sock` |
+| **ARM64 Device Port** | 🟡 In Progress | NilHAL GKI/Treble abstraction prepared; PinePhone/Pixel 3a target |
+| **Android Compatibility** | 🟡 Prototype | LXC/Waydroid sandbox + binder-shim architecture ready |
+
+
+---
+
+## 🗺️ 4-Phase Roadmap
+
+To ensure maintainability and realistic engineering progress, NilOS is divided into four sequential phases:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 1: "It Boots" ✅ COMPLETE                             │
+│  Linux kernel → nilinit (PID 1) → filesystems → services    │
+│  → nilshell ANSI compositor → QEMU graphical boot           │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 2: "It is a Usable OS" ✅ COMPLETE                   │
+│  Persistent /data disk · OOBE Wizard · PIN Lockscreen        │
+│  Home Launcher · Phone · Messages · Files · Settings ·      │
+│  NilPkg · SoftBus · Android Dashboard · Terminal            │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼ (NEXT)
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 3: "It is a Mobile OS"                               │
+│  ARM64 target device · Display · GPU · Camera · Audio ·     │
+│  Wi-Fi · Bluetooth                                          │
+└──────────────────────────────┬──────────────────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 4: "Android Compatibility"                           │
+│  Containerized Android runtime (LXC/Waydroid) · binder-shim │
+│  · microG integration                                       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📚 Documentation
+
+The technical architecture is documented in modular specifications under [`docs/`](docs/):
+
+- **[Architecture](docs/architecture.md)** — Architectural layers, memory-safety principles, and IPC design.
+- **[Boot Process](docs/boot-process.md)** — Verified boot, A/B partition layout, `nilinit` PID 1, and socket activation.
+- **[Security](docs/security.md)** — SELinux CIL policy, namespace sandboxing, `fscrypt v2` encryption, and zero-telemetry charter.
+- **[UI System](docs/ui-system.md)** — NilUI declarative framework, `nilui-gpu` Vulkan renderer, and `nilshell` Wayland compositor.
+- **[Hardware Support](docs/hardware-support.md)** — Linux LTS baseline, Android GKI/Treble, Halium/libhybris bridging, and driver strategy.
+- **[Android Compatibility](docs/android-compatibility.md)** — Headless container approach, binder-shim translation, and lifecycle management.
+- **[Roadmap & Milestones](docs/roadmap.md)** — Detailed milestone deliverables, team budgeting, and governance.
+
+*(For historical deep-dive reference, the complete master blueprint is preserved in [blueprint.md](blueprint.md).)*
 
 ---
 
@@ -31,22 +104,25 @@ nilos/
 ├── apps/                       # Native NilOS Applications & Demos
 ├── security/selinux/           # Comprehensive SELinux CIL Security Policies & CI
 ├── etc/nilos/                  # System services configuration & design tokens
-└── docs/                       # Developer Documentation & Device Porting Guide
+└── docs/                       # Modular Developer & Architecture Documentation
 ```
 
 ---
 
-## 🚀 Building NilOS
+## 🚀 Building & Running NilOS
+
+### Quick Boot in QEMU (Phase 1)
+
+NilOS can be built and booted in QEMU on Windows, Linux, or macOS:
+
+```powershell
+# Windows (PowerShell)
+.\build\qemu-boot.ps1
+```
 
 ```bash
-# Setup build dependencies and cross toolchains
-./build/setup-toolchain.sh
-
-# Build the complete OS image for x86_64 or ARM64
-./build/build.sh x86_64-generic
-
-# Run inside QEMU with 120Hz display & hardware acceleration
-./build/qemu-run.sh
+# Linux / macOS / WSL
+./build/qemu-boot.sh
 ```
 
 ---
@@ -56,3 +132,4 @@ nilos/
 NilOS is distributed under the **[GNU General Public License v3.0 (GPLv3)](LICENSE)**.
 
 > **Copyleft Protection**: Anyone is free to use, modify, contribute to, and build derivative operating systems from NilOS, provided that all modifications and derivative systems remain **100% free and open-source under the GNU GPLv3 license**.
+

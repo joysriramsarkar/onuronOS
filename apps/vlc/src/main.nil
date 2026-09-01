@@ -1,0 +1,626 @@
+// File: apps/vlc/src/main.nil
+// VLC Media Player (org.videolan.vlc) for NilOS — Official Full Open Source Media Engine
+// Cross-platform libvlc / medialibrary architecture for NilOS, Linux & Mobile
+
+import { App, Column, Row, Text, Input, Button, Icon, Progress, Slider, Stack, LazyList, Grid } from "nil/ui"
+import { MediaPlayer, MediaSession, Codec, HardwareAcceleration } from "nil/media"
+import { fs, path } from "nil/fs"
+import { log, time } from "nil/core"
+import { json } from "nil/json"
+
+// ----- ডেটা মডেল (Media Models) -----
+enum MediaType {
+    Video,
+    Audio,
+    Stream,
+    Playlist
+}
+
+struct VideoItem {
+    id: string
+    title: string
+    duration: i64           // মিলি-সেকেন্ড
+    path: string
+    thumbnail: string?
+    resolution: string      // "1080p", "4K", "720p"
+    codec: string           // "H.264", "HEVC", "AV1"
+    lastPosition: i64
+}
+
+struct AudioTrack {
+    id: string
+    title: string
+    artist: string
+    album: string
+    duration: i64
+    path: string
+    albumArt: string?
+    bitrate: string         // "320 kbps", "FLAC 24-bit"
+}
+
+struct StreamSource {
+    id: string
+    name: string
+    url: string             // RTSP, RTMP, HLS (.m3u8), HTTP
+    type: string            // "Live Radio", "IPTV", "Stream"
+}
+
+struct EqualizerBand {
+    frequency: string       // "60Hz", "230Hz", "910Hz", "4kHz", "14kHz"
+    gain: f32               // -12.0 to +12.0 dB
+}
+
+// ----- ভিএলসি মিডিয়া প্লেয়ার অ্যাপ -----
+app VLCPlayer {
+    // ----- স্টেট (UI ও প্লেয়ার) -----
+    @State activeTab: string = "video"      // "video", "audio", "stream", "playlist", "equalizer"
+    @State isPlaying: bool = false
+    @State currentMediaType: MediaType = MediaType.Video
+    @State currentTitle: string = "কোনো ফাইল চলছে না"
+    @State currentSubtitle: string = ""
+    @State position: i64 = 0               // বর্তমান সময় (মিলি-সেকেন্ড)
+    @State duration: i64 = 1               // মোট সময়
+    @State volume: f32 = 0.8               // ০.০ থেকে ১.০ (২০০% পর্যন্ত বুস্ট)
+    @State brightness: f32 = 0.9
+    @State playbackSpeed: f32 = 1.0        // ০.৫x, ১.০x, ১.২৫x, ১.৫x, ২.০x
+    @State isFullscreen: bool = false
+    @State isShuffling: bool = false
+    @State repeatMode: string = "off"      // "off", "one", "all"
+    
+    @State showMiniPlayer: bool = false
+    @State showAudioEqualizer: bool = false
+    @State showSubtitleMenu: bool = false
+    @State showAudioTrackMenu: bool = false
+    @State showSleepTimer: bool = false
+    @State sleepTimerMinutes: i32 = 0
+
+    // ----- মিডিয়া ডেটাবেস -----
+    @State videoList: VideoItem[] = []
+    @State audioList: AudioTrack[] = []
+    @State streamList: StreamSource[] = []
+    @State filteredVideos: VideoItem[] = []
+    @State filteredAudio: AudioTrack[] = []
+    @State searchQuery: string = ""
+
+    // ----- ইকুয়ালাইজার ব্যান্ড -----
+    @State eqBands: EqualizerBand[] = [
+        { frequency: "৬০Hz", gain: 3.0 },
+        { frequency: "২৩০Hz", gain: 1.5 },
+        { frequency: "৯১০Hz", gain: 0.0 },
+        { frequency: "৪kHz", gain: 2.0 },
+        { frequency: "১৪kHz", gain: 4.0 }
+    ]
+    @State eqPreset: string = "রক (Rock)"
+
+    // ----- লাইফসাইকেল -----
+    onAppear() {
+        spawn scanLocalMediaLibrary()
+        spawn loadStreams()
+    }
+
+    onDispose() {
+        if isPlaying {
+            MediaPlayer.stop()
+        }
+    }
+
+    // ----- মিডিয়া লাইব্রেরি স্ক্যানার -----
+    async function scanLocalMediaLibrary() {
+        log.info("VLC: মিডিয়া স্টোরেজ স্ক্যান শুরু হচ্ছে...")
+        
+        // ডিফল্ট ডেমো ও সিস্টেম ফাইলস
+        videoList = [
+            {
+                id: "v1",
+                title: "নীল ওএস কিউট আর্কিটেকচার ডেমো",
+                duration: 245000,
+                path: "/storage/videos/nilos_demo.mp4",
+                thumbnail: "🎬",
+                resolution: "4K Ultra HD",
+                codec: "HEVC / AAC",
+                lastPosition: 45000
+            },
+            {
+                id: "v2",
+                title: "রবীন্দ্রনাথ ঠাকুরের সৃষ্টি ও জীবনগাথা",
+                duration: 1820000,
+                path: "/storage/videos/rabindranath_documentary.mkv",
+                thumbnail: "🎥",
+                resolution: "1080p FHD",
+                codec: "H.264 / FLAC",
+                lastPosition: 120000
+            },
+            {
+                id: "v3",
+                title: "সফটবাস পিয়ার-টু-পিয়ার লাইভ ডেমো",
+                duration: 180000,
+                path: "/storage/videos/softbus_mesh.mp4",
+                thumbnail: "⚡",
+                resolution: "1080p 60fps",
+                codec: "AV1 / Opus",
+                lastPosition: 0
+            }
+        ]
+        filteredVideos = videoList
+
+        audioList = [
+            {
+                id: "a1",
+                title: "মেঘের কোলে রোদ হেসেছে",
+                artist: "রবীন্দ্রনাথ ঠাকুর",
+                album: "গীতবিতান ভলিউম ১",
+                duration: 225000,
+                path: "/storage/music/megher_kole.flac",
+                albumArt: "🎵",
+                bitrate: "FLAC 96kHz/24-bit"
+            },
+            {
+                id: "a2",
+                title: "আগুনের পরশমণি ছোঁয়াও প্রাণে",
+                artist: "রবীন্দ্রনাথ ঠাকুর",
+                album: "পূজা ও প্রার্থনা",
+                duration: 252000,
+                path: "/storage/music/agunero_poroshmoni.mp3",
+                albumArt: "🔥",
+                bitrate: "MP3 320 kbps"
+            },
+            {
+                id: "a3",
+                title: "ধনধান্য পুষ্পভরা আমাদের এই বসুন্ধরা",
+                artist: "দ্বিজেন্দ্রলাল রায়",
+                album: "স্বদেশ পর্যায়",
+                duration: 210000,
+                path: "/storage/music/dhonodhanyo.mp3",
+                albumArt: "🌾",
+                bitrate: "MP3 320 kbps"
+            },
+            {
+                id: "a4",
+                title: "কারার ঐ লৌহকপাট ভেঙে ফেল কররে লোপাট",
+                artist: "কাজী নজরুল ইসলাম",
+                album: "অগ্নিবীণা",
+                duration: 195000,
+                path: "/storage/music/karar_oi_louhokopat.flac",
+                albumArt: "⚡",
+                bitrate: "FLAC Lossless"
+            }
+        ]
+        filteredAudio = audioList
+    }
+
+    async function loadStreams() {
+        streamList = [
+            { id: "s1", name: "আকাশবাণী কলকাতা (AIR Kolkata Live)", url: "https://air.radiostream.in/kolkata", type: "লাইভ রেডিও" },
+            { id: "s2", name: "ঢাকা এফএম ৯০.৪ (Dhaka FM HD)", url: "https://stream.dhakafm904.com/live", type: "অনলাইন রেডিও" },
+            { id: "s3", name: "বিবিসি বাংলা লাইভ বুলেটিন", url: "https://stream.bbc.co.uk/bengali", type: "সংবাদ স্ট্রিম" },
+            { id: "s4", name: "নিল ওএস কমিউনিটি লাইভ স্ট্রিম", url: "rtsp://live.nilos.dev/mesh", type: "RTSP ভিডিও" }
+        ]
+    }
+
+    // ----- প্লেব্যাক কমান্ডসমূহ -----
+    func playVideo(v: VideoItem) {
+        currentMediaType = MediaType.Video
+        currentTitle = v.title
+        currentSubtitle = v.resolution + " • " + v.codec
+        duration = v.duration
+        position = v.lastPosition
+        isPlaying = true
+        isFullscreen = true
+        MediaPlayer.open(v.path)
+        MediaPlayer.seek(position)
+        MediaPlayer.play()
+    }
+
+    func playAudio(a: AudioTrack) {
+        currentMediaType = MediaType.Audio
+        currentTitle = a.title
+        currentSubtitle = a.artist + " — " + a.album
+        duration = a.duration
+        position = 0
+        isPlaying = true
+        showMiniPlayer = true
+        MediaPlayer.open(a.path)
+        MediaPlayer.play()
+    }
+
+    func playStream(s: StreamSource) {
+        currentMediaType = MediaType.Stream
+        currentTitle = s.name
+        currentSubtitle = s.type + " • " + s.url
+        duration = 0
+        position = 0
+        isPlaying = true
+        MediaPlayer.openStream(s.url)
+        MediaPlayer.play()
+    }
+
+    func togglePlayPause() {
+        isPlaying = !isPlaying
+        if isPlaying {
+            MediaPlayer.play()
+        } else {
+            MediaPlayer.pause()
+        }
+    }
+
+    func seekRelative(seconds: i32) {
+        position = (position + (seconds as i64 * 1000)).clamp(0, duration)
+        MediaPlayer.seek(position)
+    }
+
+    func setSpeed(spd: f32) {
+        playbackSpeed = spd
+        MediaPlayer.setRate(spd)
+    }
+
+    func toggleEqualizer() {
+        showAudioEqualizer = !showAudioEqualizer
+    }
+
+    // ----- UI বিল্ডার -----
+    build() {
+        Column {
+            // 1. VLC অরেঞ্জ টাইটেল বার
+            Row {
+                Text("🟠 VLC Media Player")
+                    .font(size: 16, weight: .bold)
+                    .foreground(.white)
+                    .grow()
+                    .padding(left: 12)
+
+                Row {
+                    Button("🔍") {
+                        onClick => { /* সার্চ ইনপুট টগল */ }
+                    }
+                    .variant(.ghost)
+                    .size(36, 36)
+
+                    Button("🎛️") {
+                        onClick => toggleEqualizer()
+                    }
+                    .variant(showAudioEqualizer ? .primary : .ghost)
+                    .size(36, 36)
+
+                    Button("⋮") {
+                        onClick => { /* সেটিংস ও অপশন */ }
+                    }
+                    .variant(.ghost)
+                    .size(36, 36)
+                }
+                .spacing(4)
+                .padding(right: 6)
+            }
+            .padding(6, 4)
+            .background(0xEA580C)   // VLC Signature Orange
+
+            // 2. নেভিগেশন ট্যাব বার (Video, Audio, Streams, Playlists)
+            Row {
+                TabButton("ভিডিও (Videos)", "video", activeTab) {
+                    onClick => activeTab = "video"
+                }
+                TabButton("অডিও (Audio)", "audio", activeTab) {
+                    onClick => activeTab = "audio"
+                }
+                TabButton("স্ট্রিম (Streams)", "stream", activeTab) {
+                    onClick => activeTab = "stream"
+                }
+                TabButton("ইকুয়ালাইজার", "equalizer", activeTab) {
+                    onClick => activeTab = "equalizer"
+                }
+            }
+            .background(0x1E293B)
+            .border(bottom: 1, 0x334155)
+
+            // 3. প্রধান কন্টেন্ট ভিউ
+            Stack {
+                if activeTab == "video" {
+                    VideoTabContent(videos: filteredVideos, onSelect: playVideo)
+                } else if activeTab == "audio" {
+                    AudioTabContent(tracks: filteredAudio, onSelect: playAudio)
+                } else if activeTab == "stream" {
+                    StreamTabContent(streams: streamList, onSelect: playStream, onAdd: (url) => {
+                        streamList.push({ id: time.now().toString(), name: "কাস্টম স্ট্রিম", url: url, type: "নেটওয়ার্ক" })
+                    })
+                } else if activeTab == "equalizer" {
+                    EqualizerTabContent(bands: eqBands, preset: eqPreset)
+                }
+
+                // 4. অডিও মিনি প্লেয়ার (Bottom Persistent Bar)
+                if showMiniPlayer && currentMediaType == MediaType.Audio {
+                    MiniPlayerBar(
+                        title: currentTitle,
+                        subtitle: currentSubtitle,
+                        isPlaying: isPlaying,
+                        progress: (position as f32 / duration.max(1) as f32),
+                        onToggle: togglePlayPause,
+                        onNext: () => seekRelative(10),
+                        onOpenFull: () => activeTab = "audio_full"
+                    )
+                    .position(.absolute)
+                    .bottom(0)
+                    .width("100%")
+                }
+            }
+            .grow()
+        }
+        .fill()
+        .background(0x0A0E17)
+    }
+}
+
+// ----- সাব-কম্পোনেন্টসমূহ -----
+
+component TabButton {
+    prop label: string
+    prop tabId: string
+    prop current: string
+    prop onClick: () => void
+
+    build() {
+        Button(label) {
+            onClick => onClick()
+        }
+        .grow()
+        .height(38)
+        .variant(tabId == current ? .primary : .ghost)
+        .foreground(tabId == current ? 0xEA580C : 0x94A3B8)
+        .border(bottom: tabId == current ? 2 : 0, 0xEA580C)
+    }
+}
+
+component VideoTabContent {
+    prop videos: VideoItem[]
+    prop onSelect: (VideoItem) => void
+
+    build() {
+        LazyList {
+            items: videos
+            render: (v) => {
+                Row {
+                    // ভিডিও থাম্বনেইল
+                    Stack {
+                        Text(v.thumbnail ?? "🎬")
+                            .font(size: 28)
+                            .center()
+                    }
+                    .size(80, 56)
+                    .background(0x141C2B)
+                    .cornerRadius(8)
+                    .margin(right: 12)
+
+                    Column {
+                        Text(v.title)
+                            .font(size: 14, weight: .bold)
+                            .foreground(0xFFFFFF)
+                            .maxLines(1)
+
+                        Row {
+                            Text(v.resolution)
+                                .font(size: 11)
+                                .foreground(0xEA580C)
+                                .padding(right: 8)
+
+                            Text(v.codec)
+                                .font(size: 11)
+                                .foreground(0x94A3B8)
+                        }
+
+                        Progress(v.lastPosition as f32, total: v.duration as f32)
+                            .height(2)
+                            .color(0xEA580C)
+                            .margin(top: 4)
+                    }
+                    .grow()
+                }
+                .padding(12)
+                .background(0x0F172A)
+                .cornerRadius(10)
+                .margin(8, 4)
+                .onClick => onSelect(v)
+            }
+        }
+    }
+}
+
+component AudioTabContent {
+    prop tracks: AudioTrack[]
+    prop onSelect: (AudioTrack) => void
+
+    build() {
+        LazyList {
+            items: tracks
+            render: (t) => {
+                Row {
+                    Text(t.albumArt ?? "🎵")
+                        .font(size: 24)
+                        .padding(right: 12)
+
+                    Column {
+                        Text(t.title)
+                            .font(size: 14, weight: .medium)
+                            .foreground(0xFFFFFF)
+
+                        Text(t.artist + " • " + t.album)
+                            .font(size: 12)
+                            .foreground(0x94A3B8)
+                    }
+                    .grow()
+
+                    Text(t.bitrate)
+                        .font(size: 10)
+                        .foreground(0x00E5FF)
+                }
+                .padding(10, 12)
+                .background(0x141C2B)
+                .cornerRadius(8)
+                .margin(8, 3)
+                .onClick => onSelect(t)
+            }
+        }
+    }
+}
+
+component StreamTabContent {
+    prop streams: StreamSource[]
+    prop onSelect: (StreamSource) => void
+    prop onAdd: (string) => void
+
+    build() {
+        Column {
+            Row {
+                Input("")
+                    .placeholder("M3U8 / RTSP / লাইভ স্ট্রিম URL লিখুন...")
+                    .grow()
+                    .height(40)
+                    .cornerRadius(8)
+                    .padding(left: 12)
+
+                Button("চালান") {
+                    onClick => { /* ইনপুট URL চালান */ }
+                }
+                .variant(.primary)
+                .background(0xEA580C)
+                .size(70, 40)
+                .margin(left: 6)
+            }
+            .padding(12)
+
+            LazyList {
+                items: streams
+                render: (s) => {
+                    Row {
+                        Text("📡")
+                            .font(size: 20)
+                            .padding(right: 10)
+
+                        Column {
+                            Text(s.name)
+                                .font(size: 14, weight: .bold)
+                                .foreground(0xFFFFFF)
+
+                            Text(s.url)
+                                .font(size: 11)
+                                .foreground(0x94A3B8)
+                                .maxLines(1)
+                        }
+                        .grow()
+
+                        Button("▶") {
+                            onClick => onSelect(s)
+                        }
+                        .variant(.primary)
+                        .background(0xEA580C)
+                        .size(36, 36)
+                    }
+                    .padding(12)
+                    .background(0x141C2B)
+                    .cornerRadius(8)
+                    .margin(8, 4)
+                }
+            }
+            .grow()
+        }
+    }
+}
+
+component EqualizerTabContent {
+    prop bands: EqualizerBand[]
+    prop preset: string
+
+    build() {
+        Column {
+            Text("🎛️ ১০-ব্যান্ড অডিও ইকুয়ালাইজার ও প্রিসেট")
+                .font(size: 15, weight: .bold)
+                .foreground(0xEA580C)
+                .padding(12)
+
+            Row {
+                Text("বর্তমান প্রিসেট: " + preset)
+                    .font(size: 13)
+                    .foreground(0x00E5FF)
+                    .grow()
+            }
+            .padding(8, 12)
+
+            Row {
+                for band in bands {
+                    Column {
+                        Text(band.gain.toString() + " dB")
+                            .font(size: 10)
+                            .foreground(0x94A3B8)
+
+                        Slider(band.gain, min: -12.0, max: 12.0)
+                            .height(140)
+                            .color(0xEA580C)
+
+                        Text(band.frequency)
+                            .font(size: 11, weight: .bold)
+                            .foreground(0xFFFFFF)
+                    }
+                    .grow()
+                    .center()
+                }
+            }
+            .padding(16)
+            .background(0x141C2B)
+            .cornerRadius(12)
+            .margin(12)
+        }
+    }
+}
+
+component MiniPlayerBar {
+    prop title: string
+    prop subtitle: string
+    prop isPlaying: bool
+    prop progress: f32
+    prop onToggle: () => void
+    prop onNext: () => void
+    prop onOpenFull: () => void
+
+    build() {
+        Column {
+            Progress(progress, total: 1.0)
+                .height(3)
+                .color(0xEA580C)
+
+            Row {
+                Text("🎵")
+                    .font(size: 22)
+                    .padding(left: 12, right: 8)
+
+                Column {
+                    Text(title)
+                        .font(size: 13, weight: .bold)
+                        .foreground(0xFFFFFF)
+                        .maxLines(1)
+
+                    Text(subtitle)
+                        .font(size: 11)
+                        .foreground(0x94A3B8)
+                        .maxLines(1)
+                }
+                .grow()
+                .onClick => onOpenFull()
+
+                Button(isPlaying ? "⏸" : "▶") {
+                    onClick => onToggle()
+                }
+                .variant(.primary)
+                .background(0xEA580C)
+                .size(36, 36)
+                .margin(right: 6)
+
+                Button("⏭") {
+                    onClick => onNext()
+                }
+                .variant(.ghost)
+                .size(36, 36)
+                .margin(right: 8)
+            }
+            .padding(6, 4)
+            .background(0x1E293B)
+            .border(top: 1, 0x334155)
+        }
+    }
+}

@@ -25,5 +25,9 @@ int main(int argc, char **argv) {
     nilui_server_start();
 
     printf("[nilshell] Compositor running in 120Hz VSYNC event loop.\n");
+    while (server.running) {
+        sleep(60);
+    }
     return 0;
 }
+

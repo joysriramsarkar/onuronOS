@@ -1,0 +1,7 @@
+﻿NilOS 1.7.0 Release Notes
+==========================
+- VLC Media Player integration
+- NilZar Browser with WebKit
+- SoftBus distributed mesh
+- Bengali language support
+- Android AOSP container support

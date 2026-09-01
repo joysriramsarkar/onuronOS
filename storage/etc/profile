@@ -1,0 +1,8 @@
+﻿#!/bin/bash
+# NilOS System Shell
+# GNU bash, version 5.2.15(1)-release
+
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export NILOS_VERSION="1.7.0"
+export HOME="/home/joy"
+export LANG="bn_BD.UTF-8"

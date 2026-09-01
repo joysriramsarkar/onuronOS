@@ -1,10 +1,14 @@
 // runtime/nilsd/src/lib.rs — Systemd/NilInit compatible socket activation helper
+#[cfg(unix)]
 use std::env;
+#[cfg(unix)]
 use std::os::unix::io::FromRawFd;
+#[cfg(unix)]
 use std::os::unix::net::UnixListener;
 
 pub const SD_LISTEN_FDS_START: i32 = 3;
 
+#[cfg(unix)]
 pub fn listen_fds() -> Vec<UnixListener> {
     let mut listeners = Vec::new();
     if let Ok(fds_str) = env::var("LISTEN_FDS") {
@@ -20,6 +24,7 @@ pub fn listen_fds() -> Vec<UnixListener> {
     listeners
 }
 
+#[cfg(unix)]
 pub fn first_listener_or_bind(fallback_path: &str) -> std::io::Result<UnixListener> {
     let mut fds = listen_fds();
     if !fds.is_empty() {
@@ -34,3 +39,14 @@ pub fn first_listener_or_bind(fallback_path: &str) -> std::io::Result<UnixListen
         UnixListener::bind(fallback_path)
     }
 }
+
+#[cfg(not(unix))]
+pub fn listen_fds() -> Vec<()> {
+    Vec::new()
+}
+
+#[cfg(not(unix))]
+pub fn first_listener_or_bind(_fallback_path: &str) -> std::io::Result<()> {
+    Ok(())
+}
+

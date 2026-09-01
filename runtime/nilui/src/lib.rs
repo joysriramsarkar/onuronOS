@@ -6,7 +6,9 @@ pub mod share;
 pub mod a11y;
 pub mod widget;
 
+#[cfg(unix)]
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 use serde::{Serialize, Deserialize};
@@ -46,8 +48,13 @@ pub struct App<S> {
 }
 
 pub fn send_shell_cmd(cmd: &str) -> std::io::Result<()> {
+    #[cfg(unix)]
     if let Ok(mut stream) = UnixStream::connect("/run/nilos/ui.sock") {
         stream.write_all(format!("CMD {}\n", cmd).as_bytes())?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = cmd;
     }
     Ok(())
 }

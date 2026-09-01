@@ -1,0 +1,8 @@
+﻿# NilOS Network Configuration
+[WiFi]
+SSID=NilNet_5G
+Security=WPA3
+DNS=8.8.8.8,1.1.1.1
+
+[Bluetooth]
+Name=NilDevice-Joy

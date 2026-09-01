@@ -15,6 +15,21 @@ exec = "/usr/bin/nilbus"
 restart = "always"
 
 [[services]]
+name = "netd"
+exec = "/usr/bin/netd"
+restart = "always"
+
+[[services]]
+name = "audiod"
+exec = "/usr/bin/audiod"
+restart = "always"
+
+[[services]]
+name = "powerd"
+exec = "/usr/bin/powerd"
+restart = "always"
+
+[[services]]
 name = "nilshell"
 exec = "/usr/bin/nilshell"
 restart = "always"
@@ -33,3 +48,8 @@ socket_activation = "/run/nilos/ime.sock"
 name = "nilttsd"
 exec = "/usr/bin/nilttsd"
 socket_activation = "/run/nilos/tts.sock"
+
+[[services]]
+name = "nilandroidd"
+exec = "/usr/bin/nilandroidd"
+socket_activation = "/run/nilos/android.sock"

@@ -1,0 +1,9 @@
+[package]
+name = "nilbrowser"
+version = "0.1.0"
+edition = "2021"
+description = "NilOS Real Modern Mobile Web Browser Engine"
+
+[dependencies]
+wry = "0.56.1"
+tao = "0.34.4"

@@ -1,0 +1,598 @@
+// File: main.nil
+// NilZar Browser - Cross-platform Web Browser for NilOS, Android, iOS & Linux
+
+import { App, Column, Row, Text, Input, Button, Icon, Progress, Stack } from "nil/ui"
+import { WebView, WebViewRef, WebViewEvent } from "nil/web"   // Platform WebView Adapter
+import { log, time } from "nil/core"
+import { fs, path } from "nil/fs"
+import { json } from "nil/json"
+
+// ----- ডেটা মডেল (History & Bookmarks) -----
+struct HistoryEntry {
+    url: string
+    title: string
+    timestamp: i64
+}
+
+struct Bookmark {
+    id: string
+    name: string
+    url: string
+    icon: string?
+}
+
+// ----- ব্রাউজার অ্যাপ -----
+app NilZarBrowser {
+    // ----- স্টেট (UI) -----
+    @State url: string = "https://nilos.dev"
+    @State title: string = "NilZar Browser"
+    @State loading: bool = false
+    @State progress: f32 = 0.0
+    @State canGoBack: bool = false
+    @State canGoForward: bool = false
+    
+    @State showHistory: bool = false
+    @State showBookmarks: bool = false
+    @State history: HistoryEntry[] = []
+    @State bookmarks: Bookmark[] = []
+    
+    @State searchQuery: string = ""
+    @State suggestions: string[] = []
+
+    // ----- ওয়েবভিউ রেফারেন্স -----
+    private webViewRef: WebViewRef? = null
+    private currentUrl: string = ""
+
+    // ----- ডিফল্ট বুকমার্ক -----
+    private defaultBookmarks: Bookmark[] = [
+        { id: "1", name: "NilOS", url: "https://github.com/joysriramsarkar/nilos", icon: "🏠" },
+        { id: "2", name: "NilX Framework", url: "https://github.com/joysriramsarkar/nilx", icon: "⚡" },
+        { id: "3", name: "Go Language", url: "https://go.dev", icon: "🐹" },
+        { id: "4", name: "GitHub", url: "https://github.com", icon: "🐙" }
+    ]
+
+    // ----- লাইফসাইকেল -----
+    onAppear() {
+        spawn loadHistory()
+        spawn loadBookmarks()
+    }
+
+    onDispose() {
+        spawn saveHistory()
+        spawn saveBookmarks()
+    }
+
+    // ----- পার্সিস্টেন্স (Async) -----
+    async function loadHistory() {
+        let data = await fs.readFile("browser_history.json")
+        if data != null {
+            let parsed = json.parse<HistoryEntry[]>(data.toString())
+            if parsed != null { history = parsed }
+        }
+    }
+
+    async function saveHistory() {
+        let data = json.stringify(history, indent: 2)
+        await fs.writeFile("browser_history.json", data)
+    }
+
+    async function loadBookmarks() {
+        let data = await fs.readFile("browser_bookmarks.json")
+        if data != null {
+            let parsed = json.parse<Bookmark[]>(data.toString())
+            if parsed != null { 
+                bookmarks = parsed 
+            } else {
+                bookmarks = defaultBookmarks
+            }
+        } else {
+            bookmarks = defaultBookmarks
+            await saveBookmarks()
+        }
+    }
+
+    async function saveBookmarks() {
+        let data = json.stringify(bookmarks, indent: 2)
+        await fs.writeFile("browser_bookmarks.json", data)
+    }
+
+    // ----- নেভিগেশন কমান্ড -----
+    func navigate(urlStr: string) {
+        if urlStr == "" { return }
+        
+        // যদি সার্চ কোয়েরি হয় (ডট বা প্রোটোকল না থাকলে)
+        if !urlStr.contains(".") && !urlStr.startsWith("http://") && !urlStr.startsWith("https://") {
+            urlStr = "https://duckduckgo.com/?q=" + urlStr.replace(" ", "+")
+        } else if !urlStr.startsWith("http://") && !urlStr.startsWith("https://") {
+            urlStr = "https://" + urlStr
+        }
+
+        currentUrl = urlStr
+        url = urlStr
+        if webViewRef != null {
+            webViewRef!.load(urlStr)
+        }
+        
+        // ব্রাউজিং হিস্টোরি আপডেট
+        let entry = HistoryEntry {
+            url: urlStr,
+            title: title,
+            timestamp: time.now()
+        }
+        history.push(entry)
+        if history.length > 1000 {  // সর্বোচ্চ ১০০০ এন্ট্রি
+            history = history.slice(history.length - 1000)
+        }
+        spawn saveHistory()
+    }
+
+    func goBack() {
+        if webViewRef != null && canGoBack {
+            webViewRef!.goBack()
+        }
+    }
+
+    func goForward() {
+        if webViewRef != null && canGoForward {
+            webViewRef!.goForward()
+        }
+    }
+
+    func reload() {
+        if webViewRef != null {
+            webViewRef!.reload()
+        }
+    }
+
+    func stopLoading() {
+        if webViewRef != null {
+            webViewRef!.stop()
+        }
+    }
+
+    // ----- বুকমার্ক অ্যাকশন -----
+    func addBookmark() {
+        if currentUrl == "" { return }
+        let name = title
+        let exists = bookmarks.find(b => b.url == currentUrl)
+        if exists == null {
+            let bookmark = Bookmark {
+                id: time.now().toString(),
+                name: name,
+                url: currentUrl,
+                icon: "🔖"
+            }
+            bookmarks.push(bookmark)
+            spawn saveBookmarks()
+        }
+        showBookmarks = true
+    }
+
+    func removeBookmark(id: string) {
+        bookmarks = bookmarks.filter(b => b.id != id)
+        spawn saveBookmarks()
+    }
+
+    func loadBookmark(url: string) {
+        navigate(url)
+        showBookmarks = false
+    }
+
+    // ----- WebView ইভেন্ট হ্যান্ডলার -----
+    func onPageStarted(event: WebViewEvent) {
+        loading = true
+        progress = 0.0
+        log.info("Loading: " + event.url)
+        showHistory = false
+        showBookmarks = false
+    }
+
+    func onPageProgress(event: WebViewEvent) {
+        progress = event.progress / 100.0
+    }
+
+    func onPageFinished(event: WebViewEvent) {
+        loading = false
+        progress = 1.0
+        currentUrl = event.url
+        url = event.url
+        title = event.title ?? "NilZar"
+        log.info("Loaded: " + event.url)
+    }
+
+    func onTitleChange(event: WebViewEvent) {
+        if event.title != null && event.title != "" {
+            title = event.title!
+        }
+    }
+
+    func onNavigationChange(event: WebViewEvent) {
+        canGoBack = event.canGoBack
+        canGoForward = event.canGoForward
+    }
+
+    func onUrlChange(event: WebViewEvent) {
+        url = event.url
+        currentUrl = event.url
+    }
+
+    // ----- অটো-সাজেশন (ডামি) -----
+    func updateSuggestions(query: string) {
+        searchQuery = query
+        if query == "" {
+            suggestions = []
+            return
+        }
+        // ডামি সাজেশন (রিয়েল ব্রাউজারে সার্চ ইঞ্জিন API কল করবে)
+        suggestions = [
+            query + " news",
+            query + " github",
+            query + " docs",
+            "https://" + query + ".com"
+        ]
+    }
+
+    // ----- UI বিল্ডার -----
+    build() {
+        Column {
+            // ---- টাইটেল বার ----
+            Row {
+                Text("🌐 " + title)
+                    .font(size: 14, weight: .medium)
+                    .foreground(.secondary)
+                    .grow()
+                    .padding(left: 8)
+                
+                Row {
+                    Button("📂") { 
+                        onClick => showHistory = !showHistory 
+                    }
+                    .variant(showHistory ? .primary : .ghost)
+                    .size(36, 36)
+
+                    Button("⭐") { 
+                        onClick => addBookmark() 
+                    }
+                    .variant(.ghost)
+                    .size(36, 36)
+                    
+                    Button("📖") { 
+                        onClick => showBookmarks = !showBookmarks 
+                    }
+                    .variant(showBookmarks ? .primary : .ghost)
+                    .size(36, 36)
+                }
+                .spacing(2)
+            }
+            .padding(4, 2)
+            .background(.surface)
+            .border(bottom: 1, .divider)
+
+            // ---- টুলবার ----
+            Row {
+                // Back
+                Button("◀") { 
+                    onClick => goBack() 
+                }
+                .disabled(!canGoBack)
+                .size(40, 40)
+                .variant(.ghost)
+
+                // Forward
+                Button("▶") { 
+                    onClick => goForward() 
+                }
+                .disabled(!canGoForward)
+                .size(40, 40)
+                .variant(.ghost)
+
+                // Reload / Stop
+                if loading {
+                    Button("✕") { 
+                        onClick => stopLoading() 
+                    }
+                    .variant(.danger)
+                    .size(40, 40)
+                } else {
+                    Button("⟳") { 
+                        onClick => reload() 
+                    }
+                    .variant(.ghost)
+                    .size(40, 40)
+                }
+
+                // Address Bar + Search
+                Stack {
+                    Input(url)
+                        .placeholder("Search or type URL...")
+                        .grow()
+                        .height(40)
+                        .cornerRadius(20)
+                        .background(.surface.opacity(0.8))
+                        .border(1, .divider)
+                        .padding(left: 12, right: 12)
+                        .onConfirm => navigate(it)
+                        .onChange => updateSuggestions(it)
+
+                    // Dropdown Suggestions
+                    if suggestions.length > 0 && !loading {
+                        Column {
+                            for suggestion in suggestions {
+                                Text(suggestion)
+                                    .padding(8)
+                                    .background(.surface)
+                                    .hoverBackground(.primary.opacity(0.1))
+                                    .onClick => {
+                                        navigate(suggestion)
+                                        suggestions = []
+                                    }
+                            }
+                        }
+                        .background(.surface)
+                        .border(1, .divider)
+                        .cornerRadius(8)
+                        .shadow(0, 4, 16, .black.opacity(0.2))
+                        .margin(top: 44)
+                        .position(.absolute)
+                        .width("100%")
+                    }
+                }
+                .grow()
+                .margin(left: 4, right: 4)
+
+                // Go Button
+                Button("Go") {
+                    onClick => navigate(url)
+                }
+                .variant(.primary)
+                .size(60, 40)
+                .cornerRadius(20)
+
+                // Bookmark / Menu
+                Button("⋮") {
+                    onClick => showBookmarks = !showBookmarks
+                }
+                .variant(.ghost)
+                .size(40, 40)
+            }
+            .padding(6, 4)
+            .spacing(4)
+            .background(.background)
+            .border(bottom: 1, .divider)
+
+            // ---- প্রগ্রেস বার ----
+            if loading {
+                Progress(progress, total: 1.0)
+                    .variant(.linear)
+                    .color(.accent)
+                    .height(3)
+                    .animate(.width, duration: 150)
+            } else {
+                Progress(0, total: 1.0).height(1)
+            }
+
+            // ---- সাইড প্যানেল (হিস্ট্রি/বুকমার্ক) ----
+            Row {
+                // কন্টেন্ট এরিয়া
+                Stack {
+                    // ওয়েবভিউ
+                    WebView {
+                        ref: webViewRef
+                        src: url
+                        onLoadStart: onPageStarted
+                        onLoadProgress: onPageProgress
+                        onLoadFinish: onPageFinished
+                        onTitleChange: onTitleChange
+                        onUrlChange: onUrlChange
+                        onNavigationChange: onNavigationChange
+                    }
+                    .grow()
+
+                    // ওভারলে: হিস্ট্রি প্যানেল
+                    if showHistory {
+                        HistoryPanel {
+                            history: history
+                            onClose: () => showHistory = false
+                            onNavigate: (url) => {
+                                navigate(url)
+                                showHistory = false
+                            }
+                            onClear: () => {
+                                history = []
+                                spawn saveHistory()
+                            }
+                        }
+                        .position(.absolute)
+                        .top(0)
+                        .right(0)
+                        .width(320)
+                        .height("100%")
+                        .background(.surface)
+                        .shadow(-4, 0, 16, .black.opacity(0.15))
+                        .animate(.translateX, duration: 200)
+                    }
+
+                    // ওভারলে: বুকমার্ক প্যানেল
+                    if showBookmarks {
+                        BookmarksPanel {
+                            bookmarks: bookmarks
+                            onClose: () => showBookmarks = false
+                            onNavigate: loadBookmark
+                            onDelete: removeBookmark
+                            onAdd: () => {
+                                addBookmark()
+                                showBookmarks = false
+                            }
+                        }
+                        .position(.absolute)
+                        .top(0)
+                        .right(0)
+                        .width(320)
+                        .height("100%")
+                        .background(.surface)
+                        .shadow(-4, 0, 16, .black.opacity(0.15))
+                        .animate(.translateX, duration: 200)
+                    }
+                }
+                .grow()
+            }
+            .grow()
+
+            // ---- স্ট্যাটাস বার (নিচে) ----
+            Row {
+                Text(loading ? "Loading " + url : "Ready")
+                    .font(size: 12)
+                    .foreground(.secondary)
+                    .grow()
+                
+                Text(canGoBack ? "◀" : "  ")
+                Text(canGoForward ? "▶" : "  ")
+            }
+            .padding(4, 8)
+            .background(.surface)
+            .border(top: 1, .divider)
+        }
+        .fill()
+        .background(.background)
+    }
+}
+
+// ----- কম্পোনেন্ট: হিস্ট্রি প্যানেল -----
+component HistoryPanel {
+    prop history: HistoryEntry[]
+    prop onClose: () => void
+    prop onNavigate: (string) => void
+    prop onClear: () => void
+
+    build() {
+        Column {
+            Row {
+                Text("📜 History")
+                    .font(size: 18, weight: .bold)
+                    .grow()
+                
+                Button("✕") {
+                    onClick => onClose()
+                }
+                .variant(.ghost)
+                .size(32, 32)
+            }
+            .padding(16)
+            .border(bottom: 1, .divider)
+
+            LazyList {
+                items: history.slice().reverse()  // নতুন প্রথমে
+                render: (entry) => {
+                    Row {
+                        Column {
+                            Text(entry.title)
+                                .font(size: 14)
+                                .foreground(.text)
+                            Text(entry.url)
+                                .font(size: 12)
+                                .foreground(.secondary)
+                                .maxLines(1)
+                        }
+                        .grow()
+                        .onClick => onNavigate(entry.url)
+
+                        Text(time.fromTimestamp(entry.timestamp).toLocaleString())
+                            .font(size: 10)
+                            .foreground(.secondary)
+                            .padding(left: 8)
+                    }
+                    .padding(8)
+                    .hoverBackground(.primary.opacity(0.05))
+                    .border(bottom: 1, .divider.opacity(0.3))
+                }
+            }
+            .grow()
+
+            Button("🗑 Clear All") {
+                onClick => onClear()
+            }
+            .variant(.danger)
+            .padding(16)
+            .width("100%")
+        }
+        .fill()
+        .background(.surface)
+    }
+}
+
+// ----- কম্পোনেন্ট: বুকমার্ক প্যানেল -----
+component BookmarksPanel {
+    prop bookmarks: Bookmark[]
+    prop onClose: () => void
+    prop onNavigate: (string) => void
+    prop onDelete: (string) => void
+    prop onAdd: () => void
+
+    build() {
+        Column {
+            Row {
+                Text("⭐ Bookmarks")
+                    .font(size: 18, weight: .bold)
+                    .grow()
+                
+                Button("＋") {
+                    onClick => onAdd()
+                }
+                .variant(.primary)
+                .size(32, 32)
+
+                Button("✕") {
+                    onClick => onClose()
+                }
+                .variant(.ghost)
+                .size(32, 32)
+            }
+            .padding(16)
+            .border(bottom: 1, .divider)
+
+            LazyList {
+                items: bookmarks
+                render: (bookmark) => {
+                    Row {
+                        Text(bookmark.icon ?? "🔖")
+                            .font(size: 20)
+                            .padding(right: 8)
+
+                        Column {
+                            Text(bookmark.name)
+                                .font(size: 14)
+                                .foreground(.text)
+                            Text(bookmark.url)
+                                .font(size: 12)
+                                .foreground(.secondary)
+                                .maxLines(1)
+                        }
+                        .grow()
+                        .onClick => onNavigate(bookmark.url)
+
+                        Button("✕") {
+                            onClick => onDelete(bookmark.id)
+                        }
+                        .variant(.danger)
+                        .size(28, 28)
+                        .variant(.ghost)
+                    }
+                    .padding(8)
+                    .hoverBackground(.primary.opacity(0.05))
+                    .border(bottom: 1, .divider.opacity(0.3))
+                }
+            }
+            .grow()
+
+            Row {
+                Text("Total: " + bookmarks.length)
+                    .font(size: 12)
+                    .foreground(.secondary)
+                    .grow()
+            }
+            .padding(16)
+        }
+        .fill()
+        .background(.surface)
+    }
+}
