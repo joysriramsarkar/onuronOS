@@ -24,3 +24,7 @@ out/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Simulated storage directory
+storage/
+

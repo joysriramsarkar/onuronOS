@@ -4,7 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.32", features = ["full"] }
-nilsd = { path = "../runtime/nilsd" }
+serde        = { version = "1.0", features = ["derive"] }
+serde_json   = "1.0"
+tokio        = { version = "1", features = ["full"] }
+hex          = "0.4"
+nilsd        = { path = "../runtime/nilsd" }
+
+# QUIC/TLS stack — only compiled on Linux/Unix targets (the actual runtime).
+# On Windows dev-hosts these are skipped to avoid needing gcc/MinGW.
+[target.'cfg(unix)'.dependencies]
+quinn        = { version = "0.11", default-features = false, features = ["rustls-ring", "runtime-tokio"] }
+rustls       = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2"
+rcgen        = { version = "0.13", default-features = false, features = ["ring"] }
+mdns-sd      = "0.11"
+
+

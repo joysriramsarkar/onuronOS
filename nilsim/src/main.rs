@@ -1,4 +1,13 @@
-// nilsim/src/main.rs — NilOS Desktop Mobile Simulator
+// nilsim/src/main.rs — NilOS Desktop Mobile Simulator (Figma 330x680)
+
+#[cfg(target_os = "windows")]
+mod nilbrowser;
+
+#[cfg(target_os = "windows")]
+#[link(name = "user32")]
+extern "system" {
+    fn SetFocus(hWnd: isize) -> isize;
+}
 // - VLC Media Player (org.videolan.vlc): Full Official VideoLAN Media Engine for NilOS
 // - NilZar Browser: Full Declarative Web Browser with History & Bookmarks Drawers, Real Web Fetcher & Portals
 // - Indian Standard Time (IST UTC+5:30)
@@ -20,29 +29,31 @@ use fontdue::{Font, FontSettings};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Scale, Window, WindowOptions};
 
 // ─── Smartphone Dimensions ───────────────────────────────────────────────────
-const SCREEN_WIDTH: usize = 380;
-const SCREEN_HEIGHT: usize = 760;
+const SCREEN_WIDTH: usize = 330;
+const SCREEN_HEIGHT: usize = 680;
+const HOME_SCREEN_RAW: &[u8] = include_bytes!("../assets/home_screen.bin");
+const WALLPAPER_RAW: &[u8] = include_bytes!("../assets/wallpaper.bin");
 
-// ─── Color Palette (32-bit ARGB / RGB) ────────────────────────────────────────
-const COLOR_BG: u32 = 0x060913;          // Deep Space Navy (ultra dark)
-const COLOR_DOCK_BG: u32 = 0x0E1826;     // Deep Glass Dock
-const COLOR_SURFACE: u32 = 0x0F1928;     // Card Surface (deep blue-dark)
-const COLOR_SURFACE_ALT: u32 = 0x182335; // Card Active/Hover
-const COLOR_BORDER: u32 = 0x1E3052;      // Subtle Blue Border
-const COLOR_CYAN: u32 = 0x00F5FF;        // Electric Cyan
-const COLOR_BLUE: u32 = 0x3B82F6;        // Vivid Blue
+// ─── Color Palette (Figma 3D Fluid Purple Glass Theme) ─────────────────────────
+const COLOR_BG: u32 = 0x140E28;          // Figma Deep Fluid Violet
+const COLOR_DOCK_BG: u32 = 0x261A48;     // Frosted Violet Glass Dock
+const COLOR_SURFACE: u32 = 0x1E153D;     // Frosted Purple Card Surface
+const COLOR_SURFACE_ALT: u32 = 0x31235F; // Active Purple Glass
+const COLOR_BORDER: u32 = 0x4D3A84;      // Luminous Violet Border
+const COLOR_CYAN: u32 = 0x38BDF8;        // Electric Sky Cyan
+const COLOR_BLUE: u32 = 0x6366F1;        // Vivid Indigo
 const COLOR_GREEN: u32 = 0x22C55E;       // Emerald Green
 const COLOR_AMBER: u32 = 0xFBBF24;       // Warm Amber
-const COLOR_PURPLE: u32 = 0xA855F7;      // Vivid Violet
+const COLOR_PURPLE: u32 = 0xC084FC;      // Figma Vibrant Violet
 const COLOR_RED: u32 = 0xF43F5E;         // Rose Red
 const COLOR_FOX: u32 = 0xFF6320;         // Firefox Vivid Orange
 const COLOR_VLC: u32 = 0xFF7A1A;         // Official VLC Vibrant Orange
-const COLOR_TEXT_HIGH: u32 = 0xF0F6FF;   // Soft White (easier on eyes)
-const COLOR_TEXT_MED: u32 = 0x8BA6C8;    // Cool Blue-Gray
-const COLOR_TEXT_DIM: u32 = 0x3D5475;    // Dim Blue
-const COLOR_ACCENT_BG: u32 = 0x091E3A;   // Deep Blue Accent Card
-const COLOR_TERM_BG: u32 = 0x020408;     // Pure Terminal Black
-const COLOR_NANO_HDR: u32 = 0x1D4ED8;    // Electric Blue Editor Header
+const COLOR_TEXT_HIGH: u32 = 0xF8FAFC;   // Crisp Soft White
+const COLOR_TEXT_MED: u32 = 0xA5B4FC;    // Pastel Lavender/Indigo
+const COLOR_TEXT_DIM: u32 = 0x6366F1;    // Dim Indigo Accent
+const COLOR_ACCENT_BG: u32 = 0x312E81;   // Deep Indigo Glass Card
+const COLOR_TERM_BG: u32 = 0x0B081A;     // Obsidian Violet Terminal
+const COLOR_NANO_HDR: u32 = 0x4338CA;    // Indigo Header
 // Extra premium palette entries
 const COLOR_GOLD: u32 = 0xF59E0B;         // Gold Accent
 const COLOR_TEAL: u32 = 0x14B8A6;         // Teal Accent
@@ -63,9 +74,7 @@ enum Screen {
     AppTerminal,
     AppNotes,
     AppCalculator,
-    AppMusic,
     AppBrowser,
-    AppVlc,
     ControlCenter,
     NanoEditor,
 }
@@ -859,39 +868,16 @@ struct Bookmark {
 }
 
 #[derive(Clone, Debug)]
-struct VlcVideo {
-    id: String,
+struct BrowserTab {
+    id: usize,
     title: String,
-    duration_str: String,
-    resolution: String,
-    codec: String,
-    thumb: String,
-    total_secs: usize,
-}
-
-#[derive(Clone, Debug)]
-struct VlcAudio {
-    id: String,
-    title: String,
-    artist: String,
-    album: String,
-    duration_str: String,
-    bitrate: String,
-    thumb: String,
-    total_secs: usize,
-}
-
-#[derive(Clone, Debug)]
-struct VlcStream {
-    id: String,
-    name: String,
     url: String,
-    category: String,
 }
 
 // ─── Application State ────────────────────────────────────────────────────────
 struct SimState {
     screen: Screen,
+    home_page: usize,
     user_name: String,
     pin: String,
     pin_input: String,
@@ -960,27 +946,10 @@ struct SimState {
     browser_web_lines: Vec<WebLine>,
     browser_scroll_offset: usize,
 
-    // VLC Media Player State
-    vlc_tab: String,              // "video", "audio", "stream", "equalizer", "player"
-    vlc_playing: bool,
-    vlc_now_playing_title: String,
-    vlc_now_playing_sub: String,
-    vlc_is_video: bool,
-    vlc_progress_secs: usize,
-    vlc_total_secs: usize,
-    vlc_volume: u8,
-    vlc_speed_idx: usize,
-    vlc_repeat_mode: usize,
-    vlc_shuffle: bool,
-    vlc_sleep_timer: usize,
-    vlc_eq_bands: [i8; 5],
-    vlc_stream_input: String,
-    vlc_stream_cursor: usize,
-    vlc_videos: Vec<VlcVideo>,
-    vlc_audios: Vec<VlcAudio>,
-    vlc_streams: Vec<VlcStream>,
-    vlc_video_idx: usize,
-    vlc_audio_idx: usize,
+    browser_tabs: Vec<BrowserTab>,
+    browser_active_tab: usize,
+    browser_next_tab_id: usize,
+    browser_tab_scroll: i16,
 }
 
 impl SimState {
@@ -1110,88 +1079,9 @@ impl SimState {
             HistoryEntry { url: "https://nilos.dev".into(), title: "NilOS Official Portal".into(), time_str: "১৭:১৫".into() },
         ];
 
-        let vlc_videos = vec![
-            VlcVideo {
-                id: "v1".into(),
-                title: "নীল ওএস পরিচিতি ও সিনটেল অ্যানিমেশন (nilos_intro.mp4)".into(),
-                duration_str: "০১:১৫".into(),
-                resolution: "1080p FHD".into(),
-                codec: "H.264 / AAC".into(),
-                thumb: "🎬".into(),
-                total_secs: 75,
-            },
-            VlcVideo {
-                id: "v2".into(),
-                title: "রবীন্দ্রনাথ ঠাকুরের জীবন ও সাহিত্যগাথা".into(),
-                duration_str: "৩০:২০".into(),
-                resolution: "1080p FHD".into(),
-                codec: "H.264 / FLAC".into(),
-                thumb: "🎥".into(),
-                total_secs: 1820,
-            },
-            VlcVideo {
-                id: "v3".into(),
-                title: "সফটবাস পিয়ার-টু-পিয়ার মেশ ডেমোস্ট্রেশন".into(),
-                duration_str: "০৩:০০".into(),
-                resolution: "1080p 60fps".into(),
-                codec: "AV1 / Opus".into(),
-                thumb: "⚡".into(),
-                total_secs: 180,
-            },
-        ];
-
-        let vlc_audios = vec![
-            VlcAudio {
-                id: "a1".into(),
-                title: "নীল ওএস অফিসিয়াল থিম ট্র্যাক (nilos_theme.mp3)".into(),
-                artist: "নীল ওএস অর্কেস্ট্রা".into(),
-                album: "নিল ওএস সাউন্ডট্র্যাক".into(),
-                duration_str: "০১:২০".into(),
-                bitrate: "MP3 320 kbps".into(),
-                thumb: "🎵".into(),
-                total_secs: 80,
-            },
-            VlcAudio {
-                id: "a2".into(),
-                title: "আগুনের পরশমণি ছোঁয়াও প্রাণে".into(),
-                artist: "রবীন্দ্রনাথ ঠাকুর".into(),
-                album: "পূজা ও প্রার্থনা".into(),
-                duration_str: "০৪:১২".into(),
-                bitrate: "MP3 320 kbps".into(),
-                thumb: "🔥".into(),
-                total_secs: 252,
-            },
-            VlcAudio {
-                id: "a3".into(),
-                title: "ধনধান্য পুষ্পভরা আমাদের এই বসুন্ধরা".into(),
-                artist: "দ্বিজেন্দ্রলাল রায়".into(),
-                album: "স্বদেশ পর্যায়".into(),
-                duration_str: "০৩:৩০".into(),
-                bitrate: "MP3 320 kbps".into(),
-                thumb: "🌾".into(),
-                total_secs: 210,
-            },
-            VlcAudio {
-                id: "a4".into(),
-                title: "কারার ঐ লৌহকপাট ভেঙে ফেল কররে লোপাট".into(),
-                artist: "কাজী নজরুল ইসলাম".into(),
-                album: "অগ্নিবীণা".into(),
-                duration_str: "০৩:১৫".into(),
-                bitrate: "FLAC Lossless".into(),
-                thumb: "⚡".into(),
-                total_secs: 195,
-            },
-        ];
-
-        let vlc_streams = vec![
-            VlcStream { id: "s1".into(), name: "আকাশবাণী কলকাতা (AIR Kolkata Live)".into(), url: "https://air.radiostream.in/kolkata".into(), category: "লাইভ রেডিও".into() },
-            VlcStream { id: "s2".into(), name: "ঢাকা এফএম ৯০.৪ (Dhaka FM HD)".into(), url: "https://stream.dhakafm904.com/live".into(), category: "অনলাইন এফএম".into() },
-            VlcStream { id: "s3".into(), name: "বিবিসি বাংলা লাইভ বুলেটিন".into(), url: "https://stream.bbc.co.uk/bengali".into(), category: "সংবাদ স্ট্রিম".into() },
-            VlcStream { id: "s4".into(), name: "নিল ওএস কমিউনিটি লাইভ স্ট্রিম".into(), url: "rtsp://live.nilos.dev/mesh".into(), category: "RTSP ভিডিও".into() },
-        ];
-
         SimState {
             screen: Screen::Home,
+            home_page: 0,
             user_name: "জয় সরকার".into(),
             pin: "1234".into(),
             pin_input: String::new(),
@@ -1267,26 +1157,12 @@ impl SimState {
             browser_web_lines: initial_web_lines,
             browser_scroll_offset: 0,
 
-            vlc_tab: "video".into(),
-            vlc_playing: true,
-            vlc_now_playing_title: "নীল ওএস কার্নেল ও সফটবাস আর্কিটেকচার".into(),
-            vlc_now_playing_sub: "4K Ultra HD • HEVC • হার্ডওয়্যার অ্যাক্সিলারেশন".into(),
-            vlc_is_video: true,
-            vlc_progress_secs: 45,
-            vlc_total_secs: 245,
-            vlc_volume: 85,
-            vlc_speed_idx: 0,
-            vlc_repeat_mode: 0,
-            vlc_shuffle: false,
-            vlc_sleep_timer: 0,
-            vlc_eq_bands: [3, 1, 0, 2, 4],
-            vlc_stream_input: "https://stream.dhakafm904.com/live".into(),
-            vlc_stream_cursor: 34,
-            vlc_videos,
-            vlc_audios,
-            vlc_streams,
-            vlc_video_idx: 0,
-            vlc_audio_idx: 0,
+            browser_tabs: vec![
+                BrowserTab { id: 1, title: "Google".into(), url: "https://www.google.com".into() },
+            ],
+            browser_active_tab: 0,
+            browser_next_tab_id: 2,
+            browser_tab_scroll: 0,
         }
     }
 
@@ -1721,23 +1597,8 @@ impl SimState {
         self.browser_is_editing_url = true;
     }
 
-    fn vlc_stream_insert_char(&mut self, ch: char) {
-        let mut chars: Vec<char> = self.vlc_stream_input.chars().collect();
-        let cur = self.vlc_stream_cursor.min(chars.len());
-        chars.insert(cur, ch);
-        self.vlc_stream_input = chars.into_iter().collect();
-        self.vlc_stream_cursor += 1;
-    }
 
-    fn vlc_stream_backspace(&mut self) {
-        let mut chars: Vec<char> = self.vlc_stream_input.chars().collect();
-        if self.vlc_stream_cursor > 0 && !chars.is_empty() {
-            let remove_idx = (self.vlc_stream_cursor - 1).min(chars.len() - 1);
-            chars.remove(remove_idx);
-            self.vlc_stream_input = chars.into_iter().collect();
-            self.vlc_stream_cursor = self.vlc_stream_cursor.saturating_sub(1);
-        }
-    }
+    
 
     fn push_term_line(&mut self, text: String, color: u32) {
         const MAX_COLS: usize = 38;
@@ -1882,41 +1743,7 @@ impl SimState {
         }
     }
 
-    fn play_vlc_video(&mut self, idx: usize) {
-        if let Some(v) = self.vlc_videos.get(idx).cloned() {
-            self.vlc_video_idx = idx;
-            self.vlc_now_playing_title = v.title;
-            self.vlc_now_playing_sub = format!("{} • {} • হার্ডওয়্যার অ্যাক্সিলারেশন", v.resolution, v.codec);
-            self.vlc_total_secs = v.total_secs;
-            self.vlc_progress_secs = 0;
-            self.vlc_is_video = true;
-            self.vlc_playing = true;
-            self.vlc_tab = "player".into();
-        }
-    }
 
-    fn play_vlc_audio(&mut self, idx: usize) {
-        if let Some(a) = self.vlc_audios.get(idx).cloned() {
-            self.vlc_audio_idx = idx;
-            self.vlc_now_playing_title = a.title;
-            self.vlc_now_playing_sub = format!("{} — {} ({})", a.artist, a.album, a.bitrate);
-            self.vlc_total_secs = a.total_secs;
-            self.vlc_progress_secs = 0;
-            self.vlc_is_video = false;
-            self.vlc_playing = true;
-            self.vlc_tab = "player".into();
-        }
-    }
-
-    fn play_vlc_stream(&mut self, name: &str, url: &str) {
-        self.vlc_now_playing_title = name.to_string();
-        self.vlc_now_playing_sub = format!("লাইভ স্ট্রিম • {}", url);
-        self.vlc_total_secs = 0;
-        self.vlc_progress_secs = 0;
-        self.vlc_is_video = false;
-        self.vlc_playing = true;
-        self.vlc_tab = "player".into();
-    }
 
     fn exec_term_command(&mut self, raw_cmd: &str) {
         let cmd = raw_cmd.trim();
@@ -1976,10 +1803,10 @@ impl SimState {
         if cmd == "vlc" || cmd.starts_with("vlc ") {
             self.install_pkg("org.videolan.vlc");
             if cmd.starts_with("vlc ") {
-                let target = cmd[4..].trim();
-                self.play_vlc_stream("টার্মিনাল মিডিয়া স্ট্রিম", target);
+                let _target = cmd[4..].trim();
+                self.push_term_line("[*] মিডিয়া চালাতে ব্রাউজারে খুলুন।".into(), COLOR_TEXT_MED);
             }
-            self.screen = Screen::AppVlc;
+            self.screen = Screen::AppBrowser;
             return;
         }
 
@@ -2298,6 +2125,60 @@ impl SimState {
             self.term_lines.remove(0);
         }
     }
+
+    fn new_browser_tab(&mut self, url: &str) {
+        let id = self.browser_next_tab_id;
+        self.browser_next_tab_id += 1;
+        let title = if url.contains("google") {
+            "Google".to_string()
+        } else if url.contains("youtube") {
+            "YouTube".to_string()
+        } else if url.contains("wikipedia") {
+            "Wikipedia".to_string()
+        } else {
+            url.trim_start_matches("https://").trim_start_matches("http://").chars().take(12).collect::<String>()
+        };
+        self.browser_tabs.push(BrowserTab {
+            id,
+            title,
+            url: url.to_string(),
+        });
+        self.browser_active_tab = self.browser_tabs.len() - 1;
+        self.browser_url = url.to_string();
+        self.browser_url_input = url.to_string();
+        self.browser_is_editing_url = false;
+    }
+
+    fn close_browser_tab(&mut self, idx: usize) {
+        if self.browser_tabs.len() <= 1 {
+            self.browser_tabs[0] = BrowserTab {
+                id: 1,
+                title: "Google".into(),
+                url: "https://www.google.com".into(),
+            };
+            self.browser_active_tab = 0;
+            self.browser_url = "https://www.google.com".into();
+            self.browser_url_input = "https://www.google.com".into();
+            return;
+        }
+        self.browser_tabs.remove(idx);
+        if self.browser_active_tab >= self.browser_tabs.len() {
+            self.browser_active_tab = self.browser_tabs.len() - 1;
+        }
+        if let Some(tab) = self.browser_tabs.get(self.browser_active_tab) {
+            self.browser_url = tab.url.clone();
+            self.browser_url_input = tab.url.clone();
+        }
+    }
+
+    fn switch_browser_tab(&mut self, idx: usize) {
+        if idx < self.browser_tabs.len() {
+            self.browser_active_tab = idx;
+            self.browser_url = self.browser_tabs[idx].url.clone();
+            self.browser_url_input = self.browser_tabs[idx].url.clone();
+            self.browser_is_editing_url = false;
+        }
+    }
 }
 
 fn eval_simple_math(expr: &str) -> Result<f64, ()> {
@@ -2326,141 +2207,140 @@ fn eval_simple_math(expr: &str) -> Result<f64, ()> {
 
 
 fn render_home(p: &mut FramePainter, state: &SimState) {
-    let center_x = p.width as i16 / 2;
-    let time_str = get_ist_time_str();
+    if state.home_page == 0 {
+        // ── PAGE 1: Widgets, Figma layout & Dock ─────────────────────────────
+        let u32_slice: &[u32] = unsafe {
+            std::slice::from_raw_parts(
+                HOME_SCREEN_RAW.as_ptr() as *const u32,
+                SCREEN_WIDTH * SCREEN_HEIGHT,
+            )
+        };
+        p.buffer.copy_from_slice(u32_slice);
 
-    // -- Hero wallpaper gradient (deep space blue → translucent bottom)
-    for row in 36..580i16 {
-        let t = (row - 36) as u32;
-        let total = 544u32;
-        // Night sky gradient: very dark blue → slightly warmer dark at bottom
-        let r = 0x04u32 + t * 0x03 / total;
-        let g = 0x07u32 + t * 0x04 / total;
-        let b = 0x13u32 + t * 0x0A / total;
-        p.fill_rect(0, row, p.width as u16, 1, (r << 16) | (g << 8) | b);
+        // Dynamic live time overlay (clean, no "সিম")
+        let time_str = get_ist_time_str();
+        p.draw_text_smooth(16, 5, 12.0, &time_str, 0x000000, true);
+
+        // Weather Card
+        p.register_button(10, 120, 152, 158, "home_weather_card");
+
+        // YouTube Icon
+        p.register_button(182, 202, 54, 54, "app_youtube");
+
+        // WhatsApp Icon
+        p.register_button(248, 202, 54, 54, "app_messages");
+
+        // Page Indicator Pill (y = 566..586): ● ○
+        let center_x = p.width as i16 / 2;
+        p.fill_rounded_rect(center_x - 30, 566, 60, 22, 11, 0x1E153D);
+        p.draw_rect_outline(center_x - 30, 566, 60, 22, 0x4D3A84);
+        p.fill_rounded_rect(center_x - 12, 573, 8, 8, 4, 0xFFFFFF); // Active dot
+        p.fill_rounded_rect(center_x + 6, 574, 6, 6, 3, 0x818CF8);  // Inactive dot
+        p.register_button(center_x - 35, 560, 70, 32, "home_page_toggle");
+
+        // Right side floating pill chevron (tap to go to App Drawer)
+        p.fill_rounded_rect(p.width as i16 - 26, 305, 22, 42, 11, 0x1E153D);
+        p.draw_rect_outline(p.width as i16 - 26, 305, 22, 42, 0x6366F1);
+        p.draw_text_smooth(p.width as i16 - 19, 318, 14.0, ">", 0xFFFFFF, false);
+        p.register_button(p.width as i16 - 36, 290, 36, 70, "home_page_next");
+    } else {
+        // ── PAGE 2: Full App Drawer Grid & Dock ──────────────────────────────
+        let u32_slice: &[u32] = unsafe {
+            std::slice::from_raw_parts(
+                WALLPAPER_RAW.as_ptr() as *const u32,
+                SCREEN_WIDTH * SCREEN_HEIGHT,
+            )
+        };
+        p.buffer.copy_from_slice(u32_slice);
+
+        // Status bar on Page 2
+        let time_str = get_ist_time_str();
+        p.draw_text_smooth(16, 5, 12.0, &time_str, 0x000000, true);
+
+        // Top right status bar icons
+        p.draw_text_smooth((p.width as i16) - 86, 6, 11.5, "৫G", 0x000000, false);
+        let sig_x = (p.width as i16) - 58;
+        for (i, h) in [4, 6, 8, 10].iter().enumerate() {
+            let bx = sig_x + i as i16 * 4;
+            p.fill_rect(bx, 17 - *h, 2, *h as u16, 0x000000);
+        }
+        let bat_x = (p.width as i16) - 36;
+        p.fill_rounded_rect(bat_x, 7, 24, 11, 2, 0x000000);
+        p.fill_rounded_rect(bat_x + 2, 9, 18, 7, 1, COLOR_GREEN);
+        p.fill_rect(bat_x + 24, 9, 2, 6, 0x000000);
+
+        // Header
+        let pw = p.width as i16;
+        p.fill_rounded_rect(10, 36, (pw - 20) as u16, 36, 14, 0x1E1B4B);
+        p.draw_rect_outline(10, 36, (pw - 20) as u16, 36, 0x4338CA);
+        p.draw_text_smooth(22, 45, 14.0, "📱 নীল ওএস অ্যাপস", 0x38BDF8, false);
+        p.draw_text_smooth((pw - 95) as i16, 47, 11.0, "পাতা ২ / ২", 0x94A3B8, false);
+
+        // Search Bar Pill
+        p.fill_rounded_rect(10, 78, (pw - 20) as u16, 34, 12, 0x0F172A);
+        p.draw_rect_outline(10, 78, (pw - 20) as u16, 34, 0x334155);
+        p.draw_text_smooth(20, 87, 12.0, "🔍 অ্যাপ বা প্যাকেজ খুঁজুন...", 0x64748B, false);
+        p.register_button(10, 78, (pw - 20) as u16, 34, "app_nilpkg");
+
+        // 4-Column App Grid (3 Rows = 12 Apps)
+        let col_step: i16 = 78;
+        let row_step: i16 = 84;
+        let grid_x: i16 = (pw - col_step * 4) / 2 + 6;
+        let grid_y: i16 = 124;
+
+        let apps_p2: &[(&str, &str, u32, u32, &str)] = &[
+            ("NOTE", "নোটস",      0x0284C7, COLOR_TEXT_HIGH, "app_notes"),
+            ("CAL",  "গণনা",      0x6366F1, COLOR_TEXT_HIGH, "app_calc"),
+            ("DIR",  "ফাইলস",    0x2563EB, COLOR_TEXT_HIGH, "app_files"),
+            ("SET",  "সেটিংস",   0x9333EA, COLOR_TEXT_HIGH, "app_settings"),
+            ("TEL",  "ফোন",      0x1D4ED8, COLOR_TEXT_HIGH, "app_phone"),
+            ("SMS",  "বার্তা",   0x0891B2, COLOR_TEXT_HIGH, "app_messages"),
+            (">_",   "টার্মিনাল", 0x0F172A, COLOR_CYAN,      "app_terminal"),
+            ("PKG",  "নীলপ্যাক",  0x0D9488, COLOR_TEXT_HIGH, "app_nilpkg"),
+            ("WEB",  "ব্রাউজার",  0xEA580C, COLOR_TEXT_HIGH, "app_browser"),
+            ("BUS",  "সফটবাস",   0x10B981, COLOR_TEXT_HIGH, "app_softbus"),
+            ("SEC",  "নিরাপত্তা", 0xD97706, COLOR_AMBER,     "app_android"),
+            ("CC",   "কন্ট্রোল", 0x3B82F6, COLOR_TEXT_HIGH, "toggle_island"),
+        ];
+
+        for (i, (symbol, label, bg, fg, id)) in apps_p2.iter().enumerate() {
+            let col = (i % 4) as i16;
+            let row = (i / 4) as i16;
+            let ax = grid_x + col * col_step;
+            let ay = grid_y + row * row_step;
+            p.draw_app_icon(ax, ay, symbol, label, *bg, *fg, id);
+        }
+
+        // Page Indicator Pill (y = 566..586): ○ ●
+        let center_x = p.width as i16 / 2;
+        p.fill_rounded_rect(center_x - 30, 566, 60, 22, 11, 0x1E153D);
+        p.draw_rect_outline(center_x - 30, 566, 60, 22, 0x4D3A84);
+        p.fill_rounded_rect(center_x - 12, 574, 6, 6, 3, 0x818CF8);  // Inactive dot
+        p.fill_rounded_rect(center_x + 4, 573, 8, 8, 4, 0xFFFFFF);   // Active dot
+        p.register_button(center_x - 35, 560, 70, 32, "home_page_toggle");
+
+        // Left side floating pill chevron (tap to return to Home)
+        p.fill_rounded_rect(4, 305, 22, 42, 11, 0x1E153D);
+        p.draw_rect_outline(4, 305, 22, 42, 0x6366F1);
+        p.draw_text_smooth(10, 318, 14.0, "<", 0xFFFFFF, false);
+        p.register_button(0, 290, 36, 70, "home_page_prev");
     }
 
-    // Ambient glow behind clock
-    for row in 36..130i16 {
-        let alpha = ((130 - row) as u32 * 14) / 94;
-        let c = blend_pixel(COLOR_BG, 0x0066CC, alpha as u8);
-        p.fill_rect(0, row, p.width as u16, 1, c);
-    }
+    // ── Common Bottom Dock (Always visible on both Page 1 & Page 2) ───────────
+    // 1. WhatsApp/Phone (x=12, y=595, w=66, h=70)
+    p.register_button(12, 595, 66, 70, "app_phone");
 
-    // -- Minimal Clock (big, centered)
-    let tw = p.text_width(44.0, &time_str, false);
-    // Drop shadow
-    p.draw_text_smooth(center_x - tw / 2 + 2, 50, 44.0, &time_str, 0x001633, false);
-    p.draw_text_smooth(center_x - tw / 2, 48, 44.0, &time_str, COLOR_CYAN, false);
+    // 2. Linux Terminal (x=90, y=595, w=70, h=70) -> Opens Real Terminal!
+    p.register_button(90, 595, 70, 70, "app_terminal");
 
-    // Date line
-    let date_str = "মঙ্গলবার, ১ সেপ্টেম্বর ২০২৬";
-    let dw = p.text_width(13.0, date_str, false);
-    p.draw_text_smooth(center_x - dw / 2, 100, 13.0, date_str, COLOR_TEXT_MED, false);
+    // 3. NilZar Chromium Browser (x=170, y=595, w=70, h=70) -> Opens Browser!
+    p.register_button(170, 595, 70, 70, "app_browser");
 
-    // Weather widget
-    let weather_y = 120;
-    let weather_w = (p.width - 32) as u16;
-    p.fill_rounded_rect(16, weather_y, weather_w, 38, 12, blend_pixel(COLOR_SURFACE, COLOR_BG, 100));
-    p.fill_rect(16, weather_y, 3, 38, COLOR_GOLD);
-    p.draw_text_smooth(28, weather_y + 5, 13.0, "☀  ২৮° সে. রৌদ্রোজ্জ্বল  •  আর্দ্রতা ৭২%", COLOR_GOLD, false);
-    p.draw_text_smooth(28, weather_y + 22, 11.0, "কলকাতা, ভারত — বর্তমান IST আবহাওয়া", COLOR_TEXT_DIM, false);
-
-    // Search pill
-    let search_y = 168;
-    let search_w = (p.width - 32) as u16;
-    p.fill_rounded_rect(16, search_y, search_w, 38, 19, COLOR_SURFACE);
-    p.fill_rect(17, search_y, search_w - 2, 1, blend_pixel(COLOR_SURFACE, 0xFFFFFF, 14)); // sheen
-    p.draw_text_smooth(46, search_y + 12, 13.0, "অ্যাপস, ফাইল, সফটবাস অনুসন্ধান...", COLOR_TEXT_DIM, false);
-    p.draw_text_smooth(20, search_y + 12, 13.0, "🔍", COLOR_TEXT_DIM, false);
-    p.register_button(16, search_y, search_w, 38, "home_search");
-
-    // -- App Grid (4-column, 2 rows)
-    let grid_x: i16 = 10;
-    let grid_y: i16 = 218;
-    let col_step: i16 = 90;
-    let row_step: i16 = 100;
-
-    let main_apps: &[(&str, &str, u32, u32, &str)] = &[
-        ("📝", "নোটস",      0x0369A1, COLOR_TEXT_HIGH, "app_notes"),
-        (">_", "টার্মিনাল",  0x0F172A, COLOR_CYAN,      "app_terminal"),
-        ("🦊", "ব্রাউজার",  COLOR_FOX, COLOR_TEXT_HIGH, "app_browser"),
-        ("🟠", "ভিএলসি",   COLOR_VLC, COLOR_TEXT_HIGH, "app_vlc"),
-        ("🧮", "ক্যালকু.",  0x334155, COLOR_TEXT_HIGH, "app_calc"),
-        ("📁", "ফাইলস",    0x1D4ED8, COLOR_TEXT_HIGH, "app_files"),
-        ("⚙", "সেটিংস",   0x7C3AED, COLOR_TEXT_HIGH, "app_settings"),
-        ("📦", "নীলপ্যাক",  0x0E7490, COLOR_TEXT_HIGH, "app_nilpkg"),
-    ];
-
-    for (i, (symbol, label, bg, fg, id)) in main_apps.iter().enumerate().take(8) {
-        let col = (i % 4) as i16;
-        let row = (i / 4) as i16;
-        let ax = grid_x + col * col_step;
-        let ay = grid_y + row * row_step;
-        p.draw_app_icon(ax, ay, symbol, label, *bg, *fg, id);
-    }
-
-    // -- Android Container Widget Card
-    let widget_y = grid_y + 2 * row_step + 8;
-    let widget_w = (p.width - 32) as u16;
-    p.fill_rounded_rect(16, widget_y, widget_w, 64, 14, COLOR_SURFACE);
-    // Green left accent bar
-    p.fill_rounded_rect(16, widget_y, 4, 64, 4, COLOR_GREEN);
-    // Glassy sheen top
-    p.fill_rounded_rect(18, widget_y + 1, widget_w - 4, 8, 4, blend_pixel(COLOR_SURFACE, 0xFFFFFF, 10));
-    p.draw_text_smooth(30, widget_y + 10, 14.0, "🤖  অ্যান্ড্রয়েড AOSP কনটেইনার", COLOR_GREEN, false);
-    p.draw_text_smooth(30, widget_y + 30, 11.5, "LXC আইসোলেটেড | মাইক্রোজি সক্রিয়", COLOR_TEXT_MED, false);
-    p.draw_button((p.width as i16) - 82, widget_y + 16, 66, 32, "▶ চালু", 0x0A2E1A, COLOR_GREEN, "app_android");
-    p.register_button(16, widget_y, widget_w - 80, 64, "app_android");
-
-    // -- Bottom Dock (Hotseat) — glassy rounded pill
-    let dock_y = (p.height as i16) - 148;
-    let dock_w = (p.width - 20) as u16;
-    // Dock background with gradient blur effect
-    for row in 0..86i16 {
-        let alpha = (row as u32 * 130) / 86;
-        let c = blend_pixel(COLOR_BG, COLOR_DOCK_BG, alpha as u8);
-        p.fill_rect(10, dock_y + row, dock_w, 1, c);
-    }
-    p.fill_rounded_rect(10, dock_y, dock_w, 86, 24, blend_pixel(COLOR_DOCK_BG, COLOR_BG, 100));
-    // Glassy top sheen
-    p.fill_rounded_rect(12, dock_y + 1, dock_w - 4, 12, 10, blend_pixel(COLOR_DOCK_BG, 0xFFFFFF, 10));
-    p.draw_rect_outline(10, dock_y, dock_w, 86, blend_pixel(COLOR_BORDER, 0xFFFFFF, 12));
-
-    // Dock divider line
-    p.fill_rect(10 + dock_w as i16 / 4 * 1 - 1, dock_y + 18, 1, 50, blend_pixel(COLOR_DOCK_BG, 0xFFFFFF, 8));
-    p.fill_rect(10 + dock_w as i16 / 4 * 2 - 1, dock_y + 18, 1, 50, blend_pixel(COLOR_DOCK_BG, 0xFFFFFF, 8));
-    p.fill_rect(10 + dock_w as i16 / 4 * 3 - 1, dock_y + 18, 1, 50, blend_pixel(COLOR_DOCK_BG, 0xFFFFFF, 8));
-
-    let dock_apps: &[(&str, &str, u32, u32, &str)] = &[
-        ("📞", "ফোন",   0x15803D, COLOR_TEXT_HIGH, "app_phone"),
-        ("💬", "বার্তা", 0xB45309, COLOR_TEXT_HIGH, "app_messages"),
-        ("📝", "নোটস",  0x0369A1, COLOR_TEXT_HIGH, "app_notes"),
-        ("🟠", "ভিএলসি", COLOR_VLC, COLOR_TEXT_HIGH, "app_vlc"),
-    ];
-
-    let dock_col_w = dock_w as i16 / 4;
-    for (i, (symbol, label, bg, fg, id)) in dock_apps.iter().enumerate() {
-        let ax = 10 + i as i16 * dock_col_w + (dock_col_w - 58) / 2;
-        p.draw_app_icon(ax, dock_y + 6, symbol, label, *bg, *fg, id);
-    }
-
-    // "Swipe up" gesture hint at very bottom
-    let swipe_y = dock_y + 90;
-    let pill_x = center_x - 22;
-    p.fill_rounded_rect(pill_x, swipe_y, 44, 5, 3, blend_pixel(COLOR_TEXT_DIM, COLOR_BG, 60));
-
-    // Notification badge on messages icon if ticks animate
-    if state.term_cursor_ticks % 60 < 30 {
-        let notif_x = 10 + dock_col_w + (dock_col_w - 58) / 2 + 44;
-        p.fill_rounded_rect(notif_x, dock_y + 4, 14, 14, 7, COLOR_RED);
-        p.draw_text_smooth(notif_x + 3, dock_y + 5, 10.0, "৩", COLOR_TEXT_HIGH, false);
-    }
+    // 4. App Store (x=250, y=595, w=70, h=70) -> Opens App Store (NilPkg)!
+    p.register_button(250, 595, 70, 70, "app_nilpkg");
 }
 
-// ─── Screen Renderers ─────────────────────────────────────────────────────────
-
-fn render_status_bar(p: &mut FramePainter, state: &SimState) {
+fn render_status_bar(p: &mut FramePainter, _state: &SimState) {
     // Gradient status bar
     for row in 0..36i16 {
         let t = row as u32;
@@ -2470,59 +2350,68 @@ fn render_status_bar(p: &mut FramePainter, state: &SimState) {
         p.fill_rect(0, row, p.width as u16, 1, (r << 16) | (g << 8) | b);
     }
     let time_str = get_ist_time_str();
-    p.draw_text_smooth(14, 10, 15.0, &time_str, COLOR_TEXT_HIGH, false);
+    p.draw_text_smooth(14, 10, 14.0, &time_str, COLOR_TEXT_HIGH, false);
+
     let center_x = p.width as i16 / 2;
     p.fill_rounded_rect(center_x - 40, 5, 80, 24, 12, 0x000000);
     p.fill_rect(center_x - 4, 12, 8, 10, 0x181F2E);
     p.fill_rounded_rect(center_x + 8, 14, 6, 6, 3, 0x1C2740);
     p.fill_rounded_rect(center_x - 14, 14, 6, 6, 3, 0x1C2740);
     p.register_button(center_x - 40, 5, 80, 24, "toggle_island");
-    let right_x = (p.width as i16) - 88;
-    let signal_label = if state.term_cursor_ticks % 40 < 20 { "৫G ●" } else { "৫G ○" };
-    p.draw_text_smooth(right_x, 10, 12.0, signal_label, COLOR_CYAN, false);
-    let bat_x = right_x + 44;
-    p.fill_rounded_rect(bat_x, 11, 28, 14, 3, 0x1E293B);
-    p.fill_rounded_rect(bat_x + 2, 13, 22, 10, 2, COLOR_GREEN);
-    p.fill_rect(bat_x + 28, 15, 3, 6, COLOR_TEXT_DIM);
+
+    // Clean steady 5G, signal bars, and battery
+    let right_x = (p.width as i16) - 96;
+    p.draw_text_smooth(right_x, 10, 11.5, "৫G", COLOR_CYAN, false);
+
+    let sig_x = right_x + 28;
+    for (i, h) in [4, 6, 8, 10].iter().enumerate() {
+        let bx = sig_x + i as i16 * 4;
+        p.fill_rect(bx, 20 - *h, 2, *h as u16, COLOR_TEXT_HIGH);
+    }
+
+    let bat_x = sig_x + 24;
+    p.fill_rounded_rect(bat_x, 10, 24, 12, 2, 0x1E293B);
+    p.draw_rect_outline(bat_x, 10, 24, 12, 0x64748B);
+    p.fill_rounded_rect(bat_x + 2, 12, 18, 8, 1, COLOR_GREEN);
+    p.fill_rect(bat_x + 24, 13, 2, 6, 0x64748B);
     p.fill_rect(0, 36, p.width as u16, 1, COLOR_BORDER);
 }
 
 fn render_bottom_nav(p: &mut FramePainter, current: &Screen) {
-    let nav_y = (p.height as i16) - 52;
-    for row in 0..52i16 {
+    let nav_y = (p.height as i16) - 50;
+    for row in 0..50i16 {
         let t = row as u32;
         let base = 0x080F1Bu32;
-        let br = ((base >> 16) & 0xFF) + t * 2 / 52;
-
-        let bg = ((base >> 8) & 0xFF) + t / 52;
-        let bb = (base & 0xFF) + t * 4 / 52;
+        let br = ((base >> 16) & 0xFF) + t * 2 / 50;
+        let bg = ((base >> 8) & 0xFF) + t / 50;
+        let bb = (base & 0xFF) + t * 4 / 50;
         p.fill_rect(0, nav_y + row, p.width as u16, 1, (br << 16) | (bg << 8) | bb);
     }
     p.fill_rect(0, nav_y, p.width as u16, 1, COLOR_BORDER);
 
     let btn_w = (p.width as u16 - 16) / 3;
-    let btn_h = 38u16;
+    let btn_h = 36u16;
     let by = nav_y + 7;
 
-    // Back
+    // Back button: pure clean Bengali text
     p.fill_rounded_rect(6, by, btn_w, btn_h, 10, COLOR_SURFACE);
-    p.draw_text_smooth(6 + (btn_w as i16 - p.text_width(13.5, "◁ ব্যাক", false)) / 2, by + 11, 13.5, "◁ ব্যাক", COLOR_TEXT_MED, false);
+    p.draw_text_smooth(6 + (btn_w as i16 - p.text_width(13.5, "ব্যাক", false)) / 2, by + 10, 13.5, "ব্যাক", COLOR_TEXT_MED, false);
     p.register_button(6, by, btn_w, btn_h, "nav_back");
 
-    // Home — highlighted if on home
+    // Home button: highlighted
     let hx = 6 + btn_w as i16 + 6;
     let home_bg = if *current == Screen::Home { 0x0C2E55u32 } else { COLOR_SURFACE };
     p.fill_rounded_rect(hx, by, btn_w, btn_h, 10, home_bg);
     if *current == Screen::Home {
         p.fill_rect(hx + btn_w as i16 / 2 - 16, by + btn_h as i16 - 4, 32, 3, COLOR_CYAN);
     }
-    p.draw_text_smooth(hx + (btn_w as i16 - p.text_width(14.0, "⌂ হোম", false)) / 2, by + 11, 14.0, "⌂ হোম", COLOR_CYAN, false);
+    p.draw_text_smooth(hx + (btn_w as i16 - p.text_width(14.0, "হোম", false)) / 2, by + 10, 14.0, "হোম", COLOR_CYAN, false);
     p.register_button(hx, by, btn_w, btn_h, "nav_home");
 
-    // Lock
+    // Lock button
     let lx = hx + btn_w as i16 + 6;
     p.fill_rounded_rect(lx, by, btn_w, btn_h, 10, COLOR_SURFACE);
-    p.draw_text_smooth(lx + (btn_w as i16 - p.text_width(13.5, "🔒 লক", false)) / 2, by + 11, 13.5, "🔒 লক", COLOR_AMBER, false);
+    p.draw_text_smooth(lx + (btn_w as i16 - p.text_width(13.5, "লক", false)) / 2, by + 10, 13.5, "লক", COLOR_AMBER, false);
     p.register_button(lx, by, btn_w, btn_h, "nav_lock");
 }
 
@@ -2621,419 +2510,68 @@ fn render_lockscreen(p: &mut FramePainter, state: &SimState) {
 }
 
 fn render_app_browser(p: &mut FramePainter, state: &SimState) {
-    // 1. Top Window Bar
-    p.fill_rect(0, 36, p.width as u16, 28, 0x0F172A);
-    let title_display = format!("🌐 {}", safe_truncate(&state.browser_title, 20));
-    p.draw_text_smooth(12, 42, 13.0, &title_display, COLOR_TEXT_HIGH, false);
+    let pw = p.width as i16;
 
-    let hist_bg = if state.browser_show_history { COLOR_CYAN } else { COLOR_SURFACE };
-    let hist_fg = if state.browser_show_history { COLOR_BG } else { COLOR_TEXT_HIGH };
-    p.draw_button((p.width as i16) - 96, 38, 28, 24, "📂", hist_bg, hist_fg, "browser_toggle_history");
+    // 1. Header: NilZar Chromium Browser
+    p.fill_rect(0, 36, p.width as u16, 28, 0x0A101D);
+    p.draw_text_smooth(10, 42, 13.0, "🌐 নীলজার ব্রাউজার (Chromium V8)", 0x38BDF8, false);
 
-    p.draw_button((p.width as i16) - 64, 38, 28, 24, "⭐", COLOR_SURFACE, COLOR_AMBER, "browser_add_bookmark");
+    // 2. Address & Control Bar (y = 66..94)
+    p.fill_rect(0, 64, p.width as u16, 32, 0x0F172A);
+    p.draw_button(6, 68, 28, 24, "<", 0x1E293B, COLOR_TEXT_HIGH, "browser_back");
+    p.draw_button(36, 68, 28, 24, "↻", 0x1E293B, COLOR_TEXT_HIGH, "browser_reload");
 
-    let bm_bg = if state.browser_show_bookmarks { COLOR_CYAN } else { COLOR_SURFACE };
-    let bm_fg = if state.browser_show_bookmarks { COLOR_BG } else { COLOR_TEXT_HIGH };
-    p.draw_button((p.width as i16) - 32, 38, 28, 24, "📖", bm_bg, bm_fg, "browser_toggle_bookmarks");
+    let url_x = 68i16;
+    let url_w = (pw - url_x - 38) as u16;
+    p.fill_rounded_rect(url_x, 68, url_w, 24, 6, 0x1E293B);
+    p.draw_rect_outline(url_x, 68, url_w, 24, 0x334155);
 
-    // 2. Navigation Toolbar
-    let top_y = 66;
-    let btn_w = (p.width - 32) as u16;
-
-    p.draw_button(16, top_y, 28, 32, "◀", COLOR_SURFACE, COLOR_TEXT_HIGH, "browser_back");
-    p.draw_button(48, top_y, 44, 32, "হোম", COLOR_SURFACE, COLOR_CYAN, "browser_home");
-
-    let input_x = 96;
-    let input_w = (btn_w as i16 - 120) as u16;
-    p.fill_rounded_rect(input_x, top_y, input_w, 32, 8, COLOR_SURFACE);
-    p.draw_rect_outline(input_x, top_y, input_w, 32, if state.browser_is_editing_url { COLOR_CYAN } else { COLOR_BORDER });
-
-    let cursor_char = if state.browser_is_editing_url && (state.term_cursor_ticks / 25) % 2 == 0 { "█" } else { "" };
-    let input_disp = format!("{}{}", safe_truncate(&state.browser_url_input, 20), cursor_char);
-    p.draw_text_smooth(input_x + 8, top_y + 8, 12.0, &input_disp, if state.browser_is_editing_url { COLOR_TEXT_HIGH } else { COLOR_CYAN }, false);
-    p.register_button(input_x, top_y, input_w, 32, "browser_url_click");
-
-    let go_x = input_x + input_w as i16 + 4;
-    p.draw_button(go_x, top_y, 36, 32, "গো", COLOR_ACCENT_BG, COLOR_CYAN, "browser_go");
-
-    // 3. Linear Progress Bar
-    let prog_y = 102;
-    if state.browser_loading {
-        p.fill_rect(16, prog_y, btn_w, 3, COLOR_SURFACE);
-        let cur_prog_w = ((btn_w as f32) * state.browser_progress).clamp(10.0, btn_w as f32) as u16;
-        p.fill_rect(16, prog_y, cur_prog_w, 3, COLOR_CYAN);
+    let display_url = if state.browser_is_editing_url {
+        let mut s = state.browser_url_input.clone();
+        if state.term_cursor_ticks % 60 < 30 {
+            s.push('|');
+        }
+        s
     } else {
-        p.fill_rect(16, prog_y, btn_w, 1, 0x1E293B);
+        state.browser_url.clone()
+    };
+    let short_url: String = display_url.chars().take(28).collect();
+    p.draw_text_smooth(url_x + 6, 73, 11.5, &short_url, 0xF8FAFC, false);
+    p.register_button(url_x, 68, url_w, 24, "browser_url_bar");
+
+    p.draw_button(pw - 32, 68, 26, 24, "Go", 0x0284C7, COLOR_TEXT_HIGH, "browser_go");
+
+    // 3. Tab Strip Bar (y = 96..124)
+    p.fill_rect(0, 96, p.width as u16, 28, 0x060913);
+    p.draw_rect_outline(0, 96, p.width as u16, 28, 0x1E293B);
+
+    let mut tab_x = 6i16;
+    for (i, tab) in state.browser_tabs.iter().enumerate() {
+        let is_active = i == state.browser_active_tab;
+        let tab_w = 78u16;
+        let bg = if is_active { 0x0284C7 } else { 0x1E293B };
+        let fg = if is_active { 0xFFFFFF } else { 0x94A3B8 };
+
+        p.fill_rounded_rect(tab_x, 99, tab_w, 22, 4, bg);
+        let title_disp: String = tab.title.chars().take(6).collect();
+        p.draw_text_smooth(tab_x + 6, 104, 10.5, &title_disp, fg, false);
+
+        // Close 'x' button
+        p.draw_text_smooth(tab_x + tab_w as i16 - 16, 104, 10.5, "x", 0xE2E8F0, false);
+        p.register_button(tab_x + tab_w as i16 - 20, 99, 20, 22, &format!("tab_close_{}", i));
+
+        p.register_button(tab_x, 99, tab_w - 20, 22, &format!("tab_select_{}", i));
+        tab_x += tab_w as i16 + 4;
+        if tab_x > pw - 36 { break; }
     }
 
-    // 4. Bookmarks Bar
-    let bm_y = 108;
-    let bookmarks = [
-        ("গুগল", "https://google.com", "bm_google"),
-        ("উইকি", "https://bn.wikipedia.org", "bm_wiki"),
-        ("ডাকডাক", "https://duckduckgo.com", "bm_ddg"),
-        ("গিটহাব", "https://github.com/joysriramsarkar/nilos", "bm_github"),
-    ];
+    // New Tab (+) Button
+    p.draw_button(pw - 28, 99, 22, 22, "+", 0x1E293B, 0x38BDF8, "tab_add");
 
-    let bw = ((p.width - 44) / 4) as u16;
-    for (i, (lbl, _url, id)) in bookmarks.iter().enumerate() {
-        let bx = 16 + i as i16 * (bw as i16 + 4);
-        p.draw_button(bx, bm_y, bw, 26, lbl, COLOR_SURFACE, COLOR_TEXT_MED, id);
-    }
-
-    // 5. Scroll Controls
-    let scroll_y = 138;
-    p.draw_button(16, scroll_y, (btn_w / 2) - 4, 24, "▲ উপরে স্ক্রোল", COLOR_SURFACE, COLOR_TEXT_MED, "browser_scroll_up");
-    p.draw_button(16 + (btn_w / 2) as i16 + 4, scroll_y, (btn_w / 2) - 4, 24, "▼ নিচে স্ক্রোল", COLOR_SURFACE, COLOR_TEXT_MED, "browser_scroll_down");
-
-    // 6. Mobile Web Viewport Canvas
-    let page_y = 166;
-    let page_h = ((p.height as i16) - 76 - page_y).max(200) as u16;
-    let page_w = (p.width - 32) as u16;
-
-    p.fill_rounded_rect(16, page_y, page_w, page_h, 14, 0x070B12);
-    p.draw_rect_outline(16, page_y, page_w, page_h, COLOR_BORDER);
-
-    // SSL Status Header + Direct Full Real Web launcher
-    p.fill_rounded_rect(16, page_y, page_w, 32, 8, 0x141C2B);
-    p.draw_text_smooth(24, page_y + 8, 11.0, &state.browser_status, COLOR_GREEN, false);
-
-    let web_btn_x = (p.width as i16) - 130;
-    p.draw_button(web_btn_x, page_y + 2, 110, 28, "🌐 আসল পেজ", COLOR_ACCENT_BG, COLOR_CYAN, "browser_launch_webview");
-
-    // Web Page Content
-    let max_text_w = (page_w as i16) - 24;
-    let mut current_y = page_y + 36;
-    let visible_lines = state.browser_web_lines.iter().skip(state.browser_scroll_offset);
-
-    for wline in visible_lines {
-        let font_size = if wline.is_heading { 15.0 } else { 13.0 };
-        let wrapped = wrap_text_to_lines(p, &wline.text, max_text_w, font_size);
-
-        for wtext in wrapped {
-            if current_y + (font_size as i16) + 4 > (page_y + page_h as i16 - 8) {
-                break;
-            }
-            p.draw_text_smooth(26, current_y, font_size, &wtext, wline.color, false);
-            current_y += (font_size as i16) + 6;
-        }
-
-        current_y += 4;
-        if current_y > (page_y + page_h as i16 - 12) {
-            break;
-        }
-    }
-
-    // 7. Drawer Overlay: History Panel
-    if state.browser_show_history {
-        let panel_x = 24;
-        let panel_y = 70;
-        let panel_w = (p.width - 48) as u16;
-        let panel_h = (p.height - 150) as u16;
-
-        p.fill_rounded_rect(panel_x, panel_y, panel_w, panel_h, 16, 0x0F172A);
-        p.draw_rect_outline(panel_x, panel_y, panel_w, panel_h, COLOR_CYAN);
-
-        p.draw_text_smooth(panel_x + 16, panel_y + 16, 17.0, "📜 ব্রাউজিং ইতিহাস (History)", COLOR_CYAN, false);
-        p.draw_button(panel_x + panel_w as i16 - 36, panel_y + 12, 24, 24, "✕", COLOR_SURFACE, COLOR_RED, "browser_close_history");
-
-        let mut hy = panel_y + 50;
-        for (i, entry) in state.browser_history.iter().enumerate().take(6) {
-            p.fill_rounded_rect(panel_x + 12, hy, panel_w - 24, 48, 8, COLOR_SURFACE);
-            p.draw_rect_outline(panel_x + 12, hy, panel_w - 24, 48, COLOR_BORDER);
-
-            let disp_title = safe_truncate(&entry.title, 24);
-            p.draw_text_smooth(panel_x + 20, hy + 8, 13.0, &disp_title, COLOR_TEXT_HIGH, false);
-            let disp_url = safe_truncate(&entry.url, 28);
-            p.draw_text_smooth(panel_x + 20, hy + 26, 11.0, &disp_url, COLOR_TEXT_MED, false);
-            p.draw_text_smooth(panel_x + panel_w as i16 - 54, hy + 8, 10.0, &entry.time_str, COLOR_CYAN, false);
-
-            let hid = format!("hist_nav_{}", i);
-            p.register_button(panel_x + 12, hy, panel_w - 24, 48, &hid);
-            hy += 54;
-        }
-
-        p.draw_button(panel_x + 12, panel_y + panel_h as i16 - 44, panel_w - 24, 34, "🗑 সব ইতিহাস মুছুন (Clear All)", COLOR_SURFACE_ALT, COLOR_RED, "browser_clear_history");
-    }
-
-    // 8. Drawer Overlay: Bookmarks Panel
-    if state.browser_show_bookmarks {
-        let panel_x = 24;
-        let panel_y = 70;
-        let panel_w = (p.width - 48) as u16;
-        let panel_h = (p.height - 150) as u16;
-
-        p.fill_rounded_rect(panel_x, panel_y, panel_w, panel_h, 16, 0x0F172A);
-        p.draw_rect_outline(panel_x, panel_y, panel_w, panel_h, COLOR_AMBER);
-
-        p.draw_text_smooth(panel_x + 16, panel_y + 16, 17.0, "⭐ বুকমার্কস (Bookmarks)", COLOR_AMBER, false);
-        p.draw_button(panel_x + panel_w as i16 - 36, panel_y + 12, 24, 24, "✕", COLOR_SURFACE, COLOR_RED, "browser_close_bookmarks");
-
-        let mut by = panel_y + 50;
-        for (i, bm) in state.browser_bookmarks.iter().enumerate().take(6) {
-            p.fill_rounded_rect(panel_x + 12, by, panel_w - 24, 48, 8, COLOR_SURFACE);
-            p.draw_rect_outline(panel_x + 12, by, panel_w - 24, 48, COLOR_BORDER);
-
-            let disp_name = format!("{} {}", bm.icon, safe_truncate(&bm.name, 20));
-            p.draw_text_smooth(panel_x + 20, by + 8, 13.0, &disp_name, COLOR_TEXT_HIGH, false);
-            let disp_url = safe_truncate(&bm.url, 28);
-            p.draw_text_smooth(panel_x + 20, by + 26, 11.0, &disp_url, COLOR_TEXT_MED, false);
-
-            let del_id = format!("bm_del_{}", bm.id);
-            p.draw_button(panel_x + panel_w as i16 - 40, by + 8, 22, 22, "✕", COLOR_SURFACE_ALT, COLOR_RED, &del_id);
-
-            let nav_id = format!("bm_nav_{}", i);
-            p.register_button(panel_x + 12, by, panel_w - 56, 48, &nav_id);
-            by += 54;
-        }
-
-        p.draw_button(panel_x + 12, panel_y + panel_h as i16 - 44, panel_w - 24, 34, "＋ বর্তমান পেজ বুকমার্ক করুন", COLOR_ACCENT_BG, COLOR_CYAN, "browser_add_current_bm");
-    }
-
-    // 9. Bottom Browser Status Strip
-    let bot_y = (p.height as i16) - 72;
-    p.fill_rect(0, bot_y, p.width as u16, 24, 0x080E18);
-    let ready_text = if state.browser_loading { format!("লোড হচ্ছে: {}", safe_truncate(&state.browser_url, 26)) } else { "প্রস্তুত (NilZar Browser Engine)".into() };
-    p.draw_text_smooth(16, bot_y + 4, 11.0, &ready_text, COLOR_TEXT_DIM, false);
+    // 4. WebView2 Container Outline (y = 125..626)
+    p.draw_rect_outline(3, 125, 324, 502, 0x1E293B);
 }
 
-// ─── 4. VLC Media Player Screen (Official VideoLAN libvlc Engine) ──────────────
-fn render_app_vlc(p: &mut FramePainter, state: &SimState) {
-    // 1. VLC Header
-    p.fill_rect(0, 36, p.width as u16, 32, COLOR_VLC);
-    p.draw_text_smooth(12, 42, 16.0, "🟠 VLC Media Player (VideoLAN)", COLOR_TEXT_HIGH, false);
-
-    p.draw_button((p.width as i16) - 64, 40, 26, 24, "🎛️", COLOR_VLC, COLOR_TEXT_HIGH, "vlc_tab_equalizer");
-    p.draw_button((p.width as i16) - 34, 40, 26, 24, "▶", COLOR_VLC, COLOR_TEXT_HIGH, "vlc_tab_player");
-
-    // 2. Navigation Tabs (Video, Audio, Stream, Equalizer)
-    let tab_y = 68;
-    let tab_w = ((p.width - 24) / 4) as u16;
-    let tabs = [
-        ("ভিডিও", "video"),
-        ("অডিও", "audio"),
-        ("স্ট্রিম", "stream"),
-        ("ইকুয়ালাইজার", "equalizer"),
-    ];
-
-    for (i, (label, tid)) in tabs.iter().enumerate() {
-        let tx = 12 + (i as i16 * (tab_w as i16 + 2));
-        let is_active = state.vlc_tab == *tid;
-        let bg = if is_active { COLOR_SURFACE_ALT } else { COLOR_SURFACE };
-        let fg = if is_active { COLOR_VLC } else { COLOR_TEXT_MED };
-        p.draw_button(tx, tab_y, tab_w, 28, label, bg, fg, &format!("vlc_tab_{}", tid));
-    }
-
-    // 3. Tab Contents
-    let content_y = 100;
-    let card_w = (p.width - 24) as u16;
-
-    if state.vlc_tab == "video" {
-        p.draw_text_smooth(16, content_y + 4, 13.0, "লোকাল ভিডিও লাইব্রেরি (৩টি ফাইল)", COLOR_TEXT_MED, false);
-        let mut vy = content_y + 24;
-
-        for (i, v) in state.vlc_videos.iter().enumerate() {
-            p.fill_rounded_rect(12, vy, card_w, 68, 10, COLOR_SURFACE);
-            p.draw_rect_outline(12, vy, card_w, 68, COLOR_BORDER);
-
-            // Thumbnail Badge
-            p.fill_rounded_rect(20, vy + 8, 64, 52, 6, 0x0B1220);
-            p.draw_text_smooth(38, vy + 22, 22.0, &v.thumb, COLOR_VLC, false);
-
-            // Title & Info
-            p.draw_text_smooth(92, vy + 12, 14.0, &safe_truncate(&v.title, 20), COLOR_TEXT_HIGH, false);
-            let sub = format!("{} • {}", v.resolution, v.codec);
-            p.draw_text_smooth(92, vy + 32, 11.0, &sub, COLOR_VLC, false);
-            p.draw_text_smooth(92, vy + 48, 10.0, &format!("সময়: {}", v.duration_str), COLOR_TEXT_DIM, false);
-
-            let play_btn_x = (p.width as i16) - 56;
-            p.draw_button(play_btn_x, vy + 18, 36, 32, "▶", COLOR_VLC, COLOR_BG, &format!("vlc_play_vid_{}", i));
-
-            vy += 76;
-        }
-    } else if state.vlc_tab == "audio" {
-        p.draw_text_smooth(16, content_y + 4, 13.0, "হাই-রেস অডিও ট্র্যাকস (Hi-Res Audio)", COLOR_TEXT_MED, false);
-        let mut ay = content_y + 24;
-
-        for (i, a) in state.vlc_audios.iter().enumerate() {
-            p.fill_rounded_rect(12, ay, card_w, 58, 8, COLOR_SURFACE);
-            p.draw_rect_outline(12, ay, card_w, 58, COLOR_BORDER);
-
-            p.draw_text_smooth(24, ay + 16, 22.0, &a.thumb, COLOR_CYAN, false);
-            p.draw_text_smooth(56, ay + 10, 14.0, &safe_truncate(&a.title, 22), COLOR_TEXT_HIGH, false);
-            let sub = format!("{} • {}", a.artist, a.bitrate);
-            p.draw_text_smooth(56, ay + 30, 11.0, &sub, COLOR_TEXT_MED, false);
-
-            let play_btn_x = (p.width as i16) - 52;
-            p.draw_button(play_btn_x, ay + 14, 34, 30, "▶", COLOR_ACCENT_BG, COLOR_VLC, &format!("vlc_play_aud_{}", i));
-
-            ay += 66;
-        }
-    } else if state.vlc_tab == "stream" {
-        p.draw_text_smooth(16, content_y + 4, 13.0, "লাইভ নেটওয়ার্ক স্ট্রিম (M3U8 / RTSP / HTTP)", COLOR_TEXT_MED, false);
-
-        let input_y = content_y + 24;
-        p.fill_rounded_rect(12, input_y, card_w - 70, 36, 8, COLOR_SURFACE);
-        p.draw_rect_outline(12, input_y, card_w - 70, 36, COLOR_BORDER);
-        let disp_in = safe_truncate(&state.vlc_stream_input, 24);
-        p.draw_text_smooth(20, input_y + 10, 12.0, &disp_in, COLOR_TEXT_HIGH, false);
-
-        let play_str_x = (p.width as i16) - 64;
-        p.draw_button(play_str_x, input_y, 52, 36, "চালান", COLOR_VLC, COLOR_BG, "vlc_play_custom_stream");
-
-        let mut sy = input_y + 48;
-        for (i, s) in state.vlc_streams.iter().enumerate() {
-            p.fill_rounded_rect(12, sy, card_w, 54, 8, COLOR_SURFACE);
-            p.draw_rect_outline(12, sy, card_w, 54, COLOR_BORDER);
-
-            p.draw_text_smooth(24, sy + 10, 13.0, &s.name, COLOR_TEXT_HIGH, false);
-            p.draw_text_smooth(24, sy + 30, 10.0, &s.url, COLOR_VLC, false);
-
-            let sbtn_x = (p.width as i16) - 52;
-            p.draw_button(sbtn_x, sy + 12, 34, 30, "▶", COLOR_ACCENT_BG, COLOR_CYAN, &format!("vlc_play_stream_{}", i));
-            sy += 62;
-        }
-    } else if state.vlc_tab == "equalizer" {
-        p.draw_text_smooth(16, content_y + 4, 14.0, "🎛️ ১০-ব্যান্ড অডিও ইকুয়ালাইজার ও সাউন্ড বুস্ট", COLOR_VLC, false);
-
-        let eq_y = content_y + 28;
-        p.fill_rounded_rect(12, eq_y, card_w, 200, 12, COLOR_SURFACE);
-        p.draw_rect_outline(12, eq_y, card_w, 200, COLOR_BORDER);
-
-        let freqs = ["৬০Hz", "২৩০Hz", "৯১০Hz", "৪kHz", "১৪kHz"];
-        let band_w = (card_w - 24) / 5;
-
-        for (i, &f) in freqs.iter().enumerate() {
-            let bx = 16 + (i as i16 * band_w as i16);
-            let gain = state.vlc_eq_bands[i];
-            let gain_str = format!("{:+2}dB", gain);
-
-            p.draw_text_smooth(bx + 8, eq_y + 12, 11.0, &gain_str, COLOR_VLC, false);
-
-            p.draw_button(bx + 6, eq_y + 32, 28, 24, "+", COLOR_SURFACE_ALT, COLOR_CYAN, &format!("vlc_eq_up_{}", i));
-
-            // Slider Track
-            let track_y = eq_y + 60;
-            let track_h = 70;
-            p.fill_rect(bx + 18, track_y, 4, track_h, 0x1E293B);
-
-            // Thumb
-            let thumb_offset = ((12 - gain) as f32 / 24.0 * (track_h - 10) as f32) as i16;
-            p.fill_rounded_rect(bx + 12, track_y + thumb_offset, 16, 10, 3, COLOR_VLC);
-
-            p.draw_button(bx + 6, eq_y + 134, 28, 24, "-", COLOR_SURFACE_ALT, COLOR_CYAN, &format!("vlc_eq_dn_{}", i));
-            p.draw_text_smooth(bx + 4, eq_y + 164, 11.0, f, COLOR_TEXT_HIGH, false);
-        }
-
-        let pr_y = eq_y + 210;
-        p.draw_text_smooth(16, pr_y, 13.0, "সাউন্ড প্রিসেট: রক | জ্যাজ | ক্লাসিক্যাল | বেস বুস্ট", COLOR_TEXT_MED, false);
-    } else if state.vlc_tab == "player" {
-        // Full Media Player Screen View
-        let player_y = content_y;
-        let player_h = ((p.height as i16) - 60 - player_y).max(240) as u16;
-
-        p.fill_rounded_rect(12, player_y, card_w, player_h, 14, 0x050810);
-        p.draw_rect_outline(12, player_y, card_w, player_h, COLOR_VLC);
-
-        // Visual Display (Video Screen or Rotating Vinyl)
-        let visual_h = 160;
-        p.fill_rounded_rect(16, player_y + 4, card_w - 8, visual_h, 10, 0x0A0F1D);
-
-        let anim_tick = state.term_cursor_ticks;
-        let is_p = state.vlc_playing;
-
-        if state.vlc_is_video {
-            // Live Video Frame Simulation with Animated Waveforms and Starfield
-            let center_x = p.width as i16 / 2;
-            let center_y = player_y + 60;
-
-            for i in 0..12 {
-                let bar_x = 24 + (i as i16 * 26);
-                let height_factor = if is_p {
-                    (((anim_tick * 7 + i * 23) % 40) + 10) as i16
-                } else {
-                    12
-                };
-                let bar_col = if i % 2 == 0 { COLOR_VLC } else { COLOR_CYAN };
-                p.fill_rounded_rect(bar_x, player_y + 110 - height_factor, 18, height_factor as u16, 4, bar_col);
-            }
-
-            p.draw_text_smooth(center_x - 24, center_y - 20, 36.0, "🎬", COLOR_VLC, false);
-            p.draw_text_smooth(24, player_y + 138, 11.0, "● 1080p FHD H.264 / AAC | 60 FPS লাইভ", COLOR_GREEN, false);
-
-            let nat_btn_x = (p.width as i16) - 130;
-            p.draw_button(nat_btn_x, player_y + 130, 110, 26, "▶ আসল প্লেয়ার", COLOR_VLC, COLOR_BG, "vlc_launch_native");
-        } else {
-            let center_x = p.width as i16 / 2;
-            let center_y = player_y + 60;
-
-            for i in 0..12 {
-                let bar_x = 24 + (i as i16 * 26);
-                let height_factor = if is_p {
-                    (((anim_tick * 5 + i * 19) % 45) + 8) as i16
-                } else {
-                    10
-                };
-                let bar_col = if i % 2 == 0 { COLOR_CYAN } else { COLOR_AMBER };
-                p.fill_rounded_rect(bar_x, player_y + 110 - height_factor, 18, height_factor as u16, 4, bar_col);
-            }
-
-            p.draw_text_smooth(center_x - 24, center_y - 20, 36.0, "🎵", COLOR_CYAN, false);
-            p.draw_text_smooth(24, player_y + 138, 11.0, "● হাই-রেস অডিও ইঞ্জিন (MP3/FLAC)", COLOR_CYAN, false);
-
-            let nat_btn_x = (p.width as i16) - 130;
-            p.draw_button(nat_btn_x, player_y + 130, 110, 26, "▶ আসল অডিও", COLOR_CYAN, COLOR_BG, "vlc_launch_native");
-        }
-
-        // Title and Subtitle
-        let meta_y = player_y + visual_h as i16 + 10;
-        p.draw_text_smooth(20, meta_y, 15.0, &safe_truncate(&state.vlc_now_playing_title, 24), COLOR_TEXT_HIGH, false);
-        p.draw_text_smooth(20, meta_y + 20, 11.0, &safe_truncate(&state.vlc_now_playing_sub, 34), COLOR_TEXT_MED, false);
-
-        // Scrubber / Progress Bar
-        let scrub_y = meta_y + 42;
-        let scrub_w = (card_w - 24) as u16;
-        p.fill_rounded_rect(20, scrub_y, scrub_w, 6, 3, 0x1E293B);
-
-        let progress_ratio = if state.vlc_total_secs > 0 {
-            (state.vlc_progress_secs as f32 / state.vlc_total_secs as f32).clamp(0.0, 1.0)
-        } else {
-            0.5
-        };
-        let fill_w = ((scrub_w as f32) * progress_ratio) as u16;
-        p.fill_rounded_rect(20, scrub_y, fill_w.max(4), 6, 3, COLOR_VLC);
-
-        let cur_time_str = format!("{:02}:{:02}", state.vlc_progress_secs / 60, state.vlc_progress_secs % 60);
-        let tot_time_str = format!("{:02}:{:02}", state.vlc_total_secs / 60, state.vlc_total_secs % 60);
-        p.draw_text_smooth(20, scrub_y + 10, 11.0, &to_bengali_digits(&cur_time_str), COLOR_TEXT_MED, false);
-        p.draw_text_smooth((p.width as i16) - 60, scrub_y + 10, 11.0, &to_bengali_digits(&tot_time_str), COLOR_TEXT_MED, false);
-
-        // Player Controls: Prev, Rewind, Play/Pause, Forward, Next
-        let ctrl_y = scrub_y + 28;
-        let btn_gap = 6;
-        let cb_w = (scrub_w - (btn_gap * 4)) / 5;
-
-        p.draw_button(20, ctrl_y, cb_w, 36, "|<", COLOR_SURFACE, COLOR_TEXT_HIGH, "vlc_ctrl_prev");
-        p.draw_button(20 + (cb_w + btn_gap) as i16, ctrl_y, cb_w, 36, "-১০", COLOR_SURFACE, COLOR_TEXT_HIGH, "vlc_ctrl_rew10");
-
-        let play_icon = if state.vlc_playing { "||" } else { "▶" };
-        p.draw_button(20 + 2 * (cb_w + btn_gap) as i16, ctrl_y, cb_w, 36, play_icon, COLOR_VLC, COLOR_BG, "vlc_ctrl_toggle");
-
-        p.draw_button(20 + 3 * (cb_w + btn_gap) as i16, ctrl_y, cb_w, 36, "+১০", COLOR_SURFACE, COLOR_TEXT_HIGH, "vlc_ctrl_fwd10");
-        p.draw_button(20 + 4 * (cb_w + btn_gap) as i16, ctrl_y, cb_w, 36, ">|", COLOR_SURFACE, COLOR_TEXT_HIGH, "vlc_ctrl_next");
-
-        // Speeds & Options
-        let opt_y = ctrl_y + 44;
-        let speeds = ["১.০x", "১.২৫x", "১.৫x", "২.০x"];
-        let spd_label = speeds[state.vlc_speed_idx % 4];
-        p.draw_button(20, opt_y, 70, 28, spd_label, COLOR_SURFACE, COLOR_CYAN, "vlc_ctrl_speed");
-        p.draw_button(96, opt_y, 70, 28, "পুনরাবৃত্তি", COLOR_SURFACE, COLOR_TEXT_MED, "vlc_ctrl_repeat");
-        p.draw_button(172, opt_y, 70, 28, "টাইমার", COLOR_SURFACE, COLOR_TEXT_MED, "vlc_ctrl_timer");
-        p.draw_button(248, opt_y, (card_w as i16 - 240) as u16, 28, "< লাইব্রেরি", COLOR_ACCENT_BG, COLOR_VLC, "vlc_tab_video");
-    }
-}
-
-// ─── 5. ArkTS Notes Application Screen ────────────────────────────────────────
 fn render_app_notes(p: &mut FramePainter, state: &SimState) {
     if state.notes_editing {
         p.draw_text_smooth(16, 44, 18.0, "নোট সম্পাদনা (ArkTS)", COLOR_CYAN, false);
@@ -3631,7 +3169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut buffer: Vec<u32> = vec![COLOR_BG; SCREEN_WIDTH * SCREEN_HEIGHT];
 
     let mut window = Window::new(
-        "NilOS Mobile Simulator (VLC & NilZar Engine)",
+        "NilOS Mobile Simulator (Chromium V8 Engine)",
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
         WindowOptions {
@@ -3640,6 +3178,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..Default::default()
         },
     )?;
+
+    #[cfg(target_os = "windows")]
+    let parent_hwnd = window.get_window_handle() as isize;
+    #[cfg(target_os = "windows")]
+    let mut embedded_browser = nilbrowser::chromium::create_embedded_browser(
+        parent_hwnd,
+        4, 126, 322, 500,
+        "https://www.google.com",
+    ).ok();
 
     #[allow(deprecated)]
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600))); // 60 FPS
@@ -3654,6 +3201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut state = SimState::new();
     let mut was_mouse_down = false;
+    let mut drag_start: Option<(f32, f32)> = None;
 
     println!("[OK] Simulator running at {}x{} with VLC Media Player.", SCREEN_WIDTH, SCREEN_HEIGHT);
 
@@ -3661,17 +3209,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.term_cursor_ticks = state.term_cursor_ticks.wrapping_add(1);
 
         // Advance media progress tick
-        if state.vlc_playing && state.term_cursor_ticks % 60 == 0 {
-            if state.vlc_total_secs > 0 {
-                state.vlc_progress_secs = (state.vlc_progress_secs + 1) % (state.vlc_total_secs + 1);
-            } else {
-                state.vlc_progress_secs = state.vlc_progress_secs.wrapping_add(1);
-            }
-        }
+
 
         // 1. Mouse Scroll Wheel
         if let Some((_x, y_scroll)) = window.get_scroll_wheel() {
-            if state.screen == Screen::AppTerminal {
+            if state.screen == Screen::Home {
+                if y_scroll < 0.0 {
+                    state.home_page = 1; // Scroll down/forward -> App Drawer
+                } else if y_scroll > 0.0 {
+                    state.home_page = 0; // Scroll up/back -> Home Widgets
+                }
+            } else if state.screen == Screen::AppTerminal {
                 if y_scroll > 0.0 {
                     state.term_scroll_offset = state.term_scroll_offset.saturating_add(3);
                 } else if y_scroll < 0.0 {
@@ -3696,11 +3244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Screen::AppBrowser => {
                         state.browser_url_insert_char(ch);
                     }
-                    Screen::AppVlc => {
-                        if state.vlc_tab == "stream" {
-                            state.vlc_stream_insert_char(ch);
-                        }
-                    }
+
                     Screen::NanoEditor => {
                         state.nano_insert_char(ch);
                     }
@@ -3753,20 +3297,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 3. Process Special Keys
         for key in window.get_keys_pressed(KeyRepeat::Yes) {
             match state.screen {
-                Screen::AppVlc => match key {
-                    Key::Space => {
-                        state.vlc_playing = !state.vlc_playing;
-                    }
+
+                Screen::Home => match key {
                     Key::Left => {
-                        state.vlc_progress_secs = state.vlc_progress_secs.saturating_sub(10);
+                        state.home_page = 0;
                     }
                     Key::Right => {
-                        state.vlc_progress_secs = (state.vlc_progress_secs + 10).min(state.vlc_total_secs);
-                    }
-                    Key::Backspace => {
-                        if state.vlc_tab == "stream" {
-                            state.vlc_stream_backspace();
-                        }
+                        state.home_page = 1;
                     }
                     _ => {}
                 },
@@ -3936,13 +3473,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // 4. Render Frame to Buffer
-        for pixel in buffer.iter_mut() {
-            *pixel = COLOR_BG;
-        }
+        // 4. Render Frame to Buffer (Figma 3D Fluid Wallpaper Universal Backdrop)
+        let wp_slice: &[u32] = unsafe {
+            std::slice::from_raw_parts(
+                WALLPAPER_RAW.as_ptr() as *const u32,
+                SCREEN_WIDTH * SCREEN_HEIGHT,
+            )
+        };
+        buffer.copy_from_slice(wp_slice);
 
         let mut painter = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
-        render_status_bar(&mut painter, &state);
+        if state.screen != Screen::Home { render_status_bar(&mut painter, &state); }
 
         match &state.screen {
             Screen::Lockscreen => render_lockscreen(&mut painter, &state),
@@ -3957,14 +3498,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Screen::AppTerminal => render_app_terminal(&mut painter, &state),
             Screen::AppNotes => render_app_notes(&mut painter, &state),
             Screen::AppCalculator => render_app_calculator(&mut painter, &state),
-            Screen::AppMusic => render_app_vlc(&mut painter, &state),
             Screen::AppBrowser => render_app_browser(&mut painter, &state),
-            Screen::AppVlc => render_app_vlc(&mut painter, &state),
             Screen::ControlCenter => render_control_center(&mut painter, &state),
             Screen::NanoEditor => render_nano_editor(&mut painter, &state),
         }
 
-        if state.screen != Screen::Lockscreen && state.screen != Screen::NanoEditor && state.screen != Screen::ControlCenter {
+        if state.screen != Screen::Lockscreen && state.screen != Screen::NanoEditor && state.screen != Screen::ControlCenter && state.screen != Screen::Home {
             render_bottom_nav(&mut painter, &state.screen);
         }
 
@@ -3972,15 +3511,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 5. Process Mouse Touch Interactions
         let mouse_down = window.get_mouse_down(MouseButton::Left);
+        if mouse_down {
+            #[cfg(target_os = "windows")]
+            if let Some((_mx, my)) = window.get_mouse_pos(MouseMode::Pass) {
+                if my < 126.0 || my >= 628.0 {
+                    unsafe {
+                        SetFocus(parent_hwnd);
+                    }
+                }
+            }
+        }
         if mouse_down && !was_mouse_down {
             if let Some((mx, my)) = window.get_mouse_pos(MouseMode::Pass) {
+                drag_start = Some((mx, my));
                 let px = mx as i16;
                 let py = my as i16;
 
                 if let Some(btn) = buttons.iter().find(|b| b.contains(px, py)) {
                     let id = &btn.id;
 
-                    if id == "nav_back" || id == "nav_home" {
+                    if id == "home_page_toggle" {
+                        state.home_page = if state.home_page == 0 { 1 } else { 0 };
+                    } else if id == "home_page_next" {
+                        state.home_page = 1;
+                    } else if id == "home_page_prev" {
+                        state.home_page = 0;
+                    } else if id == "nav_back" || id == "nav_home" {
                         state.screen = Screen::Home;
                     } else if id == "nav_lock" {
                         state.pin_input.clear();
@@ -4024,9 +3580,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let name = id.trim_start_matches("file_act_");
                         let target = PathBuf::from(&state.current_path).join(name);
                         if name.ends_with(".mp4") || name.ends_with(".mkv") || name.ends_with(".avi") {
-                            state.screen = Screen::AppVlc;
+                            state.screen = Screen::AppBrowser;
                         } else if name.ends_with(".mp3") || name.ends_with(".ogg") || name.ends_with(".flac") {
-                            state.screen = Screen::AppVlc;
+                            state.screen = Screen::AppBrowser;
                         } else if name.ends_with(".txt") || name.ends_with(".md") || name.ends_with(".rs") || name.ends_with(".sh") {
                             if let Ok(content) = std::fs::read_to_string(&target) {
                                 state.nano_lines = content.lines().map(String::from).collect();
@@ -4051,207 +3607,72 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else if id == "app_calc" {
                         state.screen = Screen::AppCalculator;
                     } else if id == "app_music" || id == "app_vlc" {
-                        state.screen = Screen::AppVlc;
+                        state.screen = Screen::AppBrowser;
+                    } else if id == "app_youtube" {
+                        state.screen = Screen::AppBrowser;
+                        state.browser_url = "https://youtube.com".into();
+                        state.browser_url_input = "https://youtube.com".into();
+                        state.browser_is_editing_url = false;
+                        #[cfg(target_os = "windows")]
+                        if let Some(ref b) = embedded_browser {
+                            let _ = nilbrowser::chromium::navigate_to(b, "https://youtube.com");
+                        }
+                    } else if id == "home_weather_card" {
+                        state.screen = Screen::AppBrowser;
+                        state.browser_url = "https://www.google.com/search?q=siliguri+weather".into();
+                        state.browser_url_input = "https://www.google.com/search?q=siliguri+weather".into();
+                        state.browser_is_editing_url = false;
+                        #[cfg(target_os = "windows")]
+                        if let Some(ref b) = embedded_browser {
+                            let _ = nilbrowser::chromium::navigate_to(b, "https://www.google.com/search?q=siliguri+weather");
+                        }
+                    } else if id == "tab_add" {
+                        state.new_browser_tab("https://www.google.com");
+                        #[cfg(target_os = "windows")]
+                        if let Some(ref b) = embedded_browser {
+                            let _ = nilbrowser::chromium::navigate_to(b, "https://www.google.com");
+                        }
+                    } else if id.starts_with("tab_select_") {
+                        if let Ok(idx) = id.trim_start_matches("tab_select_").parse::<usize>() {
+                            state.switch_browser_tab(idx);
+                            #[cfg(target_os = "windows")]
+                            if let Some(ref b) = embedded_browser {
+                                let _ = nilbrowser::chromium::navigate_to(b, &state.browser_url);
+                            }
+                        }
+                    } else if id.starts_with("tab_close_") {
+                        if let Ok(idx) = id.trim_start_matches("tab_close_").parse::<usize>() {
+                            state.close_browser_tab(idx);
+                            #[cfg(target_os = "windows")]
+                            if let Some(ref b) = embedded_browser {
+                                let _ = nilbrowser::chromium::navigate_to(b, &state.browser_url);
+                            }
+                        }
+                    } else if id == "browser_reload" {
+                        #[cfg(target_os = "windows")]
+                        if let Some(ref b) = embedded_browser {
+                            let _ = nilbrowser::chromium::reload(b);
+                        }
+                    } else if id == "browser_back" {
+                        #[cfg(target_os = "windows")]
+                        if let Some(ref b) = embedded_browser {
+                            let _ = nilbrowser::chromium::go_back(b);
+                        }
+                    } else if id == "browser_go" {
+                        state.browser_url = state.browser_url_input.clone();
+                        state.browser_is_editing_url = false;
+                        if state.browser_active_tab < state.browser_tabs.len() {
+                            state.browser_tabs[state.browser_active_tab].url = state.browser_url.clone();
+                        }
+                        #[cfg(target_os = "windows")]
+                        if let Some(ref b) = embedded_browser {
+                            let _ = nilbrowser::chromium::navigate_to(b, &state.browser_url);
+                        }
+                    } else if id == "browser_url_bar" {
+                        state.browser_is_editing_url = true;
+                        state.browser_url_input = state.browser_url.clone();
                     } else if id == "app_browser" {
                         state.screen = Screen::AppBrowser;
-                    } else if id == "vlc_tab_video" {
-                        state.vlc_tab = "video".into();
-                    } else if id == "vlc_tab_audio" {
-                        state.vlc_tab = "audio".into();
-                    } else if id == "vlc_tab_stream" {
-                        state.vlc_tab = "stream".into();
-                    } else if id == "vlc_tab_equalizer" {
-                        state.vlc_tab = "equalizer".into();
-                    } else if id == "vlc_tab_player" {
-                        state.vlc_tab = "player".into();
-                    } else if id == "vlc_launch_native" {
-                        let file_path = if state.vlc_is_video {
-                            "storage\\videos\\nilos_intro.mp4"
-                        } else {
-                            "storage\\music\\nilos_theme.mp3"
-                        };
-                        #[cfg(target_os = "windows")]
-                        {
-                            let _ = Command::new("powershell")
-                                .args(["-NoProfile", "-Command", &format!("Start-Process {:?}", file_path)])
-                                .spawn();
-                        }
-                    } else if id.starts_with("vlc_play_vid_") {
-                        if let Ok(idx) = id.trim_start_matches("vlc_play_vid_").parse::<usize>() {
-                            state.play_vlc_video(idx);
-                        }
-                    } else if id.starts_with("vlc_play_aud_") {
-                        if let Ok(idx) = id.trim_start_matches("vlc_play_aud_").parse::<usize>() {
-                            state.play_vlc_audio(idx);
-                        }
-                    } else if id.starts_with("vlc_play_stream_") {
-                        if let Ok(idx) = id.trim_start_matches("vlc_play_stream_").parse::<usize>() {
-                            if let Some(s) = state.vlc_streams.get(idx).cloned() {
-                                state.play_vlc_stream(&s.name, &s.url);
-                            }
-                        }
-                    } else if id == "vlc_play_custom_stream" {
-                        let stream_url = state.vlc_stream_input.clone();
-                        state.play_vlc_stream("লাইভ কাস্টম স্ট্রিম", &stream_url);
-                    } else if id == "vlc_ctrl_toggle" {
-                        state.vlc_playing = !state.vlc_playing;
-                    } else if id == "vlc_ctrl_rew10" {
-                        state.vlc_progress_secs = state.vlc_progress_secs.saturating_sub(10);
-                    } else if id == "vlc_ctrl_fwd10" {
-                        state.vlc_progress_secs = (state.vlc_progress_secs + 10).min(state.vlc_total_secs);
-                    } else if id == "vlc_ctrl_prev" {
-                        if state.vlc_is_video {
-                            let new_idx = (state.vlc_video_idx + state.vlc_videos.len() - 1) % state.vlc_videos.len();
-                            state.play_vlc_video(new_idx);
-                        } else {
-                            let new_idx = (state.vlc_audio_idx + state.vlc_audios.len() - 1) % state.vlc_audios.len();
-                            state.play_vlc_audio(new_idx);
-                        }
-                    } else if id == "vlc_ctrl_next" {
-                        if state.vlc_is_video {
-                            let new_idx = (state.vlc_video_idx + 1) % state.vlc_videos.len();
-                            state.play_vlc_video(new_idx);
-                        } else {
-                            let new_idx = (state.vlc_audio_idx + 1) % state.vlc_audios.len();
-                            state.play_vlc_audio(new_idx);
-                        }
-                    } else if id == "vlc_ctrl_speed" {
-                        state.vlc_speed_idx = (state.vlc_speed_idx + 1) % 4;
-                    } else if id.starts_with("vlc_eq_up_") {
-                        if let Ok(idx) = id.trim_start_matches("vlc_eq_up_").parse::<usize>() {
-                            if idx < 5 && state.vlc_eq_bands[idx] < 12 {
-                                state.vlc_eq_bands[idx] += 1;
-                            }
-                        }
-                    } else if id.starts_with("vlc_eq_dn_") {
-                        if let Ok(idx) = id.trim_start_matches("vlc_eq_dn_").parse::<usize>() {
-                            if idx < 5 && state.vlc_eq_bands[idx] > -12 {
-                                state.vlc_eq_bands[idx] -= 1;
-                            }
-                        }
-                    } else if id == "browser_url_click" {
-                        state.browser_is_editing_url = true;
-                    } else if id == "browser_toggle_history" {
-                        state.browser_show_history = !state.browser_show_history;
-                        state.browser_show_bookmarks = false;
-                    } else if id == "browser_close_history" {
-                        state.browser_show_history = false;
-                    } else if id == "browser_clear_history" {
-                        state.browser_history.clear();
-                    } else if id == "browser_toggle_bookmarks" {
-                        state.browser_show_bookmarks = !state.browser_show_bookmarks;
-                        state.browser_show_history = false;
-                    } else if id == "browser_close_bookmarks" {
-                        state.browser_show_bookmarks = false;
-                    } else if id == "browser_add_bookmark" || id == "browser_add_current_bm" {
-                        state.browser_add_bookmark();
-                    } else if id.starts_with("bm_del_") {
-                        let b_id = id.trim_start_matches("bm_del_");
-                        state.browser_remove_bookmark(b_id);
-                    } else if id.starts_with("bm_nav_") {
-                        if let Ok(idx) = id.trim_start_matches("bm_nav_").parse::<usize>() {
-                            if let Some(b) = state.browser_bookmarks.get(idx) {
-                                let target_url = b.url.clone();
-                                state.browser_fetch_live(&target_url);
-                            }
-                        }
-                    } else if id.starts_with("hist_nav_") {
-                        if let Ok(idx) = id.trim_start_matches("hist_nav_").parse::<usize>() {
-                            if let Some(h) = state.browser_history.get(idx) {
-                                let target_url = h.url.clone();
-                                state.browser_fetch_live(&target_url);
-                            }
-                        }
-                    } else if id == "browser_launch_webview" {
-                        let cur_url = state.browser_url.clone();
-                        let target_url = if cur_url.is_empty() { "https://google.com".to_string() } else { cur_url };
-                        #[cfg(target_os = "windows")]
-                        {
-                            let _ = Command::new("powershell")
-                                .args(["-NoProfile", "-Command", &format!("Start-Process {:?}", target_url)])
-                                .spawn();
-                        }
-                    } else if id == "browser_go" || id == "browser_reload" {
-                        let query = state.browser_url_input.clone();
-                        state.browser_fetch_live(&query);
-                    } else if id == "browser_home" {
-                        state.browser_fetch_live("https://google.com");
-                    } else if id == "browser_back" {
-                        if state.browser_history.len() > 1 {
-                            let prev = state.browser_history[1].url.clone();
-                            state.browser_fetch_live(&prev);
-                        } else {
-                            state.screen = Screen::Home;
-                        }
-                    } else if id == "browser_scroll_up" {
-                        state.browser_scroll_offset = state.browser_scroll_offset.saturating_sub(4);
-                    } else if id == "browser_scroll_down" {
-                        state.browser_scroll_offset = state.browser_scroll_offset.saturating_add(4);
-                    } else if id == "bm_google" {
-                        state.browser_fetch_live("https://google.com");
-                    } else if id == "bm_wiki" {
-                        state.browser_fetch_live("https://bn.wikipedia.org");
-                    } else if id == "bm_github" {
-                        state.browser_fetch_live("https://github.com/joysriramsarkar/nilos");
-                    } else if id == "bm_ddg" {
-                        state.browser_fetch_live("https://duckduckgo.com");
-                    } else if id == "app_notes" {
-                        state.notes_editing = false;
-                        state.screen = Screen::AppNotes;
-                    } else if id == "notes_new" {
-                        state.notes_edit_id = None;
-                        state.notes_edit_title = "নতুন নোট".into();
-                        state.notes_edit_content = "".into();
-                        state.notes_cursor_pos = 0;
-                        state.notes_editing = true;
-                    } else if id == "notes_cancel" {
-                        state.notes_editing = false;
-                    } else if id == "notes_save" {
-                        if let Some(edit_id) = state.notes_edit_id {
-                            if let Some(n) = state.notes.iter_mut().find(|n| n.id == edit_id) {
-                                n.title = if state.notes_edit_title.is_empty() { "নোট".into() } else { state.notes_edit_title.clone() };
-                                n.content = state.notes_edit_content.clone();
-                                n.updated = "এখন".into();
-                            }
-                        } else {
-                            let new_id = state.notes.len() + 1;
-                            state.notes.insert(0, Note {
-                                id: new_id,
-                                title: if state.notes_edit_title.is_empty() { "নোট".into() } else { state.notes_edit_title.clone() },
-                                content: state.notes_edit_content.clone(),
-                                category: if state.notes_category == "সব নোট" { "কাজের নোট".into() } else { state.notes_category.clone() },
-                                updated: "এখন".into(),
-                                pinned: false,
-                                color: COLOR_CYAN,
-                            });
-                        }
-                        state.notes_editing = false;
-                    } else if id.starts_with("notes_cat_") {
-                        let cat = id.trim_start_matches("notes_cat_");
-                        state.notes_category = cat.to_string();
-                    } else if id.starts_with("note_open_") {
-                        if let Ok(nid) = id.trim_start_matches("note_open_").parse::<usize>() {
-                            if let Some(n) = state.notes.iter().find(|n| n.id == nid) {
-                                state.notes_edit_id = Some(n.id);
-                                state.notes_edit_title = n.title.clone();
-                                state.notes_edit_content = n.content.clone();
-                                state.notes_cursor_pos = n.content.chars().count();
-                                state.notes_editing = true;
-                            }
-                        }
-                    } else if id.starts_with("pkg_act_") {
-                        let pkg_id = id.trim_start_matches("pkg_act_");
-                        if state.is_pkg_installed(pkg_id) {
-                            if pkg_id == "org.videolan.vlc" {
-                                state.screen = Screen::AppVlc;
-                            } else if pkg_id == "org.mozilla.fenix" {
-                                state.screen = Screen::AppBrowser;
-                            } else if pkg_id == "com.signal.android" {
-                                state.screen = Screen::AppMessages;
-                            }
-                        } else {
-                            state.install_pkg(pkg_id);
-                        }
                     } else if id.starts_with("calc_key_") {
                         let k = id.trim_start_matches("calc_key_");
                         state.exec_calc_press(k);
@@ -4315,7 +3736,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if cmd == "nano" {
                             state.open_nano("my_note.txt");
                         } else if cmd == "vlc" {
-                            state.screen = Screen::AppVlc;
+                            state.screen = Screen::AppBrowser;
                         } else if cmd == "nilpkg" {
                             state.exec_term_command("nilpkg list");
                         } else {
@@ -4325,7 +3746,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
+        if !mouse_down && was_mouse_down {
+            if let Some((mx, _my)) = window.get_mouse_pos(MouseMode::Pass) {
+                if let Some((sx, _sy)) = drag_start.take() {
+                    if state.screen == Screen::Home {
+                        if sx - mx > 25.0 {
+                            state.home_page = 1; // Swiped Left -> Page 2
+                        } else if mx - sx > 25.0 {
+                            state.home_page = 0; // Swiped Right -> Page 1
+                        }
+                    }
+                }
+            }
+        }
         was_mouse_down = mouse_down;
+
+        #[cfg(target_os = "windows")]
+        if let Some(ref mut b) = embedded_browser {
+            let should_be_visible = state.screen == Screen::AppBrowser;
+            let _ = nilbrowser::chromium::set_visible(b, should_be_visible);
+        }
 
         window.update_with_buffer(&buffer, SCREEN_WIDTH, SCREEN_HEIGHT)?;
     }

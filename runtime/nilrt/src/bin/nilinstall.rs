@@ -1,5 +1,4 @@
 // runtime/nilrt/src/bin/nilinstall.rs — Hardware Disk Partition & System Installer
-use std::process::Command;
 use std::io::{self, Write};
 
 fn main() {

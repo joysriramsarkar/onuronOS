@@ -12,20 +12,25 @@ NilOS combines the reliability of the Linux LTS kernel, the memory safety and ef
 |---|---|---|
 | **x86_64 Boot** | 🟢 Complete | Linux LTS 6.6 + `nilinit` PID 1, verified in QEMU |
 | **QEMU Boot & Automation** | 🟢 Complete | Persistent 256 MB `nilos.img` disk + virtio-blk + NAT networking |
-| **NilOS Mobile Shell** | 🟢 Complete | OOBE → Lock Screen → Home Launcher → 8 apps (ANSI-rendered) |
+| **NilOS Mobile Shell** | 🟢 Complete | OOBE → Lock Screen → Home Launcher → 8 apps (ANSI/minifb rendered) |
 | **Persistent Storage** | 🟢 Complete | `/data` on `/dev/vda` (ext4), fallback to tmpfs; all user data persists |
 | **OOBE First-Boot Wizard** | 🟢 Complete | Name + PIN setup, writes `/data/nilos/oobe_done` flag |
 | **Lock Screen** | 🟢 Complete | PIN unlock, clock/date/weather display |
 | **Home Launcher** | 🟢 Complete | 8-app grid, status bar, notification shade |
 | **Phone App** | 🟢 Working | Dialer pad, call log, contact list (simulated VoLTE) |
-| **Messages App** | 🟢 Working | E2E SMS threads, compose, persistent storage to `/data/sms/` |
+| **Messages App** | 🟢 Working | SMS threads, compose, persistent storage to `/data/sms/` |
 | **Files App** | 🟢 Working | Live directory browser for `/data`, `/etc`, `/tmp`, `/data/app` |
 | **Settings App** | 🟢 Working | 8 sections (Network, Sound, Display, Security, Battery, Storage, etc.) |
-| **System Supervision** | 🟢 Working | `nilinit` supervises 28 daemons (`nild`, `nilkeyd`, `nilbus`, `netd`, …) |
-| **Package Manager (`nilpkg`)** | 🟢 Working | Signed atomic package install to `/data/app/`, app store UI |
-| **SoftBus Distributed Mesh** | 🟡 Prototype | P2P discovery + QUIC socket via `/run/nilos/bus.sock` |
-| **ARM64 Device Port** | 🟡 In Progress | NilHAL GKI/Treble abstraction prepared; PinePhone/Pixel 3a target |
-| **Android Compatibility** | 🟡 Prototype | LXC/Waydroid sandbox + binder-shim architecture ready |
+| **Permission Broker** | 🟢 Working | JSON-persisted grant/revoke with 7-day auto-revoke |
+| **System Supervision** | 🟢 Working | `nilinit` supervises 11 registered daemons with socket activation |
+| **Namespace Sandbox** | 🟢 Working | Real `unshare(CLONE_NEWPID\|CLONE_NEWNS\|CLONE_NEWIPC\|CLONE_NEWUTS)` + `pivot_root`/`chroot` |
+| **Seccomp BPF Filter** | 🟢 Working | Real `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)` — ~110-syscall allowlist |
+| **SoftBus Distributed Mesh** | 🟢 Working | Real mDNS-SD peer discovery + quinn QUIC/TLS 1.3 transport |
+| **Android Container Agent** | 🟢 Working | JSON protocol dispatcher wrapping `am start`/broadcast/`pm list` |
+| **Package Manager (`nilpkg`)** | 🟡 Prototype | Atomic install to `/data/app/`; SHA-256 signing **not yet implemented** (custom FNV hash placeholder) |
+| **Shell Compositor** | 🟡 Prototype | ANSI/minifb pixel-buffer renderer — not a Wayland compositor |
+| **ARM64 Device Port** | 🟡 In Progress | NilHAL GKI/Treble abstraction skeleton; PinePhone/Pixel 3a target |
+| **Android Compatibility** | 🟡 In Progress | LXC/Waydroid container architecture + binder-shim agent (container not yet provisioned) |
 
 
 ---
@@ -96,9 +101,9 @@ nilos/
 │   ├── nilui/                  # Declarative reactive UI framework & animations
 │   ├── nilui-gpu/              # Vulkan 2D renderer, SDF rects & HarfBuzz shaping
 │   └── nilbus-client/          # SoftBus P2P IPC client library
-├── shell/                      # wlroots-based 120Hz Wayland Compositor (nilshell)
-├── softbus/                    # Distributed SoftBus daemon (mDNS + QUIC TLS)
-├── pkg/nilpkg/                 # Atomic, Ed25519-signed Package Manager
+├── shell/                      # ANSI/minifb Mobile Shell Compositor (nilshell)
+├── softbus/                    # Distributed SoftBus daemon (mDNS-SD + QUIC/TLS 1.3)
+├── pkg/nilpkg/                 # Atomic Package Manager (signing: planned)
 ├── services/                   # System Daemons (power, telephony, fscrypt, notify, IME, etc.)
 ├── android/                    # Android compatibility layer & in-container agent
 ├── apps/                       # Native NilOS Applications & Demos
