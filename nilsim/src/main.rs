@@ -1,4 +1,4 @@
-// nilsim/src/main.rs — NilOS Desktop Mobile Simulator (Figma 330x680)
+// nilsim/src/main.rs — Onuron OS Desktop Mobile Simulator (Alap Framework & Figma 330x680)
 
 #[cfg(target_os = "windows")]
 mod nilbrowser;
@@ -269,7 +269,7 @@ fn ensure_nilos_storage() -> (PathBuf, PathBuf) {
     if !hosts_file.exists() {
         let _ = fs::write(
             &hosts_file,
-            "127.0.0.1   localhost nilos\n::1         localhost ip6-localhost ip6-loopback\n192.168.1.100 nildevice.local\n",
+            "127.0.0.1   localhost onuron\n::1         localhost ip6-localhost ip6-loopback\n192.168.1.100 nildevice.local\n",
         );
     }
 
@@ -285,7 +285,7 @@ fn ensure_nilos_storage() -> (PathBuf, PathBuf) {
     if !notes_file.exists() {
         let _ = fs::write(
             &notes_file,
-            "# NilOS ব্যবহার নির্দেশিকা\n\n- টার্মিনাল: `ls -la`, `pwd`, `cat`, `nano`, `uname -a`, `neofetch`, `free -h`\n- ফাইলস অ্যাপ: ফোল্ডারে ক্লিক করে ভিতরে যান\n- ভিএলসি প্লেয়ার: আসল গান ও ভিডিও চালানো যায়\n- নীলপ্যাক: নতুন অ্যাপস ইনস্টল করুন\n",
+            "# অনুরণ ওএস (Onuron OS) ব্যবহার নির্দেশিকা\n\n- টার্মিনাল: `ls -la`, `pwd`, `cat`, `nano`, `uname -a`, `neofetch`, `free -h`\n- ফাইলস অ্যাপ: ফোল্ডারে ক্লিক করে ভিতরে যান\n- ভিএলসি প্লেয়ার: আসল গান ও ভিডিও চালানো যায়\n- নীলপ্যাক: নতুন অ্যাপস ইনস্টল করুন\n",
         );
     }
 
@@ -293,7 +293,7 @@ fn ensure_nilos_storage() -> (PathBuf, PathBuf) {
     if !changelog_file.exists() {
         let _ = fs::write(
             &changelog_file,
-            "NilOS Version 1.7.0 Changelog\n==============================\n[+] Virtual Isolated Linux Filesystem (/home/joy)\n[+] VLC Media Player Integration with live audio/video\n[+] NilZar Web Browser with live HTTP parsing\n[+] Bengali Language & Bangla typography support\n[+] High-performance 5-column responsive app launcher\n",
+            "Onuron OS Version 1.7.0 Changelog\n==============================\n[+] Virtual Isolated Linux Filesystem (/home/joy)\n[+] VLC Media Player Integration with live audio/video\n[+] NilZar Web Browser with live HTTP parsing\n[+] Bengali Language & Bangla typography support\n[+] High-performance 5-column responsive app launcher\n",
         );
     }
 
@@ -971,7 +971,7 @@ impl SimState {
             color: COLOR_CYAN,
         });
         lines.push(TermLine {
-            text: "  নীল ওএস লিনাক্স ব্যাশ টার্মিনাল (NilOS GNU Bash)  ".into(),
+            text: "  অনুরণ ওএস লিনাক্স ব্যাশ টার্মিনাল (Onuron GNU Bash)  ".into(),
             color: COLOR_CYAN,
         });
         lines.push(TermLine {
@@ -1039,7 +1039,7 @@ impl SimState {
                 color: COLOR_BORDER,
             },
             WebLine {
-                text: "• নীল ওএস (NilOS) বাংলা লিনাক্স অপারেটিং সিস্টেমের ১.৬ সংস্করণ প্রকাশ।".into(),
+                text: "• অনুরণ ওএস (Onuron OS) বাংলা লিনাক্স অপারেটিং সিস্টেম সংস্করণ ১.৭ প্রকাশ।".into(),
                 is_heading: false,
                 color: COLOR_TEXT_HIGH,
             },
@@ -1066,7 +1066,7 @@ impl SimState {
         ];
 
         let default_bookmarks = vec![
-            Bookmark { id: "1".into(), name: "NilOS GitHub".into(), url: "https://github.com/joysriramsarkar/nilos".into(), icon: "🏠".into() },
+            Bookmark { id: "1".into(), name: "Onuron GitHub".into(), url: "https://github.com/joysriramsarkar/nilos".into(), icon: "🏠".into() },
             Bookmark { id: "2".into(), name: "Google".into(), url: "https://google.com".into(), icon: "🌐".into() },
             Bookmark { id: "3".into(), name: "উইকিপিডিয়া".into(), url: "https://bn.wikipedia.org".into(), icon: "📚".into() },
             Bookmark { id: "4".into(), name: "DuckDuckGo".into(), url: "https://duckduckgo.com".into(), icon: "🦆".into() },
@@ -1076,7 +1076,7 @@ impl SimState {
         let default_history = vec![
             HistoryEntry { url: "https://google.com".into(), title: "Google Search".into(), time_str: "১৭:২৫".into() },
             HistoryEntry { url: "https://bn.wikipedia.org".into(), title: "উইকিপিডিয়া — মুক্ত বিশ্বকোষ".into(), time_str: "১৭:২০".into() },
-            HistoryEntry { url: "https://nilos.dev".into(), title: "NilOS Official Portal".into(), time_str: "১৭:১৫".into() },
+            HistoryEntry { url: "https://onuron.dev".into(), title: "Onuron OS Official Portal".into(), time_str: "১৭:১৫".into() },
         ];
 
         SimState {
@@ -1275,7 +1275,7 @@ impl SimState {
                     color: COLOR_BORDER,
                 },
                 WebLine {
-                    text: "• নীল ওএস (NilOS) বাংলা লিনাক্স অপারেটিং সিস্টেম সংস্করণ ১.৬ উন্মোচিত।".into(),
+                    text: "• অনুরণ ওএস (Onuron OS) আধুনিক বাংলা লিনাক্স অপারেটিং সিস্টেম উন্মোচিত।".into(),
                     is_heading: false,
                     color: COLOR_TEXT_HIGH,
                 },
@@ -1343,7 +1343,7 @@ impl SimState {
                     color: COLOR_TEXT_HIGH,
                 },
                 WebLine {
-                    text: "নীল ওএস (NilOS) হলো আধুনিক মাইক্রোকার্নেল ভিত্তিক একটি বাংলা ডিস্ট্রিবিউটেড অপারেটিং সিস্টেম।".into(),
+                    text: "অনুরণ ওএস (Onuron OS) হলো আধুনিক মাইক্রোকার্নেল ও আলাপ ফ্রেমওয়ার্ক ভিত্তিক বাংলা অপারেটিং সিস্টেম।".into(),
                     is_heading: false,
                     color: COLOR_TEXT_HIGH,
                 },
@@ -1814,7 +1814,7 @@ impl SimState {
         if cmd == "nilpkg" || cmd.starts_with("nilpkg ") {
             let args: Vec<&str> = cmd.split_whitespace().collect();
             if args.len() == 1 || args.get(1) == Some(&"help") {
-                self.push_term_line("NilPkg Package Manager v1.5 (Official NilOS)".into(), COLOR_CYAN);
+                self.push_term_line("NilPkg Package Manager v1.5 (Official Onuron OS)".into(), COLOR_CYAN);
                 self.push_term_line("ব্যবহার: nilpkg install <pkg>, nilpkg list, nilpkg search".into(), COLOR_TEXT_MED);
                 return;
             }
@@ -2273,7 +2273,7 @@ fn render_home(p: &mut FramePainter, state: &SimState) {
         let pw = p.width as i16;
         p.fill_rounded_rect(10, 36, (pw - 20) as u16, 36, 14, 0x1E1B4B);
         p.draw_rect_outline(10, 36, (pw - 20) as u16, 36, 0x4338CA);
-        p.draw_text_smooth(22, 45, 14.0, "📱 নীল ওএস অ্যাপস", 0x38BDF8, false);
+        p.draw_text_smooth(22, 45, 14.0, "📱 অনুরণ ওএস অ্যাপস", 0x38BDF8, false);
         p.draw_text_smooth((pw - 95) as i16, 47, 11.0, "পাতা ২ / ২", 0x94A3B8, false);
 
         // Search Bar Pill
@@ -2811,9 +2811,9 @@ fn render_nano_editor(p: &mut FramePainter, state: &SimState) {
 // ─── 9. Terminal Screen ───────────────────────────────────────────────────────
 fn render_app_terminal(p: &mut FramePainter, state: &SimState) {
 
-    let mode_label = if state.python_mode { "Python REPL" } else { "NilOS bash" };
+    let mode_label = if state.python_mode { "Python REPL" } else { "Onuron bash" };
     p.fill_rect(0, 36, p.width as u16, 36, 0x020C18);
-    p.draw_text_smooth(12, 42, 14.0, &format!(">_  নীল টার্মিনাল — {}", mode_label), COLOR_GREEN, false);
+    p.draw_text_smooth(12, 42, 14.0, &format!(">_  অনুরণ টার্মিনাল — {}", mode_label), COLOR_GREEN, false);
     p.draw_button((p.width as i16) - 70, 38, 62, 24, if state.python_mode { "bash" } else { "python" }, COLOR_SURFACE, COLOR_AMBER, "term_toggle_python");
 
     let chip_w = ((p.width - 48) / 5) as u16;
@@ -2842,7 +2842,7 @@ fn render_app_terminal(p: &mut FramePainter, state: &SimState) {
     let prompt_prefix = if state.python_mode {
         format!("py>>> {}{}{}", before_cursor, cursor_char, after_cursor)
     } else {
-        format!("joy@nilos:{}$ {}{}{}", state.short_cwd(), before_cursor, cursor_char, after_cursor)
+        format!("joy@onuron:{}$ {}{}{}", state.short_cwd(), before_cursor, cursor_char, after_cursor)
     };
     all_display_lines.push(TermLine { text: prompt_prefix, color: if state.python_mode { COLOR_AMBER } else { COLOR_TEXT_HIGH } });
 
@@ -3055,8 +3055,8 @@ fn render_app_settings(p: &mut FramePainter, state: &SimState) {
 
     p.fill_rect(16, y, card_w, 130, COLOR_SURFACE);
     p.draw_rect_outline(16, y, card_w, 130, COLOR_BORDER);
-    p.draw_text_smooth(28, y + 14, 17.0, "নীল ওএস তথ্য", COLOR_CYAN, false);
-    p.draw_text_smooth(28, y + 42, 14.0, "ভার্সন: NilOS 1.7.0 (VLC & NilZar Edition)", COLOR_TEXT_MED, false);
+    p.draw_text_smooth(28, y + 14, 17.0, "অনুরণ ওএস তথ্য", COLOR_CYAN, false);
+    p.draw_text_smooth(28, y + 42, 14.0, "ভার্সন: Onuron OS 1.7.0 (Alap Edition)", COLOR_TEXT_MED, false);
     p.draw_text_smooth(28, y + 68, 14.0, "সময় অঞ্চল: IST (UTC+5:30) ভারত", COLOR_TEXT_MED, false);
     p.draw_text_smooth(28, y + 94, 14.0, "মিডিয়া কোর: libvlc + OpenType HarfBuzz", COLOR_GREEN, false);
 }
@@ -3161,15 +3161,15 @@ impl minifb::InputCallback for InputHandler {
 // ─── Main Desktop Simulator Loop ──────────────────────────────────────────────
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=========================================================");
-    println!("  NilOS Indian Edition Simulator (VLC & NilZar Engine)   ");
+    println!("  Onuron OS Mobile Simulator (Alap Framework & Chromium)  ");
     println!("=========================================================");
-    println!("[*] Initializing NilOS Core Systems, VideoLAN VLC, and NilZar Browser...");
+    println!("[*] Initializing Onuron Core Systems, Alap Engine, and NilZar Chromium Browser...");
 
     let fonts = FontEngine::load();
     let mut buffer: Vec<u32> = vec![COLOR_BG; SCREEN_WIDTH * SCREEN_HEIGHT];
 
     let mut window = Window::new(
-        "NilOS Mobile Simulator (Chromium V8 Engine)",
+        "Onuron Mobile Simulator (Chromium V8 & Alap Engine)",
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
         WindowOptions {
@@ -3203,7 +3203,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut was_mouse_down = false;
     let mut drag_start: Option<(f32, f32)> = None;
 
-    println!("[OK] Simulator running at {}x{} with VLC Media Player.", SCREEN_WIDTH, SCREEN_HEIGHT);
+    println!("[OK] Simulator running at {}x{} with Onuron OS & Alap Engine.", SCREEN_WIDTH, SCREEN_HEIGHT);
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         state.term_cursor_ticks = state.term_cursor_ticks.wrapping_add(1);

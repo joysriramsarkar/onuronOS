@@ -1,6 +1,6 @@
-# 📘 NilOS (নীল ওএস)
+# 📘 Onuron OS (অনুরণ ওএস)
 
-> **A lightweight, secure, Linux-based mobile OS with a modern Rust userspace and optional Android application compatibility.**
+> **A lightweight, secure, Linux-based mobile OS powered by the Alap (আলাপ) cross-platform framework, with a 100% Rust userspace, native NilLang (.nil) app ecosystem (.nilax), and optional Android container compatibility.**
 
 NilOS combines the reliability of the Linux LTS kernel, the memory safety and efficiency of a 100% Rust userspace, a smooth declarative UI shell, and an isolated containerized Android compatibility layer—built with a bloat-free, zero-telemetry philosophy.
 
@@ -12,7 +12,7 @@ NilOS combines the reliability of the Linux LTS kernel, the memory safety and ef
 |---|---|---|
 | **x86_64 Boot** | 🟢 Complete | Linux LTS 6.6 + `nilinit` PID 1, verified in QEMU |
 | **QEMU Boot & Automation** | 🟢 Complete | Persistent 256 MB `nilos.img` disk + virtio-blk + NAT networking |
-| **NilOS Mobile Shell** | 🟢 Complete | OOBE → Lock Screen → Home Launcher → 8 apps (ANSI/minifb rendered) |
+| **Onuron Mobile Shell** | 🟢 Complete | OOBE → Lock Screen → Home Launcher → 8 apps (ANSI/minifb rendered) |
 | **Persistent Storage** | 🟢 Complete | `/data` on `/dev/vda` (ext4), fallback to tmpfs; all user data persists |
 | **OOBE First-Boot Wizard** | 🟢 Complete | Name + PIN setup, writes `/data/nilos/oobe_done` flag |
 | **Lock Screen** | 🟢 Complete | PIN unlock, clock/date/weather display |
