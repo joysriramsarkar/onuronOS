@@ -23,7 +23,6 @@ pub fn spawn_sandboxed(
     use nix::sys::prctl;
     use nix::unistd::{chroot, pivot_root, Gid, Uid};
     use std::fs;
-    use std::os::unix::process::CommandExt;
     use std::process::Command;
 
     // ── 1. Drop privilege-escalation paths BEFORE namespace entry ────────────

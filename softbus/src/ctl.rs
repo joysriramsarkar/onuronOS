@@ -1,15 +1,13 @@
 // softbus/src/ctl.rs — Unix socket control bridge + QUIC peer handoff routing
 #![cfg(unix)]
 
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixListener as TokioUnixListener;
 
 use crate::mdns::PeerMap;
-use crate::quic::{generate_self_signed_cert, make_server_endpoint, QuicPeerSession};
+use crate::quic::QuicPeerSession;
 use quinn::Endpoint;
 
 pub struct SoftBusControl {

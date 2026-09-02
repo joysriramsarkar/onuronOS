@@ -54,6 +54,7 @@ pub fn make_server_endpoint(
 
 // ── TOFU certificate verifier ─────────────────────────────────────────────────
 
+#[derive(Debug)]
 struct ToFUVerifier {
     expected_id: String,
 }
