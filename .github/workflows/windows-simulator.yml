@@ -1,0 +1,31 @@
+name: NilOS Windows Simulator Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-simulator:
+    name: Build & Package nilsim (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build Simulator (Release)
+        run: cargo build --release -p nilsim
+
+      - name: Upload Simulator Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nilsim-windows-x64
+          path: target/release/nilsim.exe
+          if-no-files-found: error

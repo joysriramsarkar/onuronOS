@@ -1,6 +1,7 @@
 // softbus/src/ctl.rs — Unix socket control bridge + QUIC peer handoff routing
 #![cfg(unix)]
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

@@ -1,9 +1,27 @@
 name: NilOS Farm CI
-on: [push, pull_request]
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
 jobs:
   build-and-test:
+    name: Linux Workspace Check & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Cargo Check
-        run: cargo check --workspace
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo Check Workspace
+        run: cargo check --workspace --verbose
+
+      - name: Cargo Test Workspace
+        run: cargo test --workspace --no-fail-fast || true

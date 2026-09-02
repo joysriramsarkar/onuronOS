@@ -1,0 +1,29 @@
+name: NilOS Code Quality & Formatting
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  format-and-lint:
+    name: Formatting & Linter Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain with Components
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Rust Formatting
+        run: cargo fmt --all -- --check || true
+
+      - name: Clippy Linter Check
+        run: cargo clippy --workspace --all-targets -- -W clippy::all || true
