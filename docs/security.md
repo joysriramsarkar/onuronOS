@@ -1,12 +1,15 @@
-# 🔒 NilOS Security Architecture & Sandboxing
+# 🔒 Onuron OS Security Architecture & Sandboxing
 
-Security and user privacy are foundational requirements of NilOS. The architecture enforces defense-in-depth through mandatory access control, cryptographic verification, hardware-backed encryption, and process isolation.
+Security and user privacy are foundational requirements of Onuron OS. The architecture enforces defense-in-depth through mandatory access control, cryptographic verification, hardware-backed encryption, and process isolation.
+
+Official architectural ecosystem:
+> **"Onuron OS — powered by NilLang + Alap"**
 
 ---
 
 ## 1. SELinux Policy Engine (CIL)
 
-NilOS implements Common Intermediate Language (CIL) SELinux policies in enforcing mode:
+Onuron OS implements Common Intermediate Language (CIL) SELinux policies in enforcing mode:
 
 ```
 security/selinux/
@@ -35,14 +38,23 @@ Every native and third-party application runs inside an isolated sandbox managed
    - `CLONE_NEWIPC`: Isolated inter-process communication queues.
 2. **Seccomp-BPF Filters**:
    - Blacklists dangerous system calls (`ptrace`, `kexec_load`, `bpf`, `reboot`).
-   - Limits file descriptor manipulations and raw socket creations.
+   - Limits file descriptor manipulations and raw socket creations (~110 syscall allowlist).
 3. **Permission Broker (`permbroker`)**:
-   - Capabilities (Camera, Location, Microphone, Contacts, Network) must be brokered over UNIX socket requests to `nilrt`.
-   - Permissions support one-time grants, per-session grants, and automatic revocation after inactivity.
+   - Capabilities (`camera`, `microphone`, `location`, `contacts`, `phone`, `sms`, `bluetooth`, `network`, `storage`, `notifications`) must be brokered over UNIX socket requests to `nilrt`.
+   - Permissions support `DENIED`, `GRANTED`, and `GRANTED_WHILE_IN_USE` with 7-day auto-revocation.
 
 ---
 
-## 3. Storage Encryption (`fscrypt v2` & `nilkeyd`)
+## 3. Cryptographic Package Verification (`nilpkg`)
+
+All `.nilax` packages must be cryptographically signed by an enrolled developer or system authority:
+- **Digest**: SHA-256 integrity hash computed over package payload bytes.
+- **Digital Signature**: Ed25519 public-key signature over canonical manifest metadata.
+- **Enforcement**: Any package with an invalid signature, mismatched hash, or missing signature is rejected at install time.
+
+---
+
+## 4. Storage Encryption (`fscrypt v2` & `nilkeyd`)
 
 User data partitions (`/data/user/<uid>`) are protected using native Linux `fscrypt v2`:
 - Encryption cipher: AES-256-XTS for file contents, AES-256-CTS for filenames.
@@ -54,9 +66,9 @@ User data partitions (`/data/user/<uid>`) are protected using native Linux `fscr
 
 ---
 
-## 4. Zero-Telemetry Charter
+## 5. Zero-Telemetry Charter
 
-NilOS guarantees complete telemetry-free operation:
+Onuron OS guarantees complete telemetry-free operation:
 - **No Diagnostics Call-Homes**: No analytical pings, unique device identifiers, or usage statistics are transmitted to remote servers.
 - **Auditable Builds**: All binaries are built through reproducible pipelines so users can independently verify byte-for-byte fidelity with the source code.
-- **Local-Only Crash Reporting**: `crashd` writes tombstone diagnostics strictly to local encrypted storage (`/data/log/crash/`).
+- **Local-Only Crash Reporting**: `crashd` writes tombstone diagnostics strictly to local encrypted storage (`/data/logs/crash/`).

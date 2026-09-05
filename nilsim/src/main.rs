@@ -1,4 +1,5 @@
 // nilsim/src/main.rs — Onuron OS Desktop Mobile Simulator (Alap Framework & Figma 330x680)
+#![allow(dead_code, unused_variables, unused_imports)]
 
 #[cfg(target_os = "windows")]
 mod nilbrowser;

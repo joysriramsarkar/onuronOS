@@ -1,6 +1,9 @@
-# ⚡ NilOS Boot Process & Init Lifecycle
+# ⚡ Onuron OS Boot Process & Init Lifecycle
 
-This document describes the end-to-end boot sequence of NilOS, from firmware handoff to system supervision.
+This document describes the end-to-end boot sequence of Onuron OS, from firmware handoff to system supervision.
+
+Official architectural ecosystem:
+> **"Onuron OS — powered by NilLang + Alap"**
 
 ---
 
@@ -27,17 +30,26 @@ This document describes the end-to-end boot sequence of NilOS, from firmware han
 
 ---
 
-## 2. Partition Topology (A/B Redundancy)
+## 2. Partition Topology & Mobile Storage Hierarchy
 
-NilOS utilizes standard GPT / UFS partition layouts with A/B slot redundancy to guarantee fail-safe over-the-air updates:
+Onuron OS utilizes standard GPT / UFS partition layouts with A/B slot redundancy to guarantee fail-safe over-the-air updates:
 
 | Partition | Type | Mount Point | Purpose |
 |---|---|---|---|
 | `boot_a` / `boot_b` | Raw | N/A | Linux LTS kernel + boot DTB |
-| `system_a` / `system_b` | ext4 / EROFS | `/` (read-only) | Immutable base system image & binaries |
+| `system_a` / `system_b` | ext4 / EROFS | `/system` | Immutable base system image & binaries |
 | `vendor_a` / `vendor_b` | ext4 / EROFS | `/vendor` | Device-specific HAL blobs and firmware |
+| `cache` | ext4 | `/cache` | Temporary OTA download buffer |
+| `recovery` | ext4 | `/recovery` | Standalone disaster recovery environment |
+| `metadata` | ext4 | `/metadata` | Encryption key metadata & rollback counters |
 | `userdata` | ext4 (fscrypt v2) | `/data` | User application data, encrypted per-user |
-| `vbmeta_a` / `vbmeta_b`| Raw | N/A | Cryptographic hash tree signatures |
+
+### Subdirectories under `/data`:
+- `/data/user/<uid>/` — Sandboxed isolated home directories per application UID
+- `/data/app/` — Atomic `.nilax` package installations
+- `/data/system/` — System settings, PIN hashes, state database
+- `/data/media/` — Photos, music, downloads, external storage mounts
+- `/data/config/` — System configuration flags (e.g. `oobe_done`)
 
 ---
 
@@ -50,26 +62,33 @@ NilOS utilizes standard GPT / UFS partition layouts with A/B slot redundancy to 
    - `/dev` (`devtmpfs`)
    - `/run` (`tmpfs`)
    - `/tmp` (`tmpfs`)
-2. **Cgroups & Slices**: Sets up unified cgroups v2 hierarchy (`/sys/fs/cgroup/nilos.slice`).
-3. **SELinux Policy Injection**: Reads `/etc/selinux/targeted/policy/policy.33` and writes to `/sys/fs/selinux/load`.
-4. **Service Supervision & Socket Activation**: Parses `/etc/nilos/services.toml`.
+2. **Clean Standardized Logging**: Emits clean `[  OK  ]` status notifications to `/dev/kmsg` and `/dev/console`.
+3. **Cgroups & Slices**: Sets up unified cgroups v2 hierarchy (`/sys/fs/cgroup/onuron.slice`).
+4. **SELinux Policy Injection**: Reads `/etc/selinux/targeted/policy/policy.33` and writes to `/sys/fs/selinux/load`.
+5. **Service Supervision & Socket Activation**: Parses `/etc/nilos/services.toml`.
 
 ### Service Topology (`services.toml`)
 
 ```toml
-# Eagerly started core daemon
+# Unified evdev input daemon
 [[services]]
-name = "nild"
-exec = "/usr/bin/nild"
+name = "inputd"
+exec = "/usr/bin/inputd"
 restart = "always"
 
-# Distributed SoftBus
+# Linux sysfs power governor & battery daemon
 [[services]]
-name = "nilbus"
-exec = "/usr/bin/nilbus"
+name = "powerd"
+exec = "/usr/bin/powerd"
 restart = "always"
 
-# Wayland display server
+# Network manager daemon
+[[services]]
+name = "netd"
+exec = "/usr/bin/netd"
+restart = "always"
+
+# Display shell compositor
 [[services]]
 name = "nilshell"
 exec = "/usr/bin/nilshell"
@@ -79,7 +98,7 @@ restart = "always"
 [[services]]
 name = "notifyd"
 exec = "/usr/bin/notifyd"
-socket_activation = "/run/nilos/notify.sock"
+socket_activation = "/run/onuron/notify.sock"
 ```
 
 ---
@@ -87,7 +106,7 @@ socket_activation = "/run/nilos/notify.sock"
 ## 4. Socket Activation Lifecycle
 
 For lazy services (e.g., `notifyd`, `nilimed`, `nilttsd`):
-1. `nilinit` binds the listening UNIX socket at startup (e.g., `/run/nilos/notify.sock`).
+1. `nilinit` binds the listening UNIX socket at startup (e.g., `/run/onuron/notify.sock`).
 2. Sockets are placed in non-blocking mode with event polling.
 3. When a client application attempts to connect, `nilinit` detects the pending connection.
 4. `nilinit` launches the service with file descriptors passed via environment variables (`LISTEN_FDS=1`, `LISTEN_FDNAMES=notifyd`).

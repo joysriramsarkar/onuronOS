@@ -1,6 +1,9 @@
-# 🔌 NilOS Hardware Support & HAL Architecture
+# 🔌 Onuron OS Hardware Support & HAL Architecture
 
-To support a wide range of modern mobile hardware without requiring vendor-specific rewrites, NilOS utilizes a layered driver strategy combining upstream Linux LTS drivers, Android Treble modularity, and Halium/libhybris bridging.
+To support a wide range of modern mobile hardware without requiring vendor-specific rewrites, Onuron OS utilizes a layered driver strategy combining upstream Linux LTS drivers, Android Treble modularity, and Halium/libhybris bridging.
+
+Official architectural ecosystem:
+> **"Onuron OS — powered by NilLang + Alap"**
 
 ---
 
@@ -8,29 +11,29 @@ To support a wide range of modern mobile hardware without requiring vendor-speci
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│                    NilOS Userspace Daemons                 │
-│         (audiod, camerad, nild, netd, nilshell)            │
+│                  Onuron OS Userspace Daemons               │
+│         (audiod, camerad, inputd, powerd, nilshell)        │
 └─────────────────────────────┬──────────────────────────────┘
-                              │ Safe Rust Wrapper
-                              ▼
+                               │ Safe Rust Wrapper
+                               ▼
 ┌────────────────────────────────────────────────────────────┐
 │                       nilhal (Rust)                        │
 │            Safe dlopen loader and device probing           │
 └─────────────────────────────┬──────────────────────────────┘
-                              │ C-ABI Dynamic Linkage
-                              ▼
+                               │ C-ABI Dynamic Linkage
+                               ▼
 ┌────────────────────────────────────────────────────────────┐
 │                   NilHAL C Interface (hal/)                │
 │    libnilhal_display.so · libnilhal_sensor.so · ...        │
 └──────────────┬──────────────────────────────┬──────────────┘
-               │ Native Linux Driver          │ Proprietary Vendor Blob
-               ▼                              ▼
+                │ Native Linux Driver          │ Proprietary Vendor Blob
+                ▼                              ▼
 ┌────────────────────────────┐ ┌─────────────────────────────┐
 │ Upstream Linux Subsystems  │ │ Halium / libhybris Bridge   │
-│ DRM/KMS · PipeWire · iwd   │ │ Bionic → Glibc / Musl Shim  │
+│ DRM/KMS · PipeWire · evdev │ │ Bionic → Glibc / Musl Shim  │
 └──────────────┬─────────────┘ └──────────────┬──────────────┘
-               │                              │
-               ▼                              ▼
+                │                              │
+                ▼                              ▼
 ┌────────────────────────────────────────────────────────────┐
 │                 Linux LTS Kernel + Android GKI             │
 └────────────────────────────────────────────────────────────┘
@@ -38,13 +41,18 @@ To support a wide range of modern mobile hardware without requiring vendor-speci
 
 ---
 
-## 2. Kernel Baseline & Treble Modularity
+## 2. Kernel Baseline & Single Reference Target Strategy
 
-1. **Linux LTS Kernel (5.15 / 6.1 / 6.6)**:
-   - NilOS maintains a minimal defconfig base (`kernel/nilos_defconfig`).
+1. **Linux LTS Kernel (6.6 LTS)**:
+   - Onuron OS maintains minimal defconfig fragments (`kernel/base_defconfig`, `kernel/arm64_defconfig`).
    - Android Generic Kernel Image (GKI) support ensures core kernel updates do not break vendor-specific loadable kernel modules (LKM).
-2. **Device Tree Source (DTS)**:
-   - Hardware topology is discovered purely via Device Tree or ACPI.
+
+2. **Phase 3 Single Reference Hardware Target**:
+   - Rather than fragmenting efforts across multiple devices, Onuron OS targets **PinePhone (Allwinner A64 / Mali-400 MP2)** and **ARM64 QEMU (`-M virt`)** as the primary development platforms.
+   - Hardware interfaces rely on mainline Linux drivers:
+     - Display: Direct DRM/KMS (`sun4i-drm`)
+     - Touch: Goodix GT917-based `evdev` touch controller
+     - Power: AXP803 PMIC power supply subsystem (`/sys/class/power_supply/axp20x-battery`)
 
 ---
 
@@ -63,13 +71,13 @@ use nilhal::display::DisplayDevice;
 
 let display = DisplayDevice::load("/vendor/lib/nilhal/libnilhal_display.so")
     .expect("Failed to load display HAL module");
-display.set_refresh_rate(120);
+display.set_refresh_rate(60);
 ```
 
 ---
 
 ## 4. Proprietary Vendor Driver Bridging (Halium & libhybris)
 
-When porting NilOS to existing Android devices where vendor blobs are compiled exclusively against Android Bionic C runtime:
+When porting Onuron OS to existing Android devices where vendor blobs are compiled exclusively against Android Bionic C runtime:
 - **libhybris**: Provides dynamic linker translation between host GNU/Musl libc and Android Bionic libraries (`/vendor/lib64/*`).
-- Allows NilOS to run Qualcomm Adreno, ARM Mali, or MediaTek proprietary GPU drivers, camera HALs, and audio DSP blobs without requiring vendor source code.
+- Allows Onuron OS to run Qualcomm Adreno, ARM Mali, or MediaTek proprietary GPU drivers, camera HALs, and audio DSP blobs without requiring vendor source code.

@@ -1,4 +1,4 @@
-// nilinit/src/main.rs — PID 1: Mount, Disk Init, OOBE Flag, SELinux, Supervisor, Socket Activation
+// nilinit/src/main.rs — Onuron OS PID 1: Mount, Disk Init, Mobile Storage Hierarchy, SELinux, Supervisor, Socket Activation
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
@@ -33,6 +33,18 @@ fn kmsg(msg: &str) {
     let _ = std::io::stdout().flush();
 }
 
+fn log_ok(msg: &str) {
+    kmsg(&format!("\x1b[1;32m[  OK  ]\x1b[0m {}", msg));
+}
+
+fn log_warn(msg: &str) {
+    kmsg(&format!("\x1b[1;33m[ WARN ]\x1b[0m {}", msg));
+}
+
+fn log_info(msg: &str) {
+    kmsg(&format!("\x1b[1;36m[ INFO ]\x1b[0m {}", msg));
+}
+
 fn mount_early_fs() {
     #[cfg(target_os = "linux")]
     {
@@ -54,7 +66,8 @@ fn mount_early_fs() {
                 None::<&str>,
             );
         }
-        let _ = fs::create_dir_all("/run/nilos");
+        let _ = fs::create_dir_all("/run/onuron");
+        let _ = fs::create_dir_all("/run/nilos"); // backward-compatibility alias
 
         // Attach stdout/stderr to console or ttyS0
         unsafe {
@@ -70,7 +83,7 @@ fn mount_early_fs() {
             }
         }
     }
-    kmsg("[nilinit] Early virtual filesystems mounted (/proc, /sys, /dev, /run, /tmp).");
+    log_ok("Early virtual filesystems mounted (/proc, /sys, /dev, /run, /tmp)");
 }
 
 fn mount_data_partition() {
@@ -110,12 +123,12 @@ fn mount_data_partition() {
 
                 match result {
                     Ok(_) => {
-                        kmsg(&format!("[nilinit] Data partition mounted: {} → /data", dev));
+                        log_ok(&format!("Persistent storage mounted: {} → /data", dev));
                         mounted = true;
                         break;
                     }
                     Err(e) => {
-                        kmsg(&format!("[nilinit] Could not mount {} as ext4/ext2: {} — trying next", dev, e));
+                        log_warn(&format!("Could not mount {} as ext4/ext2: {} — trying next", dev, e));
                     }
                 }
             }
@@ -130,24 +143,28 @@ fn mount_data_partition() {
                 nix::mount::MsFlags::empty(),
                 Some("size=64M"),
             );
-            kmsg("[nilinit] WARNING: No persistent disk found — /data is tmpfs (ephemeral)");
+            log_warn("No persistent disk found — /data is tmpfs (ephemeral)");
         }
     }
 
-    // Ensure essential data subdirectories exist
+    // Standard Android/Linux mobile storage hierarchy:
+    // /system, /vendor, /cache, /recovery, /metadata
+    // /data/user, /data/app, /data/system, /data/media, /data/config
     for dir in &[
-        "/data/nilos", "/data/app", "/data/user", "/data/config",
-        "/data/contacts", "/data/sms", "/data/media", "/data/logs",
+        "/system", "/vendor", "/cache", "/recovery", "/metadata",
+        "/data/user", "/data/app", "/data/system", "/data/media",
+        "/data/config", "/data/contacts", "/data/sms", "/data/logs",
+        "/data/nilos", // backward compatibility for existing prototypes
     ] {
         let _ = fs::create_dir_all(dir);
     }
-    kmsg("[nilinit] Data directories initialized under /data.");
+    log_ok("Mobile filesystem hierarchy initialized (/data/user, /data/app, /data/system, /system)");
 }
 
 fn check_live_install() {
     if let Ok(cmdline) = fs::read_to_string("/proc/cmdline") {
-        if cmdline.contains("nilos.install=1") {
-            kmsg("[nilinit] Detected live installer mode! Launching nilinstall...");
+        if cmdline.contains("onuron.install=1") || cmdline.contains("nilos.install=1") {
+            log_info("Detected live installer mode! Launching nilinstall...");
             let _ = Command::new("/usr/bin/nilinstall").status();
         }
     }
@@ -157,27 +174,37 @@ fn load_selinux() {
     if let Ok(mut f) = File::open("/sys/fs/selinux/load") {
         if let Ok(policy) = fs::read("/etc/selinux/targeted/policy/policy.33") {
             let _ = f.write_all(&policy);
-            kmsg("[nilinit] SELinux policy loaded in enforcing mode.");
+            log_ok("SELinux policy loaded in enforcing mode");
         }
     }
 }
 
 fn setup_cgroups() {
+    let _ = fs::create_dir_all("/sys/fs/cgroup/onuron.slice");
     let _ = fs::create_dir_all("/sys/fs/cgroup/nilos.slice");
+    log_ok("Cgroups v2 control group initialized (/sys/fs/cgroup/onuron.slice)");
 }
 
 fn write_system_env() {
-    // Set NILOS_OOBE_DONE env variable for spawned services to read
-    let oobe_done = std::path::Path::new("/data/nilos/oobe_done").exists();
-    let _ = fs::write("/run/nilos/env", format!("NILOS_OOBE_DONE={}\n", if oobe_done { "1" } else { "0" }));
+    // Set ONURON_OOBE_DONE / NILOS_OOBE_DONE env variable for spawned services
+    let oobe_done = std::path::Path::new("/data/config/oobe_done").exists()
+        || std::path::Path::new("/data/nilos/oobe_done").exists();
+
+    let env_content = format!(
+        "ONURON_OOBE_DONE={}\nNILOS_OOBE_DONE={}\n",
+        if oobe_done { "1" } else { "0" },
+        if oobe_done { "1" } else { "0" }
+    );
+    let _ = fs::write("/run/onuron/env", &env_content);
+    let _ = fs::write("/run/nilos/env", &env_content);
 }
 
 fn main() {
     mount_early_fs();
 
-    kmsg("=========================================================");
-    kmsg("        NilOS Initializing (PID 1 System Supervisor)     ");
-    kmsg("=========================================================");
+    kmsg("\x1b[1;36m=========================================================\x1b[0m");
+    kmsg("\x1b[1;36m       Onuron OS Initializing (PID 1 System Init)        \x1b[0m");
+    kmsg("\x1b[1;36m=========================================================\x1b[0m");
 
     setup_cgroups();
     mount_data_partition();
@@ -187,11 +214,13 @@ fn main() {
 
     let boot_start = Instant::now();
 
-    let oobe_done = std::path::Path::new("/data/nilos/oobe_done").exists();
+    let oobe_done = std::path::Path::new("/data/config/oobe_done").exists()
+        || std::path::Path::new("/data/nilos/oobe_done").exists();
+
     if !oobe_done {
-        kmsg("[nilinit] First boot detected — OOBE wizard will be shown by nilshell.");
+        log_info("First boot detected — OOBE setup wizard will be launched by shell");
     } else {
-        kmsg("[nilinit] System configured — starting normally.");
+        log_ok("System configured — normal operational mode active");
     }
 
     let config_str = fs::read_to_string("/etc/nilos/services.toml")
@@ -199,7 +228,7 @@ fn main() {
     let config: Config = match toml::from_str(&config_str) {
         Ok(c) => c,
         Err(e) => {
-            kmsg(&format!("[nilinit] FATAL: Could not parse services.toml: {}", e));
+            kmsg(&format!("\x1b[1;31m[ FATAL ]\x1b[0m Could not parse services.toml: {}", e));
             loop { thread::sleep(Duration::from_secs(60)); }
         }
     };
@@ -212,27 +241,27 @@ fn main() {
             let _ = activator.register(&s.name, sock_path);
         }
     }
+    log_ok("Socket activation manager initialized");
 
     for s in &config.services {
         if s.socket_activation.is_none() {
-            kmsg(&format!("[nilinit] Spawning service: {}", s.name));
             let parts: Vec<&str> = s.exec.split_whitespace().collect();
             if let Some((bin, args)) = parts.split_first() {
                 match Command::new(bin).args(args).spawn() {
                     Ok(child) => {
-                        kmsg(&format!("[nilinit] Service '{}' started (PID {})", s.name, child.id()));
+                        log_ok(&format!("Service '{}' started (PID {})", s.name, child.id()));
                         running.insert(s.name.clone(), child);
                     }
                     Err(e) => {
-                        kmsg(&format!("[nilinit] Note: Service '{}' not available: {}", s.name, e));
+                        log_warn(&format!("Service '{}' not available: {}", s.name, e));
                     }
                 }
             }
         }
     }
 
-    kmsg(&format!(
-        "[nilinit] System boot complete in {:.2} ms. {} service(s) active.",
+    log_ok(&format!(
+        "Onuron OS boot completed in {:.2} ms ({} services active)",
         boot_start.elapsed().as_secs_f64() * 1000.0,
         running.len()
     ));
@@ -243,7 +272,7 @@ fn main() {
         for name in pending {
             if !running.contains_key(&name) {
                 if let Some(s) = config.services.iter().find(|svc| svc.name == name) {
-                    kmsg(&format!("[nilinit:activate] Waking lazy service: {}", name));
+                    log_info(&format!("Waking socket-activated service: {}", name));
                     let parts: Vec<&str> = s.exec.split_whitespace().collect();
                     if let Some((bin, args)) = parts.split_first() {
                         let mut cmd = Command::new(bin);
@@ -264,12 +293,12 @@ fn main() {
         for (name, child) in running.iter_mut() {
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    kmsg(&format!("[nilinit] Service '{}' exited ({})", name, status));
+                    log_warn(&format!("Service '{}' exited with status: {}", name, status));
                     dead.push(name.clone());
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    kmsg(&format!("[nilinit] Error polling '{}': {}", name, e));
+                    log_warn(&format!("Error polling service '{}': {}", name, e));
                     dead.push(name.clone());
                 }
             }
@@ -279,7 +308,7 @@ fn main() {
             running.remove(&name);
             if let Some(s) = config.services.iter().find(|svc| svc.name == name) {
                 if s.restart == "always" {
-                    kmsg(&format!("[nilinit] Auto-restarting: {}", name));
+                    log_info(&format!("Auto-restarting supervisor daemon: {}", name));
                     let parts: Vec<&str> = s.exec.split_whitespace().collect();
                     if let Some((bin, args)) = parts.split_first() {
                         if let Ok(child) = Command::new(bin).args(args).spawn() {

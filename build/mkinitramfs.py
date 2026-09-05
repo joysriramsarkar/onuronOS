@@ -147,7 +147,7 @@ def prepare_rootfs():
 
     bins = [
         "nilinit", "nild", "nilkeyd", "nilbus", "nilshell",
-        "netd", "audiod", "powerd", "notifyd", "nilpkg",
+        "inputd", "netd", "audiod", "powerd", "notifyd", "nilpkg",
         "settings", "oobe", "hello", "launcher", "nilimed", "nilttsd",
         "logd", "clipd", "btd", "vpnd", "thermald", "alarmd",
         "userd", "crashd", "nilandroidd", "nilinstall", "nilup", "nilperf"

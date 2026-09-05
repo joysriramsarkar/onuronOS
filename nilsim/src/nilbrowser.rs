@@ -1,5 +1,6 @@
 // NilOS WebView2 (Evergreen Chromium) Embedded Browser
 // Uses Microsoft WebView2 COM API to embed the real Chromium/V8 engine inside the NilOS phone frame
+#![allow(dead_code, unused_variables, unused_imports)]
 
 #[cfg(target_os = "windows")]
 pub mod chromium {

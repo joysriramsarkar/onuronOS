@@ -8,6 +8,7 @@ members = [
   "services/nilstore",
   "services/notifyd",
   "services/nilimed",
+  "services/inputd",
   "services/powerd",
   "services/crashd",
   "services/camerad",
