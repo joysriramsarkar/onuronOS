@@ -61,6 +61,7 @@ members = [
   "tools/nilup",
   "tools/nilstore",
   "android/agent",
+  "android-host",
 ]
 
 [profile.release]

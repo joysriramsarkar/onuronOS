@@ -184,6 +184,11 @@ struct GuiState {
     current_path: String,
     installed_pkgs: Vec<String>,
     wifi_enabled: bool,
+    wifi_signal_level: u8,
+    cellular_enabled: bool,
+    cellular_signal_level: u8,
+    battery_level: u8,
+    battery_charging: bool,
     bt_enabled: bool,
     softbus_enabled: bool,
     dark_mode: bool,
@@ -237,6 +242,11 @@ impl GuiState {
                 "com.nil.softbus".into(),
             ],
             wifi_enabled: true,
+            wifi_signal_level: 3,
+            cellular_enabled: true,
+            cellular_signal_level: 4,
+            battery_level: 100,
+            battery_charging: false,
             bt_enabled: true,
             softbus_enabled: true,
             dark_mode: true,
@@ -503,12 +513,85 @@ impl<'a, C: Connection> Painter<'a, C> {
 
 // ─── Screen Renderers ─────────────────────────────────────────────────────────
 
-fn render_status_bar<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
+fn render_status_bar<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
     p.fill_rect(0, 0, p.width, 36, 0x080C14);
     p.draw_text(16, 12, 2, "NilOS", COLOR_CYAN);
-    
-    let right_x = (p.width as i16) - 150;
-    p.draw_text(right_x, 12, 2, "5G  *  100%", COLOR_TEXT_MED);
+
+    // Dynamic right-side indicators
+    let mut cur_x = (p.width as i16) - 170;
+
+    // 1. Wi-Fi Indicator (3 arcs + toggle)
+    if state.wifi_enabled {
+        let col = if state.wifi_signal_level >= 2 { COLOR_CYAN } else { COLOR_AMBER };
+        p.draw_text(cur_x, 12, 2, "WF", col);
+        let wx = cur_x + 22;
+        p.fill_rect(wx, 12, 10, 2, if state.wifi_signal_level >= 3 { col } else { 0x334155 });
+        p.fill_rect(wx + 2, 16, 6, 2, if state.wifi_signal_level >= 2 { col } else { 0x334155 });
+        p.fill_rect(wx + 4, 20, 2, 2, if state.wifi_signal_level >= 1 { col } else { 0x334155 });
+    } else {
+        p.draw_text(cur_x, 12, 2, "WF", COLOR_TEXT_DIM);
+        p.draw_text(cur_x + 20, 12, 2, "X", COLOR_RED);
+    }
+    p.register_button(cur_x - 4, 0, 36, 36, "toggle_wifi");
+    cur_x += 42;
+
+    // 2. Cellular Generation Badge & Dynamic Signal Tower (4 vertical bars)
+    if state.cellular_enabled {
+        let (badge, badge_col) = match state.cellular_signal_level {
+            4 | 3 => ("5G", COLOR_CYAN),
+            2 => ("4G", COLOR_BLUE),
+            1 => ("3G", COLOR_AMBER),
+            _ => ("E ", COLOR_RED),
+        };
+        p.draw_text(cur_x, 12, 2, badge, badge_col);
+
+        let sx = cur_x + 22;
+        let heights = [4i16, 7, 10, 14];
+        let base_y = 26i16;
+        for (i, &h) in heights.iter().enumerate() {
+            let bx = sx + i as i16 * 4;
+            let by = base_y - h;
+            let bar_col = if (i as u8) < state.cellular_signal_level {
+                COLOR_TEXT_HIGH
+            } else {
+                0x2D3748
+            };
+            p.fill_rect(bx, by, 2, h as u16, bar_col);
+        }
+    } else {
+        p.draw_text(cur_x, 12, 2, "OFF", COLOR_TEXT_DIM);
+        let sx = cur_x + 30;
+        let heights = [4i16, 7, 10, 14];
+        let base_y = 26i16;
+        for (i, &h) in heights.iter().enumerate() {
+            let bx = sx + i as i16 * 4;
+            let by = base_y - h;
+            p.fill_rect(bx, by, 2, h as u16, 0x2D3748);
+        }
+    }
+    p.register_button(cur_x - 4, 0, 48, 36, "cycle_signal");
+    cur_x += 54;
+
+    // 3. Dynamic Battery with Charging State
+    let bat_x = cur_x;
+    p.draw_rect_outline(bat_x, 12, 22, 12, COLOR_TEXT_MED);
+    p.fill_rect(bat_x + 22, 15, 2, 6, COLOR_TEXT_MED);
+
+    let fill_w = ((state.battery_level as u16 * 18) / 100).max(2).min(18);
+    let fill_col = if state.battery_level <= 20 {
+        COLOR_RED
+    } else if state.battery_level <= 40 {
+        COLOR_AMBER
+    } else {
+        COLOR_GREEN
+    };
+    p.fill_rect(bat_x + 2, 14, fill_w, 8, fill_col);
+
+    if state.battery_charging {
+        p.draw_text(bat_x + 6, 12, 2, "+", COLOR_TEXT_HIGH);
+    }
+    p.register_button(bat_x - 2, 0, 32, 36, "toggle_battery");
+
     p.fill_rect(0, 36, p.width, 1, COLOR_BORDER);
 }
 
@@ -823,21 +906,28 @@ fn render_app_settings<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
     let mut y = 90;
 
     let toggles = [
-        ("Wi-Fi Network", state.wifi_enabled, "toggle_wifi"),
-        ("Bluetooth", state.bt_enabled, "toggle_bt"),
-        ("SoftBus Mesh", state.softbus_enabled, "toggle_softbus"),
-        ("Dark Mode Theme", state.dark_mode, "toggle_theme"),
+        ("Wi-Fi Network", if state.wifi_enabled { "[ ON ]" } else { "[ OFF ]" }, if state.wifi_enabled { COLOR_GREEN } else { COLOR_TEXT_DIM }, "toggle_wifi"),
+        ("Cellular 5G/4G Data", if state.cellular_enabled { "[ ON ]" } else { "[ OFF ]" }, if state.cellular_enabled { COLOR_GREEN } else { COLOR_TEXT_DIM }, "toggle_cellular"),
+        ("Signal Strength (1-4)", match state.cellular_signal_level {
+            4 => "[ 4/4 5G ]",
+            3 => "[ 3/4 5G ]",
+            2 => "[ 2/4 4G ]",
+            1 => "[ 1/4 3G ]",
+            _ => "[ 0/4 E ]",
+        }, COLOR_CYAN, "cycle_signal"),
+        ("Battery Power State", if state.battery_charging { "[ Charging ]" } else { "[ Normal ]" }, if state.battery_charging { COLOR_AMBER } else { COLOR_GREEN }, "toggle_battery"),
+        ("Bluetooth", if state.bt_enabled { "[ ON ]" } else { "[ OFF ]" }, if state.bt_enabled { COLOR_GREEN } else { COLOR_TEXT_DIM }, "toggle_bt"),
+        ("SoftBus Mesh", if state.softbus_enabled { "[ ON ]" } else { "[ OFF ]" }, if state.softbus_enabled { COLOR_GREEN } else { COLOR_TEXT_DIM }, "toggle_softbus"),
+        ("Dark Mode Theme", if state.dark_mode { "[ ON ]" } else { "[ OFF ]" }, if state.dark_mode { COLOR_GREEN } else { COLOR_TEXT_DIM }, "toggle_theme"),
     ];
 
-    for (label, val, id) in toggles {
-        p.fill_rect(20, y, card_w, 52, COLOR_SURFACE);
-        p.draw_rect_outline(20, y, card_w, 52, COLOR_BORDER);
-        p.draw_text(36, y + 18, 2, label, COLOR_TEXT_HIGH);
-
-        let (status, color) = if val { ("[ ON ]", COLOR_GREEN) } else { ("[ OFF ]", COLOR_TEXT_DIM) };
-        p.draw_text((p.width as i16) - 100, y + 18, 2, status, color);
-        p.register_button(20, y, card_w, 52, id);
-        y += 60;
+    for (label, status, color, id) in toggles {
+        p.fill_rect(20, y, card_w, 46, COLOR_SURFACE);
+        p.draw_rect_outline(20, y, card_w, 46, COLOR_BORDER);
+        p.draw_text(36, y + 16, 2, label, COLOR_TEXT_HIGH);
+        p.draw_text((p.width as i16) - 130, y + 16, 2, status, color);
+        p.register_button(20, y, card_w, 46, id);
+        y += 52;
     }
 
     // About NilOS System Card
@@ -1293,6 +1383,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Settings Toggles
                     else if id == "toggle_wifi" {
                         state.wifi_enabled = !state.wifi_enabled;
+                    } else if id == "toggle_cellular" {
+                        state.cellular_enabled = !state.cellular_enabled;
+                    } else if id == "cycle_signal" {
+                        if state.cellular_enabled {
+                            state.cellular_signal_level = match state.cellular_signal_level {
+                                4 => 3,
+                                3 => 2,
+                                2 => 1,
+                                1 => 0,
+                                _ => 4,
+                            };
+                        } else {
+                            state.cellular_enabled = true;
+                            state.cellular_signal_level = 4;
+                        }
+                    } else if id == "toggle_battery" {
+                        state.battery_charging = !state.battery_charging;
+                        if state.battery_charging {
+                            state.battery_level = 100;
+                        } else {
+                            state.battery_level = 78;
+                        }
                     } else if id == "toggle_bt" {
                         state.bt_enabled = !state.bt_enabled;
                     } else if id == "toggle_softbus" {

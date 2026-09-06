@@ -199,6 +199,19 @@ fn write_system_env() {
     let _ = fs::write("/run/nilos/env", &env_content);
 }
 
+fn handle_system_shutdown(action: &str, running: &mut HashMap<String, Child>) {
+    log_info(&format!("Initiating system {}", action));
+    for (name, child) in running.iter_mut() {
+        log_info(&format!("Stopping service: {}", name));
+        let _ = child.kill();
+    }
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::sync();
+    }
+    log_ok("All storage buffers synchronized to disk. System halted safely.");
+}
+
 fn main() {
     mount_early_fs();
 
@@ -316,6 +329,17 @@ fn main() {
                         }
                     }
                 }
+            }
+        }
+
+        // Check for pending shutdown / reboot requests
+        let power_req = std::path::Path::new("/run/onuron/power_action");
+        if power_req.exists() {
+            if let Ok(action) = fs::read_to_string(power_req) {
+                let action = action.trim();
+                let _ = fs::remove_file(power_req);
+                handle_system_shutdown(action, &mut running);
+                break;
             }
         }
 

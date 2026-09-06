@@ -3,7 +3,7 @@
 // Renders via ANSI escape codes on /dev/console + /dev/ttyS0
 
 use std::fs::{self};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, Write};
 use std::path::Path;
 
 // ─── ANSI Colors ──────────────────────────────────────────────────────────────
@@ -68,6 +68,9 @@ struct AppState {
     files_path: String,
     pkg_cursor: usize,
     call_number: String,
+    wifi_enabled: bool,
+    cellular_enabled: bool,
+    signal_bars: u8,
 }
 
 impl AppState {
@@ -138,6 +141,9 @@ impl AppState {
             files_path: "/data".into(),
             pkg_cursor: 0,
             call_number: String::new(),
+            wifi_enabled: true,
+            cellular_enabled: true,
+            signal_bars: 4,
         }
     }
 
@@ -182,9 +188,21 @@ fn read_line() -> String {
 }
 
 fn status_bar(state: &AppState) -> String {
+    let wifi_ico = if state.wifi_enabled { "📶 Wi-Fi" } else { "✕ Wi-Fi" };
+    let cell_str = if state.cellular_enabled {
+        match state.signal_bars {
+            4 => "▂▄▆█ 5G",
+            3 => "▂▄▆_ 5G",
+            2 => "▂▄__ 4G",
+            1 => "▂___ 3G",
+            _ => "____ No Svc",
+        }
+    } else {
+        "✈️ Offline"
+    };
     format!(
-        "{}  📶 NilOS │ {} │ 🔋 100%  {}",
-        FG_BLACK_ON_WHITE, state.user_name, R
+        "{}  {} │ {} │ {} │ 🔋 88%  {}",
+        FG_BLACK_ON_WHITE, wifi_ico, cell_str, state.user_name, R
     )
 }
 
@@ -306,9 +324,20 @@ fn draw_lockscreen(sink: &mut Sink, state: &AppState, error: bool) {
 fn draw_home(sink: &mut Sink, state: &AppState) {
     sink.print(CL);
     sink.println(&status_bar(state));
-    sink.println(&format!("{}", FG_CYAN));
+    let wifi_badge = if state.wifi_enabled { "📶 Wi-Fi" } else { "✕ Wi-Fi" };
+    let cell_badge = if state.cellular_enabled {
+        match state.signal_bars {
+            4 => "▂▄▆█ 5G",
+            3 => "▂▄▆_ 5G",
+            2 => "▂▄__ 4G",
+            1 => "▂___ 3G",
+            _ => "____ No Svc",
+        }
+    } else {
+        "✈️ Offline"
+    };
     sink.println("  ╭────────────────────────────────────────────────────────╮");
-    sink.println(&format!("  │  📶 5G    {}{}12:45 PM{}    🔔  🔋 100%                 │", FG_WHITE, B, FG_CYAN));
+    sink.println(&format!("  │  {}  {}    {}{}12:45 PM{}    🔔  🔋 88%       │", wifi_badge, cell_badge, FG_WHITE, B, FG_CYAN));
     sink.println("  ├────────────────────────────────────────────────────────┤");
     sink.println("  │                                                        │");
     sink.println(&format!("  │                   {}{}12:45{}                            │", FG_WHITE, B, FG_CYAN));
@@ -462,7 +491,7 @@ fn draw_settings(sink: &mut Sink) {
     sink.print(&format!("  {}> {}", FG_CYAN, R));
 }
 
-fn draw_settings_section(sink: &mut Sink, section: usize) {
+fn draw_settings_section(sink: &mut Sink, section: usize, state: &AppState) {
     let names = ["Network", "Sound", "Display", "Security", "Battery", "Storage", "Accessibility", "About"];
     let name = names.get(section).copied().unwrap_or("Unknown");
     sink.print(CL);
@@ -471,10 +500,11 @@ fn draw_settings_section(sink: &mut Sink, section: usize) {
     sink.println("");
     match section {
         0 => {
-            sink.println("  Wi-Fi:       [OFF]  (wpa_supplicant not yet running)");
+            sink.println(&format!("  Wi-Fi:       [{}]  (Type 'toggle wifi' or 'wifi' to toggle)", if state.wifi_enabled { "ON" } else { "OFF" }));
+            sink.println(&format!("  Mobile Data: [{}]  (Type 'toggle data' or 'data' to toggle)", if state.cellular_enabled { "ON" } else { "OFF" }));
+            sink.println(&format!("  Signal:      [{}/4 Bars] (Type 'signal 1'-'signal 4' to adjust)", state.signal_bars));
             sink.println("  Bluetooth:   [OFF]  (btd daemon registered)");
             sink.println("  SoftBus:     [ON]   Control socket: /run/nilos/bus.sock");
-            sink.println("  Mobile Data: [N/A]  oFono telephony in Phase 3");
         }
         3 => {
             sink.println("  PIN Lock:        [ENABLED]");
@@ -586,7 +616,7 @@ fn draw_terminal(sink: &mut Sink, state: &AppState) {
     sink.print(&format!("  {}nilos# {}", FG_GREEN, R));
 }
 
-fn handle_terminal_cmd(sink: &mut Sink, state: &mut AppState, cmd: &str) {
+fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
     let output = match cmd {
         "help" => {
             "Commands: services, mem, disk, net, ps, cat <file>, ls <dir>, uname, reboot, home".to_string()
@@ -702,7 +732,7 @@ fn main() {
             Screen::AppFiles       => draw_files(&mut sink, &state),
             Screen::AppSettings    => {
                 if let Some(sec) = settings_in_section {
-                    draw_settings_section(&mut sink, sec);
+                    draw_settings_section(&mut sink, sec, &state);
                 } else {
                     draw_settings(&mut sink);
                 }
@@ -871,6 +901,15 @@ fn main() {
                 if let Some(_sec) = settings_in_section {
                     if cmd == "back" { settings_in_section = None; }
                     else if cmd == "home" { screen = Screen::Home; settings_in_section = None; }
+                    else if cmd == "toggle wifi" || cmd == "wifi" {
+                        state.wifi_enabled = !state.wifi_enabled;
+                    } else if cmd == "toggle data" || cmd == "data" {
+                        state.cellular_enabled = !state.cellular_enabled;
+                    } else if cmd.starts_with("signal ") {
+                        if let Ok(b) = cmd.trim_start_matches("signal ").trim().parse::<u8>() {
+                            state.signal_bars = b.min(4);
+                        }
+                    }
                 } else {
                     if cmd == "home" || cmd == "back" {
                         screen = Screen::Home;

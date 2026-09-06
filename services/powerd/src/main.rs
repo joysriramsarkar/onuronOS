@@ -39,6 +39,7 @@ pub struct PowerGovernor {
     screen_timeout_secs: u64,
     last_user_activity: Instant,
     screen_on: bool,
+    perf_mode: nilhal::traits::PerformanceMode,
 }
 
 impl PowerGovernor {
@@ -48,6 +49,7 @@ impl PowerGovernor {
             screen_timeout_secs: 60,
             last_user_activity: Instant::now(),
             screen_on: true,
+            perf_mode: nilhal::traits::PerformanceMode::Balanced,
         }
     }
 
@@ -67,6 +69,22 @@ impl PowerGovernor {
         self.wakelocks.iter().cloned().collect()
     }
 
+    pub fn set_performance_mode(&mut self, mode: nilhal::traits::PerformanceMode) {
+        self.perf_mode = mode;
+    }
+
+    pub fn performance_mode(&self) -> &nilhal::traits::PerformanceMode {
+        &self.perf_mode
+    }
+
+    pub fn set_screen_timeout(&mut self, secs: u64) {
+        self.screen_timeout_secs = secs;
+    }
+
+    pub fn screen_timeout(&self) -> u64 {
+        self.screen_timeout_secs
+    }
+
     pub fn notify_activity(&mut self) {
         self.last_user_activity = Instant::now();
         self.screen_on = true;
@@ -80,54 +98,24 @@ impl PowerGovernor {
     }
 }
 
-/// Read battery telemetry from Linux sysfs (/sys/class/power_supply/)
-pub fn read_sysfs_battery() -> BatteryInfo {
-    let power_supply = Path::new("/sys/class/power_supply");
-    if power_supply.exists() {
-        if let Ok(entries) = fs::read_dir(power_supply) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().to_lowercase();
-                if name.contains("bat") || name.contains("battery") || name.contains("axp20x") {
-                    let dir = entry.path();
-                    let capacity = fs::read_to_string(dir.join("capacity"))
-                        .ok()
-                        .and_then(|s| s.trim().parse::<u8>().ok())
-                        .unwrap_or(85);
+/// Read battery telemetry using NilHAL (sysfs, Android Host Bridge, or QEMU)
+pub fn read_battery_info() -> BatteryInfo {
+    let hal = nilhal::NilHal::auto();
+    let hal_bat = hal.power.get_battery_info();
 
-                    let status = fs::read_to_string(dir.join("status"))
-                        .map(|s| s.trim().to_string())
-                        .unwrap_or_else(|_| "Discharging".into());
-
-                    let is_charging = status.eq_ignore_ascii_case("charging");
-
-                    let voltage_mv = fs::read_to_string(dir.join("voltage_now"))
-                        .ok()
-                        .and_then(|s| s.trim().parse::<u32>().ok())
-                        .map(|uv| uv / 1000)
-                        .unwrap_or(3800);
-
-                    let temp_c = fs::read_to_string(dir.join("temp"))
-                        .ok()
-                        .and_then(|s| s.trim().parse::<f32>().ok())
-                        .map(|t| t / 10.0)
-                        .unwrap_or(30.0);
-
-                    return BatteryInfo {
-                        capacity,
-                        status,
-                        is_charging,
-                        voltage_mv,
-                        temp_c,
-                        health: "Good".into(),
-                        is_simulated: false,
-                    };
-                }
-            }
-        }
+    BatteryInfo {
+        capacity: hal_bat.capacity,
+        status: hal_bat.status,
+        is_charging: hal_bat.is_charging,
+        voltage_mv: hal_bat.voltage_mv,
+        temp_c: hal_bat.temp_c,
+        health: hal_bat.health,
+        is_simulated: hal.backend_type == nilhal::BackendType::Qemu,
     }
+}
 
-    // Default development fallback (QEMU / desktop test)
-    BatteryInfo::default()
+pub fn read_sysfs_battery() -> BatteryInfo {
+    read_battery_info()
 }
 
 pub fn set_backlight(level: u32) -> Result<(), String> {

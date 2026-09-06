@@ -5,6 +5,9 @@ pub mod testharness;
 pub mod share;
 pub mod a11y;
 pub mod widget;
+pub mod render;
+
+pub use render::*;
 
 #[cfg(unix)]
 use std::io::Write;

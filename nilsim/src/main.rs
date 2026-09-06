@@ -888,6 +888,11 @@ struct SimState {
     current_path: String,
     installed_pkgs: Vec<String>,
     wifi_enabled: bool,
+    wifi_signal_level: u8,
+    cellular_enabled: bool,
+    cellular_signal_level: u8,
+    battery_level: u8,
+    battery_charging: bool,
     bt_enabled: bool,
     softbus_enabled: bool,
     dark_mode: bool,
@@ -1106,6 +1111,11 @@ impl SimState {
                 "org.videolan.vlc".into(),
             ],
             wifi_enabled: true,
+            wifi_signal_level: 3,
+            cellular_enabled: true,
+            cellular_signal_level: 4,
+            battery_level: 88,
+            battery_charging: false,
             bt_enabled: true,
             softbus_enabled: true,
             dark_mode: true,
@@ -2254,21 +2264,7 @@ fn render_home(p: &mut FramePainter, state: &SimState) {
         };
         p.buffer.copy_from_slice(u32_slice);
 
-        // Status bar on Page 2
-        let time_str = get_ist_time_str();
-        p.draw_text_smooth(16, 5, 12.0, &time_str, 0x000000, true);
-
-        // Top right status bar icons
-        p.draw_text_smooth((p.width as i16) - 86, 6, 11.5, "৫G", 0x000000, false);
-        let sig_x = (p.width as i16) - 58;
-        for (i, h) in [4, 6, 8, 10].iter().enumerate() {
-            let bx = sig_x + i as i16 * 4;
-            p.fill_rect(bx, 17 - *h, 2, *h as u16, 0x000000);
-        }
-        let bat_x = (p.width as i16) - 36;
-        p.fill_rounded_rect(bat_x, 7, 24, 11, 2, 0x000000);
-        p.fill_rounded_rect(bat_x + 2, 9, 18, 7, 1, COLOR_GREEN);
-        p.fill_rect(bat_x + 24, 9, 2, 6, 0x000000);
+        // Universal live status bar will be rendered dynamically by render_status_bar
 
         // Header
         let pw = p.width as i16;
@@ -2341,41 +2337,107 @@ fn render_home(p: &mut FramePainter, state: &SimState) {
     p.register_button(250, 595, 70, 70, "app_nilpkg");
 }
 
-fn render_status_bar(p: &mut FramePainter, _state: &SimState) {
-    // Gradient status bar
-    for row in 0..36i16 {
+fn render_status_bar(p: &mut FramePainter, state: &SimState) {
+    // Frosted status bar backdrop
+    for row in 0..32i16 {
         let t = row as u32;
-        let r = 0x04u32 + t * 2 / 36;
-        let g = 0x08u32 + t * 3 / 36;
-        let b = 0x14u32 + t * 6 / 36;
+        let r = 0x05u32 + t * 2 / 32;
+        let g = 0x08u32 + t * 3 / 32;
+        let b = 0x14u32 + t * 5 / 32;
         p.fill_rect(0, row, p.width as u16, 1, (r << 16) | (g << 8) | b);
     }
+
+    // 1. Time (Left) in Bengali IST
     let time_str = get_ist_time_str();
-    p.draw_text_smooth(14, 10, 14.0, &time_str, COLOR_TEXT_HIGH, false);
+    p.draw_text_smooth(12, 9, 13.0, &time_str, COLOR_TEXT_HIGH, true);
 
+    // 2. Dynamic Island (Center)
     let center_x = p.width as i16 / 2;
-    p.fill_rounded_rect(center_x - 40, 5, 80, 24, 12, 0x000000);
-    p.fill_rect(center_x - 4, 12, 8, 10, 0x181F2E);
-    p.fill_rounded_rect(center_x + 8, 14, 6, 6, 3, 0x1C2740);
-    p.fill_rounded_rect(center_x - 14, 14, 6, 6, 3, 0x1C2740);
-    p.register_button(center_x - 40, 5, 80, 24, "toggle_island");
+    p.fill_rounded_rect(center_x - 38, 4, 76, 22, 11, 0x000000);
+    p.fill_rect(center_x - 3, 11, 6, 8, 0x181F2E);
+    p.fill_rounded_rect(center_x + 8, 12, 6, 6, 3, 0x1C2740);
+    p.fill_rounded_rect(center_x - 14, 12, 6, 6, 3, 0x1C2740);
+    p.register_button(center_x - 38, 4, 76, 22, "toggle_island");
 
-    // Clean steady 5G, signal bars, and battery
-    let right_x = (p.width as i16) - 96;
-    p.draw_text_smooth(right_x, 10, 11.5, "৫G", COLOR_CYAN, false);
+    // 3. Dynamic Wi-Fi (Left of Cellular)
+    let wifi_x: i16 = 212;
+    if state.wifi_enabled {
+        let c_top = if state.wifi_signal_level >= 3 { COLOR_CYAN } else { 0x334155 };
+        let c_mid = if state.wifi_signal_level >= 2 { COLOR_CYAN } else { 0x334155 };
+        let c_dot = if state.wifi_signal_level >= 1 { COLOR_CYAN } else { 0x334155 };
 
-    let sig_x = right_x + 28;
-    for (i, h) in [4, 6, 8, 10].iter().enumerate() {
-        let bx = sig_x + i as i16 * 4;
-        p.fill_rect(bx, 20 - *h, 2, *h as u16, COLOR_TEXT_HIGH);
+        p.fill_rounded_rect(wifi_x, 10, 14, 2, 1, c_top);
+        p.fill_rounded_rect(wifi_x + 2, 14, 10, 2, 1, c_mid);
+        p.fill_rounded_rect(wifi_x + 5, 18, 4, 3, 1, c_dot);
+    } else {
+        p.fill_rounded_rect(wifi_x, 10, 14, 2, 1, 0x334155);
+        p.draw_text_smooth(wifi_x + 3, 8, 10.0, "✕", COLOR_TEXT_DIM, false);
+    }
+    p.register_button(wifi_x - 4, 4, 22, 24, "toggle_wifi");
+
+    // 4. Cellular Network Generation Badge (৫G / ৪G / ৩G / E / অফ)
+    let net_x: i16 = 232;
+    if state.cellular_enabled {
+        let (badge, color) = match state.cellular_signal_level {
+            4 | 3 => ("৫G", COLOR_CYAN),
+            2 => ("৪G", COLOR_BLUE),
+            1 => ("৩G", COLOR_AMBER),
+            _ => ("E", COLOR_RED),
+        };
+        p.draw_text_smooth(net_x, 9, 11.5, badge, color, true);
+    } else {
+        p.draw_text_smooth(net_x, 10, 10.0, "অফ", COLOR_TEXT_DIM, false);
     }
 
-    let bat_x = sig_x + 24;
+    // 5. Cellular Signal Towers (4 Vertical Bars, increasing/decreasing)
+    let sig_x: i16 = 256;
+    let tower_base_y: i16 = 21;
+    let bar_heights = [3i16, 5, 7, 10];
+
+    if state.cellular_enabled {
+        for (i, h) in bar_heights.iter().enumerate() {
+            let bx = sig_x + i as i16 * 4;
+            let by = tower_base_y - *h;
+            let col = if (i as u8) < state.cellular_signal_level {
+                COLOR_TEXT_HIGH
+            } else {
+                0x334155 // Dimmed empty bar
+            };
+            p.fill_rect(bx, by, 2, *h as u16, col);
+        }
+    } else {
+        for (i, h) in bar_heights.iter().enumerate() {
+            let bx = sig_x + i as i16 * 4;
+            let by = tower_base_y - *h;
+            p.fill_rect(bx, by, 2, *h as u16, 0x334155);
+        }
+        p.draw_text_smooth(sig_x + 3, 8, 10.0, "✕", COLOR_RED, false);
+    }
+    p.register_button(net_x - 2, 4, 44, 24, "cycle_signal");
+
+    // 6. Dynamic Battery
+    let bat_x: i16 = 282;
     p.fill_rounded_rect(bat_x, 10, 24, 12, 2, 0x1E293B);
     p.draw_rect_outline(bat_x, 10, 24, 12, 0x64748B);
-    p.fill_rounded_rect(bat_x + 2, 12, 18, 8, 1, COLOR_GREEN);
     p.fill_rect(bat_x + 24, 13, 2, 6, 0x64748B);
-    p.fill_rect(0, 36, p.width as u16, 1, COLOR_BORDER);
+
+    let fill_w = ((state.battery_level as i16 * 18) / 100).max(2).min(18);
+    let fill_color = if state.battery_level <= 20 {
+        COLOR_RED
+    } else if state.battery_level <= 40 {
+        COLOR_AMBER
+    } else {
+        COLOR_GREEN
+    };
+    p.fill_rounded_rect(bat_x + 2, 12, fill_w as u16, 8, 1, fill_color);
+
+    if state.battery_charging {
+        p.draw_text_smooth(bat_x + 7, 9, 10.0, "⚡", COLOR_AMBER, false);
+    }
+    p.register_button(bat_x - 2, 4, 32, 24, "toggle_battery_charge");
+
+    // Hairline bottom border
+    p.fill_rect(0, 32, p.width as u16, 1, COLOR_BORDER);
 }
 
 fn render_bottom_nav(p: &mut FramePainter, current: &Screen) {
@@ -2725,7 +2787,7 @@ fn render_control_center(p: &mut FramePainter, state: &SimState) {
         ("সফটবাস", state.softbus_enabled, "toggle_softbus", 0x0D9488),
         ("ফ্ল্যাশলাইট", state.torch_enabled, "toggle_torch", 0xD97706),
         ("ডার্ক মোড", state.dark_mode, "toggle_theme", 0x7C3AED),
-        ("মোবাইল ডাটা", true, "toggle_data", 0x16A34A),
+        ("মোবাইল ডাটা (৫G)", state.cellular_enabled, "toggle_cellular", 0x16A34A),
     ];
 
     let start_y = 86;
@@ -3034,32 +3096,70 @@ fn render_app_settings(p: &mut FramePainter, state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "সেটিংস", COLOR_PURPLE, false);
 
     let card_w = (p.width - 32) as u16;
-    let mut y = 78;
+    let mut y = 74;
 
-    let toggles = [
-        ("ওয়াই-ফাই নেটওয়ার্ক", state.wifi_enabled, "toggle_wifi"),
-        ("ব্লুটুথ সংযোগ", state.bt_enabled, "toggle_bt"),
-        ("সফটবাস ডিভাইস মেশ", state.softbus_enabled, "toggle_softbus"),
-        ("ডার্ক মোড থিম", state.dark_mode, "toggle_theme"),
-    ];
+    // 1. Wi-Fi
+    p.fill_rect(16, y, card_w, 44, COLOR_SURFACE);
+    p.draw_rect_outline(16, y, card_w, 44, COLOR_BORDER);
+    p.draw_text_smooth(28, y + 13, 14.5, "ওয়াই-ফাই নেটওয়ার্ক", COLOR_TEXT_HIGH, false);
+    let (wf_stat, wf_col) = if state.wifi_enabled { ("[ চালু ]", COLOR_GREEN) } else { ("[ বন্ধ ]", COLOR_TEXT_DIM) };
+    p.draw_text_smooth((p.width as i16) - 78, y + 13, 13.5, wf_stat, wf_col, false);
+    p.register_button(16, y, card_w, 44, "toggle_wifi");
+    y += 50;
 
-    for (label, val, id) in toggles {
-        p.fill_rect(16, y, card_w, 46, COLOR_SURFACE);
-        p.draw_rect_outline(16, y, card_w, 46, COLOR_BORDER);
-        p.draw_text_smooth(28, y + 14, 15.0, label, COLOR_TEXT_HIGH, false);
+    // 2. Mobile Cellular Network & 5G
+    p.fill_rect(16, y, card_w, 44, COLOR_SURFACE);
+    p.draw_rect_outline(16, y, card_w, 44, COLOR_BORDER);
+    p.draw_text_smooth(28, y + 13, 14.5, "মোবাইল নেটওয়ার্ক ও ৫G", COLOR_TEXT_HIGH, false);
+    let (cel_stat, cel_col) = if state.cellular_enabled { ("[ চালু ]", COLOR_CYAN) } else { ("[ বন্ধ ]", COLOR_TEXT_DIM) };
+    p.draw_text_smooth((p.width as i16) - 78, y + 13, 13.5, cel_stat, cel_col, false);
+    p.register_button(16, y, card_w, 44, "toggle_cellular");
+    y += 50;
 
-        let (status, color) = if val { ("[ চালু ]", COLOR_GREEN) } else { ("[ বন্ধ ]", COLOR_TEXT_DIM) };
-        p.draw_text_smooth((p.width as i16) - 80, y + 14, 14.0, status, color, false);
-        p.register_button(16, y, card_w, 46, id);
-        y += 54;
-    }
+    // 3. Signal Tower Strength Control (Click to cycle 0 to 4 bars)
+    p.fill_rect(16, y, card_w, 44, COLOR_SURFACE);
+    p.draw_rect_outline(16, y, card_w, 44, COLOR_BORDER);
+    p.draw_text_smooth(28, y + 13, 14.5, "নেটওয়ার্ক টাওয়ার শক্তি", COLOR_TEXT_HIGH, false);
+    let sig_text = if state.cellular_enabled {
+        format!("[ {} বার ]", to_bengali_digits(&state.cellular_signal_level.to_string()))
+    } else {
+        "[ কোনো সিগন্যাল নেই ]".to_string()
+    };
+    let sig_col = match state.cellular_signal_level {
+        4 | 3 => COLOR_GREEN,
+        2 => COLOR_BLUE,
+        1 => COLOR_AMBER,
+        _ => COLOR_RED,
+    };
+    p.draw_text_smooth((p.width as i16) - 95, y + 13, 13.0, &sig_text, sig_col, false);
+    p.register_button(16, y, card_w, 44, "cycle_signal");
+    y += 50;
 
-    p.fill_rect(16, y, card_w, 130, COLOR_SURFACE);
-    p.draw_rect_outline(16, y, card_w, 130, COLOR_BORDER);
-    p.draw_text_smooth(28, y + 14, 17.0, "অনুরণ ওএস তথ্য", COLOR_CYAN, false);
-    p.draw_text_smooth(28, y + 42, 14.0, "ভার্সন: Onuron OS 1.7.0 (Alap Edition)", COLOR_TEXT_MED, false);
-    p.draw_text_smooth(28, y + 68, 14.0, "সময় অঞ্চল: IST (UTC+5:30) ভারত", COLOR_TEXT_MED, false);
-    p.draw_text_smooth(28, y + 94, 14.0, "মিডিয়া কোর: libvlc + OpenType HarfBuzz", COLOR_GREEN, false);
+    // 4. Bluetooth
+    p.fill_rect(16, y, card_w, 44, COLOR_SURFACE);
+    p.draw_rect_outline(16, y, card_w, 44, COLOR_BORDER);
+    p.draw_text_smooth(28, y + 13, 14.5, "ব্লুটুথ সংযোগ", COLOR_TEXT_HIGH, false);
+    let (bt_stat, bt_col) = if state.bt_enabled { ("[ চালু ]", COLOR_GREEN) } else { ("[ বন্ধ ]", COLOR_TEXT_DIM) };
+    p.draw_text_smooth((p.width as i16) - 78, y + 13, 13.5, bt_stat, bt_col, false);
+    p.register_button(16, y, card_w, 44, "toggle_bt");
+    y += 50;
+
+    // 5. SoftBus Device Mesh
+    p.fill_rect(16, y, card_w, 44, COLOR_SURFACE);
+    p.draw_rect_outline(16, y, card_w, 44, COLOR_BORDER);
+    p.draw_text_smooth(28, y + 13, 14.5, "সফটবাস ডিভাইস মেশ", COLOR_TEXT_HIGH, false);
+    let (sb_stat, sb_col) = if state.softbus_enabled { ("[ চালু ]", COLOR_CYAN) } else { ("[ বন্ধ ]", COLOR_TEXT_DIM) };
+    p.draw_text_smooth((p.width as i16) - 78, y + 13, 13.5, sb_stat, sb_col, false);
+    p.register_button(16, y, card_w, 44, "toggle_softbus");
+    y += 50;
+
+    // 6. System Info Card
+    p.fill_rect(16, y, card_w, 110, COLOR_SURFACE);
+    p.draw_rect_outline(16, y, card_w, 110, COLOR_BORDER);
+    p.draw_text_smooth(28, y + 12, 16.0, "অনুরণ ওএস তথ্য", COLOR_CYAN, false);
+    p.draw_text_smooth(28, y + 36, 13.5, "ভার্সন: Onuron OS 1.7.0 (S25 Hosted & QEMU)", COLOR_TEXT_MED, false);
+    p.draw_text_smooth(28, y + 58, 13.5, "হার্ডওয়্যার HAL: NilHAL v2 (Dynamic Vector Status)", COLOR_GREEN, false);
+    p.draw_text_smooth(28, y + 80, 13.5, "সময় অঞ্চল: IST (UTC+5:30) ভারত", COLOR_TEXT_MED, false);
 }
 
 // ─── 10. NilPkg Package Store Screen ──────────────────────────────────────────
@@ -3484,7 +3584,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         buffer.copy_from_slice(wp_slice);
 
         let mut painter = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
-        if state.screen != Screen::Home { render_status_bar(&mut painter, &state); }
 
         match &state.screen {
             Screen::Lockscreen => render_lockscreen(&mut painter, &state),
@@ -3502,6 +3601,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Screen::AppBrowser => render_app_browser(&mut painter, &state),
             Screen::ControlCenter => render_control_center(&mut painter, &state),
             Screen::NanoEditor => render_nano_editor(&mut painter, &state),
+        }
+
+        // Live Dynamic Status Bar (always rendered over Home and apps)
+        if state.screen != Screen::ControlCenter && state.screen != Screen::NanoEditor {
+            render_status_bar(&mut painter, &state);
         }
 
         if state.screen != Screen::Lockscreen && state.screen != Screen::NanoEditor && state.screen != Screen::ControlCenter && state.screen != Screen::Home {
@@ -3724,6 +3828,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     } else if id == "toggle_wifi" {
                         state.wifi_enabled = !state.wifi_enabled;
+                    } else if id == "toggle_cellular" || id == "toggle_data" {
+                        state.cellular_enabled = !state.cellular_enabled;
+                        if state.cellular_enabled {
+                            state.cellular_signal_level = 4;
+                        } else {
+                            state.cellular_signal_level = 0;
+                        }
+                    } else if id == "cycle_signal" {
+                        if !state.cellular_enabled {
+                            state.cellular_enabled = true;
+                            state.cellular_signal_level = 4;
+                        } else if state.cellular_signal_level > 1 {
+                            state.cellular_signal_level -= 1;
+                        } else if state.cellular_signal_level == 1 {
+                            state.cellular_signal_level = 0;
+                            state.cellular_enabled = false;
+                        } else {
+                            state.cellular_signal_level = 4;
+                        }
+                    } else if id == "toggle_battery_charge" {
+                        state.battery_charging = !state.battery_charging;
                     } else if id == "toggle_bt" {
                         state.bt_enabled = !state.bt_enabled;
                     } else if id == "toggle_softbus" {

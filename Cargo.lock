@@ -16,6 +16,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "android-host"
+version = "0.1.0"
+dependencies = [
+ "nilhal",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "animdemo"
 version = "0.1.0"
 dependencies = [
@@ -853,6 +862,7 @@ dependencies = [
 name = "netd"
 version = "0.1.0"
 dependencies = [
+ "nilhal",
  "nilsd",
  "serde",
  "serde_json",
@@ -931,9 +941,11 @@ dependencies = [
 
 [[package]]
 name = "nilhal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libloading 0.8.9",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1231,6 +1243,7 @@ dependencies = [
 name = "powerd"
 version = "0.1.0"
 dependencies = [
+ "nilhal",
  "nilsd",
  "serde",
  "serde_json",

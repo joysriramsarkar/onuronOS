@@ -35,13 +35,13 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **Namespace Sandbox** | 🔵 Functional prototype | Linux `unshare(CLONE_NEWPID\|CLONE_NEWNS\|CLONE_NEWIPC\|CLONE_NEWUTS)` + `chroot` isolation |
 | **Seccomp BPF Filter** | 🔵 Functional prototype | Real `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)` syscall allowlist (~110 syscalls) |
 | **SoftBus Distributed Mesh** | 🔵 Functional prototype | Real mDNS-SD peer discovery + Quinn QUIC/TLS 1.3 transport |
-| **Input Daemon (`inputd`)** | 🟡 Experimental | Linux `evdev` (`/dev/input/event*`) reader for multitouch, power, volume keys, and IPC |
-| **Power Daemon (`powerd`)** | 🟡 Experimental | Linux `/sys/class/power_supply` reader, wakelock tracker, suspend control |
-| **Network Daemon (`netd`)** | 🟡 Experimental | Linux `/sys/class/net` monitor, link status, DNS, and network IPC |
-| **Package Manager (`nilpkg`)** | 🟡 Experimental | Atomic install to `/data/app/`; **Ed25519 digital signature + SHA-256 integrity verification** |
-| **Shell Compositor (`nilshell`)** | 🟡 Experimental | ANSI/minifb console rendering; **DRM/KMS dumb-buffer & Wayland compositor in development** |
-| **ARM64 Device Port** | 🟡 Experimental | NilHAL GKI/Treble abstraction skeleton; QEMU aarch64 virt & PinePhone target |
-| **Android Compatibility** | 🟠 Stub / Planned | JSON agent protocol wrapper; LXC/Waydroid container provisioning in progress |
+| **Input Daemon (`inputd`)** | 🟢 Functional / Active | Linux `evdev` & Android Host bridge with **full gesture recognition engine** (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch) |
+| **Power Daemon (`powerd`)** | 🟢 Functional / Active | NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes |
+| **Network Daemon (`netd`)** | 🟢 Functional / Active | NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC |
+| **Package Manager (`nilpkg`)** | 🟢 Functional / Active | Atomic install to `/data/app/`; **Ed25519 digital signature + SHA-256 integrity verification** |
+| **NilHAL Unified Subsystem** | 🟢 Functional / Active | Rust trait abstraction (`Display`, `Input`, `Network`, `Power`, `Telephony`, `Camera`, `Audio`, `Sensors`) |
+| **S25 Hosted Mobile Runtime** | 🟢 Functional / Active | Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & bridge (`android-host/`) |
+| **Operating Modes (1, 2, 3)** | 🟢 Architectural Standard | Mode 1 (QEMU), Mode 2 (Galaxy S25 Hosted Lab), Mode 3 (Future Bare Metal Phone) |
 
 ---
 

@@ -34,7 +34,7 @@ impl SocketActivationManager {
     }
 
     pub fn check_pending(&self) -> Vec<String> {
-        let mut pending = Vec::new();
+        let pending = Vec::new();
         #[cfg(unix)]
         {
             for (name, listener) in &self.listeners {
