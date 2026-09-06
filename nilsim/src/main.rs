@@ -2217,124 +2217,148 @@ fn eval_simple_math(expr: &str) -> Result<f64, ()> {
 }
 
 
-fn render_home(p: &mut FramePainter, state: &SimState) {
-    if state.home_page == 0 {
-        // ── PAGE 1: Widgets, Figma layout & Dock ─────────────────────────────
-        let u32_slice: &[u32] = unsafe {
-            std::slice::from_raw_parts(
-                HOME_SCREEN_RAW.as_ptr() as *const u32,
-                SCREEN_WIDTH * SCREEN_HEIGHT,
-            )
-        };
-        p.buffer.copy_from_slice(u32_slice);
-
-        // Dynamic live time overlay (clean, no "সিম")
-        let time_str = get_ist_time_str();
-        p.draw_text_smooth(16, 5, 12.0, &time_str, 0x000000, true);
-
-        // Weather Card
-        p.register_button(10, 120, 152, 158, "home_weather_card");
-
-        // YouTube Icon
-        p.register_button(182, 202, 54, 54, "app_youtube");
-
-        // WhatsApp Icon
-        p.register_button(248, 202, 54, 54, "app_messages");
-
-        // Page Indicator Pill (y = 566..586): ● ○
-        let center_x = p.width as i16 / 2;
-        p.fill_rounded_rect(center_x - 30, 566, 60, 22, 11, 0x1E153D);
-        p.draw_rect_outline(center_x - 30, 566, 60, 22, 0x4D3A84);
-        p.fill_rounded_rect(center_x - 12, 573, 8, 8, 4, 0xFFFFFF); // Active dot
-        p.fill_rounded_rect(center_x + 6, 574, 6, 6, 3, 0x818CF8);  // Inactive dot
-        p.register_button(center_x - 35, 560, 70, 32, "home_page_toggle");
-
-        // Right side floating pill chevron (tap to go to App Drawer)
-        p.fill_rounded_rect(p.width as i16 - 26, 305, 22, 42, 11, 0x1E153D);
-        p.draw_rect_outline(p.width as i16 - 26, 305, 22, 42, 0x6366F1);
-        p.draw_text_smooth(p.width as i16 - 19, 318, 14.0, ">", 0xFFFFFF, false);
-        p.register_button(p.width as i16 - 36, 290, 36, 70, "home_page_next");
-    } else {
-        // ── PAGE 2: Full App Drawer Grid & Dock ──────────────────────────────
-        let u32_slice: &[u32] = unsafe {
-            std::slice::from_raw_parts(
-                WALLPAPER_RAW.as_ptr() as *const u32,
-                SCREEN_WIDTH * SCREEN_HEIGHT,
-            )
-        };
-        p.buffer.copy_from_slice(u32_slice);
-
-        // Universal live status bar will be rendered dynamically by render_status_bar
-
-        // Header
-        let pw = p.width as i16;
-        p.fill_rounded_rect(10, 36, (pw - 20) as u16, 36, 14, 0x1E1B4B);
-        p.draw_rect_outline(10, 36, (pw - 20) as u16, 36, 0x4338CA);
-        p.draw_text_smooth(22, 45, 14.0, "📱 অনুরণ ওএস অ্যাপস", 0x38BDF8, false);
-        p.draw_text_smooth((pw - 95) as i16, 47, 11.0, "পাতা ২ / ২", 0x94A3B8, false);
-
-        // Search Bar Pill
-        p.fill_rounded_rect(10, 78, (pw - 20) as u16, 34, 12, 0x0F172A);
-        p.draw_rect_outline(10, 78, (pw - 20) as u16, 34, 0x334155);
-        p.draw_text_smooth(20, 87, 12.0, "🔍 অ্যাপ বা প্যাকেজ খুঁজুন...", 0x64748B, false);
-        p.register_button(10, 78, (pw - 20) as u16, 34, "app_nilpkg");
-
-        // 4-Column App Grid (3 Rows = 12 Apps)
-        let col_step: i16 = 78;
-        let row_step: i16 = 84;
-        let grid_x: i16 = (pw - col_step * 4) / 2 + 6;
-        let grid_y: i16 = 124;
-
-        let apps_p2: &[(&str, &str, u32, u32, &str)] = &[
-            ("NOTE", "নোটস",      0x0284C7, COLOR_TEXT_HIGH, "app_notes"),
-            ("CAL",  "গণনা",      0x6366F1, COLOR_TEXT_HIGH, "app_calc"),
-            ("DIR",  "ফাইলস",    0x2563EB, COLOR_TEXT_HIGH, "app_files"),
-            ("SET",  "সেটিংস",   0x9333EA, COLOR_TEXT_HIGH, "app_settings"),
-            ("TEL",  "ফোন",      0x1D4ED8, COLOR_TEXT_HIGH, "app_phone"),
-            ("SMS",  "বার্তা",   0x0891B2, COLOR_TEXT_HIGH, "app_messages"),
-            (">_",   "টার্মিনাল", 0x0F172A, COLOR_CYAN,      "app_terminal"),
-            ("PKG",  "নীলপ্যাক",  0x0D9488, COLOR_TEXT_HIGH, "app_nilpkg"),
-            ("WEB",  "ব্রাউজার",  0xEA580C, COLOR_TEXT_HIGH, "app_browser"),
-            ("BUS",  "সফটবাস",   0x10B981, COLOR_TEXT_HIGH, "app_softbus"),
-            ("SEC",  "নিরাপত্তা", 0xD97706, COLOR_AMBER,     "app_android"),
-            ("CC",   "কন্ট্রোল", 0x3B82F6, COLOR_TEXT_HIGH, "toggle_island"),
-        ];
-
-        for (i, (symbol, label, bg, fg, id)) in apps_p2.iter().enumerate() {
-            let col = (i % 4) as i16;
-            let row = (i / 4) as i16;
-            let ax = grid_x + col * col_step;
-            let ay = grid_y + row * row_step;
-            p.draw_app_icon(ax, ay, symbol, label, *bg, *fg, id);
+fn draw_home_vector_icon(p: &mut FramePainter, cx: i16, cy: i16, id: &str, accent: u32) {
+    match id {
+        "app_phone" => {
+            // Handset icon: earpiece, mouthpiece, curved receiver handle
+            p.fill_rounded_rect(cx - 7, cy - 9, 6, 6, 2, accent);
+            p.fill_rounded_rect(cx + 2, cy + 3, 6, 6, 2, accent);
+            p.fill_rounded_rect(cx - 5, cy - 5, 5, 11, 2, accent);
+            p.fill_rounded_rect(cx - 2, cy - 1, 5, 8, 2, accent);
         }
-
-        // Page Indicator Pill (y = 566..586): ○ ●
-        let center_x = p.width as i16 / 2;
-        p.fill_rounded_rect(center_x - 30, 566, 60, 22, 11, 0x1E153D);
-        p.draw_rect_outline(center_x - 30, 566, 60, 22, 0x4D3A84);
-        p.fill_rounded_rect(center_x - 12, 574, 6, 6, 3, 0x818CF8);  // Inactive dot
-        p.fill_rounded_rect(center_x + 4, 573, 8, 8, 4, 0xFFFFFF);   // Active dot
-        p.register_button(center_x - 35, 560, 70, 32, "home_page_toggle");
-
-        // Left side floating pill chevron (tap to return to Home)
-        p.fill_rounded_rect(4, 305, 22, 42, 11, 0x1E153D);
-        p.draw_rect_outline(4, 305, 22, 42, 0x6366F1);
-        p.draw_text_smooth(10, 318, 14.0, "<", 0xFFFFFF, false);
-        p.register_button(0, 290, 36, 70, "home_page_prev");
+        "app_browser" => {
+            // Globe icon: ring, equator line, central meridian
+            p.fill_rounded_rect(cx - 10, cy - 10, 20, 20, 10, accent);
+            p.fill_rounded_rect(cx - 8, cy - 8, 16, 16, 8, 0x0A1628);
+            p.fill_rect(cx - 8, cy - 1, 16, 2, accent);
+            p.fill_rounded_rect(cx - 4, cy - 8, 8, 16, 4, accent);
+            p.fill_rounded_rect(cx - 2, cy - 6, 4, 12, 2, 0x0A1628);
+        }
+        "app_messages" => {
+            // Speech bubble
+            p.fill_rounded_rect(cx - 10, cy - 9, 20, 15, 4, accent);
+            p.fill_rect(cx - 7, cy + 4, 5, 4, accent);
+            p.fill_rect(cx - 9, cy + 6, 3, 2, accent);
+            p.fill_rounded_rect(cx - 6, cy - 5, 12, 2, 1, 0x0A1628);
+            p.fill_rounded_rect(cx - 6, cy - 1, 8, 2, 1, 0x0A1628);
+        }
+        "app_files" => {
+            // Folder tab & body with paper document
+            p.fill_rounded_rect(cx - 10, cy - 9, 9, 4, 1, accent);
+            p.fill_rounded_rect(cx - 11, cy - 6, 22, 16, 3, accent);
+            p.fill_rect(cx - 7, cy - 4, 14, 4, 0xFFFFFF);
+            p.fill_rounded_rect(cx - 11, cy - 2, 22, 12, 2, 0x38BDF8);
+        }
+        "app_settings" => {
+            // Gear cog
+            p.fill_rounded_rect(cx - 3, cy - 10, 6, 20, 2, accent);
+            p.fill_rounded_rect(cx - 10, cy - 3, 20, 6, 2, accent);
+            p.fill_rounded_rect(cx - 8, cy - 8, 16, 16, 3, accent);
+            p.fill_rounded_rect(cx - 7, cy - 7, 14, 14, 7, accent);
+            p.fill_rounded_rect(cx - 3, cy - 3, 6, 6, 3, 0x0A1628);
+        }
+        "app_terminal" => {
+            // Terminal box with prompt
+            p.fill_rounded_rect(cx - 11, cy - 8, 22, 16, 3, 0x1E293B);
+            p.draw_rect_outline(cx - 11, cy - 8, 22, 16, 0x334155);
+            p.fill_rect(cx - 8, cy - 3, 2, 2, accent);
+            p.fill_rect(cx - 6, cy - 1, 2, 2, accent);
+            p.fill_rect(cx - 8, cy + 1, 2, 2, accent);
+            p.fill_rect(cx - 3, cy + 1, 5, 2, COLOR_GREEN);
+        }
+        "app_softbus" => {
+            // SoftBus interconnect topology
+            p.fill_rect(cx - 7, cy - 1, 14, 2, 0x94A3B8);
+            p.fill_rect(cx - 1, cy - 7, 2, 14, 0x94A3B8);
+            p.fill_rounded_rect(cx - 3, cy - 10, 6, 6, 3, COLOR_AMBER);
+            p.fill_rounded_rect(cx - 10, cy - 3, 6, 6, 3, accent);
+            p.fill_rounded_rect(cx + 4, cy - 3, 6, 6, 3, COLOR_CYAN);
+            p.fill_rounded_rect(cx - 3, cy + 4, 6, 6, 3, COLOR_PURPLE);
+        }
+        "app_android" | _ => {
+            // Onuron Atom Core
+            p.fill_rounded_rect(cx - 9, cy - 9, 18, 18, 5, 0x0284C7);
+            p.fill_rounded_rect(cx - 6, cy - 6, 12, 12, 3, 0x0A1628);
+            p.fill_rounded_rect(cx - 3, cy - 3, 6, 6, 3, COLOR_CYAN);
+            p.fill_rect(cx - 1, cy - 8, 2, 2, 0x38BDF8);
+            p.fill_rect(cx - 1, cy + 6, 2, 2, 0x38BDF8);
+            p.fill_rect(cx - 8, cy - 1, 2, 2, 0x38BDF8);
+            p.fill_rect(cx + 6, cy - 1, 2, 2, 0x38BDF8);
+        }
     }
+}
 
-    // ── Common Bottom Dock (Always visible on both Page 1 & Page 2) ───────────
-    // 1. WhatsApp/Phone (x=12, y=595, w=66, h=70)
-    p.register_button(12, 595, 66, 70, "app_phone");
+fn render_home(p: &mut FramePainter, _state: &SimState) {
+    // 1. Deep Space Obsidian Navy background
+    p.fill_rect(0, 0, p.width as u16, p.height as u16, COLOR_BG);
 
-    // 2. Linux Terminal (x=90, y=595, w=70, h=70) -> Opens Real Terminal!
-    p.register_button(90, 595, 70, 70, "app_terminal");
+    let cx = p.width as i16 / 2;
+    let start_y: i16 = 48;
 
-    // 3. NilZar Chromium Browser (x=170, y=595, w=70, h=70) -> Opens Browser!
-    p.register_button(170, 595, 70, 70, "app_browser");
+    // 2. Hero Digital Clock in Bengali
+    let time_str = get_ist_time_str();
+    let clock_w = p.text_width(44.0, &time_str, true);
+    p.draw_text_smooth(cx - clock_w / 2, start_y + 12, 44.0, &time_str, COLOR_TEXT_HIGH, true);
 
-    // 4. App Store (x=250, y=595, w=70, h=70) -> Opens App Store (NilPkg)!
-    p.register_button(250, 595, 70, 70, "app_nilpkg");
+    // 3. Date in Bengali (placed cleanly below clock digits with no overlap)
+    let date_str = "রবিবার, ৬ সেপ্টেম্বর ২০২৬";
+    let date_w = p.text_width(13.0, date_str, false);
+    let date_y = start_y + 64;
+    p.draw_text_smooth(cx - date_w / 2, date_y, 13.0, date_str, COLOR_CYAN, false);
+
+    // 4. Hardware System Chip Card
+    let chip_y = date_y + 24;
+    let chip_w = p.width as u16 - 24;
+    p.fill_rounded_rect(12, chip_y, chip_w, 32, 10, COLOR_SURFACE);
+    p.draw_rect_outline(12, chip_y, chip_w, 32, COLOR_BORDER);
+    let chip_text = "Snapdragon 8 Elite • 120Hz Dynamic AMOLED • Onuron 1.0";
+    let chip_tw = p.text_width(9.5, chip_text, false);
+    // Amber lightning bolt vector inside card
+    let bolt_x = cx - chip_tw / 2 - 12;
+    let bolt_y = chip_y + 11;
+    p.fill_rect(bolt_x + 2, bolt_y, 3, 3, COLOR_AMBER);
+    p.fill_rect(bolt_x, bolt_y + 2, 5, 2, COLOR_AMBER);
+    p.fill_rect(bolt_x + 1, bolt_y + 4, 3, 3, COLOR_AMBER);
+    p.draw_text_smooth(cx - chip_tw / 2, chip_y + 19, 9.5, chip_text, COLOR_TEXT_MED, false);
+
+    // 5. 8-App Grid (2 rows x 4 columns) matching Android Host exactly!
+    let grid_y = chip_y + 46;
+    let icon_size: u16 = 54;
+    let col_w = (p.width as i16 - 24) / 4;
+
+    let apps: &[(&str, u32, &str)] = &[
+        ("ফোন", COLOR_GREEN, "app_phone"),
+        ("ব্রাউজার", COLOR_CYAN, "app_browser"),
+        ("বার্তা", COLOR_AMBER, "app_messages"),
+        ("ফাইল", COLOR_BLUE, "app_files"),
+        ("সেটিংস", COLOR_PURPLE, "app_settings"),
+        ("টার্মিনাল", COLOR_CYAN, "app_terminal"),
+        ("সফটবাস", COLOR_GREEN, "app_softbus"),
+        ("অনুরণ", COLOR_CYAN, "app_android"),
+    ];
+
+    for (i, (title, accent, id)) in apps.iter().enumerate() {
+        let r = (i / 4) as i16;
+        let c = (i % 4) as i16;
+        let icon_cx = 12 + c * col_w + col_w / 2;
+        let icon_cy = grid_y + r * 94;
+
+        let ix = icon_cx - (icon_size as i16) / 2;
+        p.fill_rounded_rect(ix, icon_cy, icon_size, icon_size, 16, COLOR_SURFACE);
+        p.draw_rect_outline(ix, icon_cy, icon_size, icon_size, COLOR_BORDER);
+
+        // Accent indicator dot
+        p.fill_rounded_rect(icon_cx - 3, icon_cy + 6, 6, 6, 3, *accent);
+
+        // Vector Icon (No tofu box!)
+        draw_home_vector_icon(p, icon_cx, icon_cy + 29, id, *accent);
+
+        // Label
+        let tw = p.text_width(11.5, title, false);
+        p.draw_text_smooth(icon_cx - tw / 2, icon_cy + (icon_size as i16) + 16, 11.5, title, COLOR_TEXT_HIGH, false);
+
+        p.register_button(ix, icon_cy, icon_size, icon_size + 20, id);
+    }
 }
 
 fn render_status_bar(p: &mut FramePainter, state: &SimState) {
@@ -2432,7 +2456,11 @@ fn render_status_bar(p: &mut FramePainter, state: &SimState) {
     p.fill_rounded_rect(bat_x + 2, 12, fill_w as u16, 8, 1, fill_color);
 
     if state.battery_charging {
-        p.draw_text_smooth(bat_x + 7, 9, 10.0, "⚡", COLOR_AMBER, false);
+        let bx = bat_x + 10;
+        let by = 13;
+        p.fill_rect(bx + 1, by, 3, 2, COLOR_AMBER);
+        p.fill_rect(bx - 1, by + 2, 5, 2, COLOR_AMBER);
+        p.fill_rect(bx, by + 4, 3, 2, COLOR_AMBER);
     }
     p.register_button(bat_x - 2, 4, 32, 24, "toggle_battery_charge");
 
@@ -2577,7 +2605,7 @@ fn render_app_browser(p: &mut FramePainter, state: &SimState) {
 
     // 1. Header: NilZar Chromium Browser
     p.fill_rect(0, 36, p.width as u16, 28, 0x0A101D);
-    p.draw_text_smooth(10, 42, 13.0, "🌐 নীলজার ব্রাউজার (Chromium V8)", 0x38BDF8, false);
+    p.draw_text_smooth(10, 42, 13.0, "নীলজার ব্রাউজার (Chromium V8)", 0x38BDF8, false);
 
     // 2. Address & Control Bar (y = 66..94)
     p.fill_rect(0, 64, p.width as u16, 32, 0x0F172A);
@@ -2934,7 +2962,11 @@ fn render_app_phone(p: &mut FramePainter, state: &SimState) {
 
     // Header
     p.fill_rect(0, 36, p.width as u16, 40, 0x0A1F0F);
-    p.draw_text_smooth(16, 44, 18.0, "📞  ফোন ও ডায়ালার", COLOR_GREEN, false);
+    // Vector phone handset
+    p.fill_rounded_rect(16, 46, 5, 5, 1, COLOR_GREEN);
+    p.fill_rounded_rect(24, 55, 5, 5, 1, COLOR_GREEN);
+    p.fill_rounded_rect(18, 49, 4, 9, 1, COLOR_GREEN);
+    p.draw_text_smooth(36, 44, 18.0, "ফোন ও ডায়ালার", COLOR_GREEN, false);
 
     // Number display
     let num_w = (p.width - 32) as u16;
@@ -3000,7 +3032,7 @@ fn render_app_messages(p: &mut FramePainter, state: &SimState) {
 fn render_app_files(p: &mut FramePainter, state: &SimState) {
     // Header bar
     p.fill_rect(0, 36, p.width as u16, 44, 0x0B1220);
-    p.draw_text_smooth(16, 45, 19.0, "📂  ফাইল এক্সপ্লোরার", COLOR_TEXT_HIGH, false);
+    p.draw_text_smooth(16, 45, 19.0, "ফাইল এক্সপ্লোরার", COLOR_TEXT_HIGH, false);
 
     // Path breadcrumb formatted as clean virtual path: e.g. /home/joy or /home/joy/Documents
     let virtual_curr = disk_to_virtual_display(&state.storage_root, &PathBuf::from(&state.current_path));
@@ -3014,7 +3046,7 @@ fn render_app_files(p: &mut FramePainter, state: &SimState) {
 
     // Quick-nav bar
     let bw = (p.width as u16 - 32) / 4;
-    let navs = [("🏠 হোম", "bm_home"), ("⬆️ উপরে", "bm_up"), ("📂 রুট", "bm_root"), ("📁 ডক্স", "bm_docs")];
+    let navs = [("হোম", "bm_home"), ("উপরে", "bm_up"), ("রুট", "bm_root"), ("ডক্স", "bm_docs")];
     for (i, (lbl, id)) in navs.iter().enumerate() {
         p.draw_button(8 + i as i16 * (bw as i16 + 2), 106, bw, 26, lbl, COLOR_SURFACE_ALT, COLOR_CYAN, id);
     }
@@ -3046,21 +3078,23 @@ fn render_app_files(p: &mut FramePainter, state: &SimState) {
             p.fill_rect(8, list_y, list_w, 44, row_bg);
             p.fill_rect(8, list_y + 43, list_w, 1, COLOR_BORDER); // divider
 
-            // Icon
-            let (icon, icon_col) = if *is_dir {
-                ("📁", COLOR_AMBER)
+            // Clean vector file-type badge
+            let (badge, icon_col) = if *is_dir {
+                ("DIR", COLOR_AMBER)
             } else if name.ends_with(".mp4") || name.ends_with(".mkv") || name.ends_with(".avi") {
-                ("🎥", 0xFF4500)
+                ("VID", 0xFF4500)
             } else if name.ends_with(".mp3") || name.ends_with(".ogg") {
-                ("🎵", 0x00B4D8)
+                ("AUD", 0x00B4D8)
             } else if name.ends_with(".rs") || name.ends_with(".c") || name.ends_with(".py") {
-                ("📜", COLOR_GREEN)
+                ("SRC", COLOR_GREEN)
             } else if name.ends_with(".txt") || name.ends_with(".md") {
-                ("📝", COLOR_CYAN)
+                ("DOC", COLOR_CYAN)
             } else {
-                ("📄", COLOR_TEXT_MED)
+                ("FILE", COLOR_TEXT_MED)
             };
-            p.draw_text_smooth(14, list_y + 12, 17.0, icon, icon_col, false);
+            p.fill_rounded_rect(12, list_y + 11, 24, 20, 4, icon_col);
+            let bw = p.text_width(9.0, badge, true);
+            p.draw_text_smooth(12 + (24 - bw) / 2, list_y + 16, 9.0, badge, COLOR_BG, true);
 
             // Name
             let display_name = if name.len() > 24 { format!("{}...", &name[..21]) } else { name.clone() };
@@ -3574,14 +3608,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // 4. Render Frame to Buffer (Figma 3D Fluid Wallpaper Universal Backdrop)
-        let wp_slice: &[u32] = unsafe {
-            std::slice::from_raw_parts(
-                WALLPAPER_RAW.as_ptr() as *const u32,
-                SCREEN_WIDTH * SCREEN_HEIGHT,
-            )
-        };
-        buffer.copy_from_slice(wp_slice);
+        // 4. Render Frame to Buffer (Deep Space Obsidian Navy Backdrop)
+        buffer.fill(COLOR_BG);
 
         let mut painter = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
 
@@ -3608,7 +3636,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             render_status_bar(&mut painter, &state);
         }
 
-        if state.screen != Screen::Lockscreen && state.screen != Screen::NanoEditor && state.screen != Screen::ControlCenter && state.screen != Screen::Home {
+        if state.screen != Screen::Lockscreen && state.screen != Screen::NanoEditor && state.screen != Screen::ControlCenter {
             render_bottom_nav(&mut painter, &state.screen);
         }
 

@@ -53,6 +53,7 @@ enum Screen {
     AppSoftBus,
     AppAndroid,
     AppTerminal,
+    AppBrowser,
     NotificationShade,
 }
 
@@ -775,14 +776,14 @@ fn render_home<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
     let gap_x = 20;
 
     let apps = [
-        ("PHONE", "VoLTE & Contacts", COLOR_GREEN, "app_phone"),
+        ("PHONE", "VoLTE & Dialer", COLOR_GREEN, "app_phone"),
+        ("BROWSER", "Web Navigator", COLOR_CYAN, "app_browser"),
         ("MESSAGES", "Encrypted SMS", COLOR_AMBER, "app_messages"),
         ("FILES", "Storage Explorer", COLOR_BLUE, "app_files"),
         ("SETTINGS", "System & Network", COLOR_PURPLE, "app_settings"),
-        ("NILPKG", "App Store & Upd", COLOR_CYAN, "app_nilpkg"),
-        ("SOFTBUS", "Device Mesh (3)", COLOR_CYAN, "app_softbus"),
-        ("ANDROID", "AOSP Container", COLOR_GREEN, "app_android"),
-        ("TERMINAL", "Full Linux CLI", COLOR_TEXT_HIGH, "app_terminal"),
+        ("TERMINAL", "Full Linux CLI", COLOR_CYAN, "app_terminal"),
+        ("SOFTBUS", "Device Mesh (3)", COLOR_GREEN, "app_softbus"),
+        ("ABOUT", "Onuron OS Specs", COLOR_TEXT_MED, "app_android"),
     ];
 
     for (i, (title, sub, color, id)) in apps.iter().enumerate() {
@@ -800,6 +801,22 @@ fn render_home<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
 
         p.register_button(x, y, col_w, row_h, id);
     }
+}
+
+fn render_app_browser<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
+    p.draw_text(20, 48, 3, "NilBrowser (Web)", COLOR_CYAN);
+
+    let card_w = p.width - 40;
+    p.fill_rect(20, 90, card_w, 44, COLOR_SURFACE);
+    p.draw_rect_outline(20, 90, card_w, 44, COLOR_BORDER);
+    p.draw_text(34, 104, 2, "https://duckduckgo.com", COLOR_TEXT_HIGH);
+
+    p.fill_rect(20, 146, card_w, 320, COLOR_SURFACE_ALT);
+    p.draw_rect_outline(20, 146, card_w, 320, COLOR_BORDER);
+    p.draw_text(36, 174, 2, "NilBrowser Web Engine: Active", COLOR_GREEN);
+    p.draw_text(36, 204, 2, "W3C Standards & TLS 1.3 Encryption", COLOR_TEXT_MED);
+    p.draw_text(36, 234, 2, "Hardware: Snapdragon 8 Elite AMOLED 2X", COLOR_CYAN);
+    p.draw_text(36, 264, 2, "Zero Telemetry & Tracker Blocking", COLOR_AMBER);
 }
 
 fn render_app_phone<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
@@ -1258,6 +1275,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Screen::AppSoftBus => render_app_softbus(&mut p, state),
             Screen::AppAndroid => render_app_android(&mut p, state),
             Screen::AppTerminal => render_app_terminal(&mut p, state),
+            Screen::AppBrowser => render_app_browser(&mut p, state),
             Screen::NotificationShade => render_home(&mut p, state),
         }
 
@@ -1368,6 +1386,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         state.screen = Screen::AppAndroid;
                     } else if id == "app_terminal" {
                         state.screen = Screen::AppTerminal;
+                    } else if id == "app_browser" {
+                        state.screen = Screen::AppBrowser;
                     }
                     // Phone Actions
                     else if id.starts_with("dial_key_") {
