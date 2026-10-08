@@ -201,6 +201,16 @@ impl Frame {
         serde_json::from_slice(&self.payload)
             .map_err(|e| IpcError::Serialization(e.to_string()))
     }
+
+    /// Read a single framed message from a synchronous reader.
+    pub fn read_from<R: Read>(reader: &mut R) -> Result<Self, IpcError> {
+        read_frame(reader)
+    }
+
+    /// Write this framed message to a synchronous writer.
+    pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<(), IpcError> {
+        write_frame(writer, self)
+    }
 }
 
 /// Read a single framed message from a synchronous reader.

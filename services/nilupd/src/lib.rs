@@ -760,8 +760,8 @@ pub fn handle_ipc_request(
 pub fn run_daemon() -> ! {
     println!("[nilupd] A/B System Image Updater daemon active.");
     let install_root = get_install_root();
-    let _key_dir = nilpkg::get_key_dir();
-    let _ = &_key_dir;
+    let key_dir = nilpkg::get_key_dir();
+    let _ = &key_dir;
     let _ = std::fs::create_dir_all("/run/onuron");
 
     if let Err(e) = recover_pending(&install_root) {
