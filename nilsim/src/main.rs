@@ -59,6 +59,7 @@ const COLOR_NANO_HDR: u32 = 0x4338CA;    // Indigo Header
 const COLOR_GOLD: u32 = 0xF59E0B;         // Gold Accent
 const COLOR_TEAL: u32 = 0x14B8A6;         // Teal Accent
 const COLOR_PINK: u32 = 0xEC4899;         // Hot Pink
+const SIMULATED_BADGE: &str = "[SIMULATED]";
 
 // ─── Screen Enum ──────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, PartialEq)]
@@ -2291,6 +2292,7 @@ fn draw_home_vector_icon(p: &mut FramePainter, cx: i16, cy: i16, id: &str, accen
 fn render_home(p: &mut FramePainter, _state: &SimState) {
     // 1. Deep Space Obsidian Navy background
     p.fill_rect(0, 0, p.width as u16, p.height as u16, COLOR_BG);
+    p.draw_text_smooth(12, 38, 10.0, SIMULATED_BADGE, COLOR_AMBER, false);
 
     let cx = p.width as i16 / 2;
     let start_y: i16 = 48;
@@ -2374,6 +2376,7 @@ fn render_status_bar(p: &mut FramePainter, state: &SimState) {
     // 1. Time (Left) in Bengali IST
     let time_str = get_ist_time_str();
     p.draw_text_smooth(12, 9, 13.0, &time_str, COLOR_TEXT_HIGH, true);
+    p.draw_text_smooth(60, 9, 11.0, SIMULATED_BADGE, COLOR_AMBER, false);
 
     // 2. Dynamic Island (Center)
     let center_x = p.width as i16 / 2;
@@ -2509,6 +2512,7 @@ fn render_bottom_nav(p: &mut FramePainter, current: &Screen) {
 fn render_lockscreen(p: &mut FramePainter, state: &SimState) {
     let center_x = p.width as i16 / 2;
     let time_str = get_ist_time_str();
+    p.draw_text_smooth(12, 38, 10.0, SIMULATED_BADGE, COLOR_AMBER, false);
 
     // Atmospheric top glow
     for row in 36..160i16 {
@@ -2904,7 +2908,7 @@ fn render_app_terminal(p: &mut FramePainter, state: &SimState) {
 
     let mode_label = if state.python_mode { "Python REPL" } else { "Onuron bash" };
     p.fill_rect(0, 36, p.width as u16, 36, 0x020C18);
-    p.draw_text_smooth(12, 42, 14.0, &format!(">_  অনুরণ টার্মিনাল — {}", mode_label), COLOR_GREEN, false);
+    p.draw_text_smooth(12, 42, 14.0, &format!(">_  অনুরণ টার্মিনাল — {}  {}", mode_label, SIMULATED_BADGE), COLOR_GREEN, false);
     p.draw_button((p.width as i16) - 70, 38, 62, 24, if state.python_mode { "bash" } else { "python" }, COLOR_SURFACE, COLOR_AMBER, "term_toggle_python");
 
     let chip_w = ((p.width - 48) / 5) as u16;
@@ -2967,6 +2971,7 @@ fn render_app_phone(p: &mut FramePainter, state: &SimState) {
     p.fill_rounded_rect(24, 55, 5, 5, 1, COLOR_GREEN);
     p.fill_rounded_rect(18, 49, 4, 9, 1, COLOR_GREEN);
     p.draw_text_smooth(36, 44, 18.0, "ফোন ও ডায়ালার", COLOR_GREEN, false);
+    p.draw_text_smooth(240, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
 
     // Number display
     let num_w = (p.width - 32) as u16;
@@ -3010,6 +3015,8 @@ fn render_app_phone(p: &mut FramePainter, state: &SimState) {
 
 fn render_app_messages(p: &mut FramePainter, state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "বার্তা (SMS)", COLOR_AMBER, false);
+    let bw = p.text_width(12.0, SIMULATED_BADGE, false);
+    p.draw_text_smooth(330 - bw - 12, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
 
     let btn_w = (p.width - 32) as u16;
     p.draw_button(16, 78, btn_w, 38, "+ নতুন সুরক্ষিত বার্তা", COLOR_ACCENT_BG, COLOR_CYAN, "msg_new");
@@ -3128,6 +3135,8 @@ fn render_app_files(p: &mut FramePainter, state: &SimState) {
 
 fn render_app_settings(p: &mut FramePainter, state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "সেটিংস", COLOR_PURPLE, false);
+    let bw = p.text_width(12.0, SIMULATED_BADGE, false);
+    p.draw_text_smooth(330 - bw - 12, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
 
     let card_w = (p.width - 32) as u16;
     let mut y = 74;
@@ -3199,6 +3208,7 @@ fn render_app_settings(p: &mut FramePainter, state: &SimState) {
 // ─── 10. NilPkg Package Store Screen ──────────────────────────────────────────
 fn render_app_nilpkg(p: &mut FramePainter, state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "নীলপ্যাকেজ স্টোর (NilPkg)", COLOR_CYAN, false);
+    p.draw_text_smooth(280, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
 
     let card_w = (p.width - 32) as u16;
     let packages = [
@@ -3233,6 +3243,7 @@ fn render_app_nilpkg(p: &mut FramePainter, state: &SimState) {
 // ─── 11. SoftBus Distributed Device Mesh Screen ───────────────────────────────
 fn render_app_softbus(p: &mut FramePainter, _state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "সফটবাস ডিভাইস মেশ", COLOR_CYAN, false);
+    p.draw_text_smooth(250, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
     p.draw_text_smooth(16, 72, 13.0, "ডিস্ট্রিবিউটেড মেশ নেটওয়ার্ক (QUIC Fabric)", COLOR_TEXT_MED, false);
 
     let card_w = (p.width - 32) as u16;
@@ -3262,6 +3273,7 @@ fn render_app_softbus(p: &mut FramePainter, _state: &SimState) {
 
 fn render_app_android(p: &mut FramePainter, _state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "অ্যান্ড্রয়েড কন্টেইনার", COLOR_GREEN, false);
+    p.draw_text_smooth(260, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
 
     let card_w = (p.width - 32) as u16;
     p.fill_rounded_rect(16, 78, card_w, 160, 16, COLOR_SURFACE);

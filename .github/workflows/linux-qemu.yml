@@ -1,0 +1,45 @@
+name: Linux build, tests and QEMU boot smoke test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  linux-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y musl-tools qemu-system-x86 python3 e2fsprogs
+      - name: Workspace tests
+        run: cargo test --workspace --all-targets
+      - name: Initramfs builder tests
+        run: python3 -m unittest build/test_mkinitramfs.py
+      - name: Reproducible build & persistent-data unit tests
+        run: >
+          python3 -m unittest
+          build/test_reproducible.py
+          build/test_persistent_data.py
+      - name: Workspace lint
+        run: cargo clippy --workspace --all-targets -- -W clippy::all
+      - name: Build Linux musl binaries
+        run: cargo build --release --workspace --target x86_64-unknown-linux-musl
+      - name: Package initramfs (fetch Linux kernel)
+        run: python3 build/mkinitramfs.py
+      - name: Verify image reproducibility
+        run: python3 build/check-reproducible.py
+      - name: Persistent-data validation harness
+        run: python3 build/persistent-data-test.py
+      - name: QEMU boot smoke test
+        timeout-minutes: 3
+        run: python3 build/qemu-smoke.py

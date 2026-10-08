@@ -11,8 +11,13 @@ fn main() {
         let _ = std::fs::remove_file("/run/nilos/android.sock");
         if let Ok(listener) = UnixListener::bind("/run/nilos/android.sock") {
             println!("[nilandroidd] Listening on /run/nilos/android.sock");
+            let policy = nilsd::auth::load_default_policy();
             for stream in listener.incoming() {
                 if let Ok(mut s) = stream {
+                    // C1: the Android bridge is root-only by policy.
+                    if !nilsd::auth::authorize_stream(&policy, "nilandroidd", &s) {
+                        continue;
+                    }
                     let mut buf = [0u8; 256];
                     if let Ok(n) = s.read(&mut buf) {
                         let cmd = String::from_utf8_lossy(&buf[..n]);

@@ -288,7 +288,8 @@ pub fn key_name(code: u16) -> &'static str {
 fn main() {
     println!("\x1b[1;36m[inputd]\x1b[0m Onuron OS Unified Input Subsystem Initializing...");
 
-    let _tracker = Arc::new(Mutex::new(MultiTouchTracker::new(1080.0, 2340.0)));
+    let tracker = Arc::new(Mutex::new(MultiTouchTracker::new(1080.0, 2340.0)));
+    let _ = &tracker; // used by the Linux scanner thread below
     let _ = fs::create_dir_all("/run/onuron");
 
     #[cfg(target_os = "linux")]

@@ -5,15 +5,22 @@ use std::io::{Read, Write};
 fn main() {
     println!("[notifyd] Notification Broker starting...");
     #[cfg(unix)]
-    if let Ok(listener) = nilsd::first_listener_or_bind("/run/nilos/notify.sock") {
-        println!("[notifyd] Notification Broker active on /run/nilos/notify.sock");
-        for stream in listener.incoming() {
-            if let Ok(mut s) = stream {
-                let mut buf = [0u8; 512];
-                if let Ok(n) = s.read(&mut buf) {
-                    let msg = String::from_utf8_lossy(&buf[..n]);
-                    println!("[NOTIFY BANNER] {}", msg.trim());
-                    let _ = s.write_all(b"OK\n");
+    {
+        let policy = nilsd::auth::load_default_policy();
+        if let Ok(listener) = nilsd::first_listener_or_bind("/run/nilos/notify.sock") {
+            println!("[notifyd] Notification Broker active on /run/nilos/notify.sock");
+            for stream in listener.incoming() {
+                if let Ok(mut s) = stream {
+                    // C1: only explicitly authorized peers may post banners.
+                    if !nilsd::auth::authorize_stream(&policy, "notifyd", &s) {
+                        continue;
+                    }
+                    let mut buf = [0u8; 512];
+                    if let Ok(n) = s.read(&mut buf) {
+                        let msg = String::from_utf8_lossy(&buf[..n]);
+                        println!("[NOTIFY BANNER] {}", msg.trim());
+                        let _ = s.write_all(b"OK\n");
+                    }
                 }
             }
         }
@@ -23,4 +30,3 @@ fn main() {
         println!("[notifyd] Simulated notification message bus active.");
     }
 }
-

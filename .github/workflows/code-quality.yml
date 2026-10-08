@@ -14,6 +14,11 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Setup Rust Toolchain with Components
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -22,8 +27,19 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Check Rust Formatting
-        run: cargo fmt --all -- --check || true
-
       - name: Clippy Linter Check
-        run: cargo clippy --workspace --all-targets -- -W clippy::all || true
+        run: cargo clippy --workspace --all-targets -- -W clippy::all
+
+      - name: Run Workspace Tests
+        run: cargo test --workspace --all-targets
+
+      - name: Maturity table drift check
+        run: python3 build/gen-maturity.py --check
+
+      - name: Build script unit tests
+        run: >
+          python3 -m unittest
+          build/test_gen_maturity.py
+          build/test_mkinitramfs.py
+          build/test_reproducible.py
+          build/test_persistent_data.py

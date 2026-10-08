@@ -10,3 +10,17 @@ toml = "0.8"
 sha2 = "0.10"
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 rand = "0.8"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+ureq = { version = "2", features = ["tls"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+
+[dev-dependencies]
+rcgen = { version = "0.13", default-features = false, features = ["ring"] }
+# Match ureq's rustls provider (ring). Enabling the default `aws-lc-rs`
+# feature here would leave two CryptoProviders linked and make rustls panic
+# at runtime with "could not determine the process-level CryptoProvider".
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }

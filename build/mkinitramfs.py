@@ -8,8 +8,11 @@ Runs completely cross-platform without requiring external 'cpio' or 'mknod'.
 import os
 import sys
 import gzip
+import hashlib
+import io
 import shutil
 import urllib.request
+import argparse
 
 TOP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(TOP, "out", "x86_64-generic")
@@ -20,11 +23,13 @@ INITRD_PATH = os.path.join(OUT, "nilos-initramfs.cpio.gz")
 KERNEL_URL = "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/netboot/vmlinuz-lts"
 
 
-def ensure_kernel():
+def ensure_kernel(skip_download=False):
     os.makedirs(OUT, exist_ok=True)
     if os.path.exists(KERNEL_PATH) and os.path.getsize(KERNEL_PATH) > 1000000:
         print(f"[OK] Kernel present: {KERNEL_PATH} ({os.path.getsize(KERNEL_PATH)} bytes)")
         return
+    if skip_download:
+        raise RuntimeError(f"Kernel missing at {KERNEL_PATH}; provide a pre-fetched kernel")
     print(f"==> Downloading Linux LTS kernel for QEMU from:\n    {KERNEL_URL}")
     try:
         urllib.request.urlretrieve(KERNEL_URL, KERNEL_PATH)
@@ -83,9 +88,27 @@ class CpioWriter:
             self.f.write(b'\x00' * pad)
 
 
-def create_initramfs(root_dir, output_gz):
-    print(f"==> Packaging rootfs ({root_dir}) into initramfs ({output_gz})...")
-    import io
+def gzip_compress(data, compresslevel=6):
+    """Deterministically gzip `data` (mtime pinned to 0, no embedded filename).
+
+    ``gzip.compress`` defaults to stamping the current wall-clock time into the
+    gzip header, which makes byte-for-byte reproducibility impossible. We write
+    through a ``BytesIO`` (so no ``FNAME`` field is emitted) and force
+    ``mtime=0``. Both are required for two runs on the same inputs to produce
+    an identical archive.
+    """
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=compresslevel, mtime=0) as gz:
+        gz.write(data)
+    return buf.getvalue()
+
+
+def build_cpio(root_dir):
+    """Return the raw (uncompressed) SVR4 newc cpio archive for `root_dir`.
+
+    All metadata is pinned (uid/gid 0, fixed mtime) and traversal order is
+    sorted, so the output depends only on the file tree contents.
+    """
     bio = io.BytesIO()
     writer = CpioWriter(bio)
 
@@ -110,21 +133,51 @@ def create_initramfs(root_dir, output_gz):
             entries.append((rel_root, 0o040755, b""))
         for f in files:
             file_path = os.path.join(root, f)
+            if os.path.islink(file_path):
+                raise RuntimeError(f"Symlinks are not supported in initramfs rootfs: {file_path}")
             rel_file = (f if rel_root == "." else f"{rel_root}/{f}").replace("\\", "/")
             with open(file_path, "rb") as fp:
                 data = fp.read()
-            mode = 0o100755 if ("bin" in rel_file or rel_file == "init") else 0o100644
+            mode = 0o100755 if (rel_file == "init" or rel_file.startswith(("bin/", "sbin/", "usr/bin/"))) else 0o100644
             entries.append((rel_file, mode, data))
 
     for rel_path, mode, content in entries:
         writer.add_entry(rel_path, mode, content)
 
     writer.close()
-    raw_data = bio.getvalue()
-    gz_data = gzip.compress(raw_data, compresslevel=6)
+    return bio.getvalue()
+
+
+def serialize_initramfs(root_dir):
+    """Return the complete gzip-compressed initramfs bytes for `root_dir`.
+
+    Pure function: no I/O outside reading `root_dir`, so callers (including the
+    reproducibility check and its unit tests) can build the image in memory.
+    """
+    return gzip_compress(build_cpio(root_dir), compresslevel=6)
+
+
+def create_initramfs(root_dir, output_gz):
+    print(f"==> Packaging rootfs ({root_dir}) into initramfs ({output_gz})...")
+    raw_data = build_cpio(root_dir)
+    gz_data = gzip_compress(raw_data, compresslevel=6)
+    os.makedirs(os.path.dirname(os.path.abspath(output_gz)), exist_ok=True)
     with open(output_gz, "wb") as fp:
         fp.write(gz_data)
     print(f"[OK] Initramfs created: {output_gz} ({len(gz_data)} bytes, uncompressed {len(raw_data)} bytes)")
+
+
+def check_reproducible(root_dir):
+    """Build the initramfs twice from `root_dir` and compare SHA-256 digests.
+
+    Returns ``(ok, first_hash, second_hash)``. Only in-memory work is done, so
+    this needs neither QEMU nor the network.
+    """
+    first = gzip_compress(build_cpio(root_dir), compresslevel=6)
+    second = gzip_compress(build_cpio(root_dir), compresslevel=6)
+    first_hash = hashlib.sha256(first).hexdigest()
+    second_hash = hashlib.sha256(second).hexdigest()
+    return (first_hash == second_hash, first_hash, second_hash)
 
 
 def prepare_rootfs():
@@ -166,6 +219,9 @@ def prepare_rootfs():
             shutil.copy2(src_fb, os.path.join(ROOTFS, "bin", b))
             print(f"[+] Installed native binary: {b}")
 
+    if not os.path.isfile(os.path.join(ROOTFS, "usr", "bin", "nilinit")):
+        raise RuntimeError("nilinit binary is missing; build nilinit before creating a bootable initramfs")
+
     # If nilinit was installed, link or copy to /init and /sbin/init
     nilinit_bin = os.path.join(ROOTFS, "usr", "bin", "nilinit")
     if os.path.exists(nilinit_bin):
@@ -175,14 +231,44 @@ def prepare_rootfs():
         print("[+] /init and /sbin/init linked to nilinit")
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--skip-kernel-download", action="store_true",
+                        help="fail instead of downloading a missing kernel")
+    parser.add_argument("--check-reproducible", action="store_true",
+                        help="build the initramfs twice and verify identical SHA-256")
+    parser.add_argument("--rootfs", default=None,
+                        help="rootfs directory to package (default: the generated one); "
+                             "with --check-reproducible this can be any pre-populated tree")
+    args = parser.parse_args(argv)
     print("=========================================================")
     print("          NilOS Initramfs & Image Builder                ")
     print("=========================================================")
-    ensure_kernel()
+
+    if args.check_reproducible:
+        root_dir = args.rootfs or ROOTFS
+        if args.rootfs is None:
+            ensure_kernel(skip_download=args.skip_kernel_download)
+            prepare_rootfs()
+        if not os.path.isdir(root_dir):
+            raise RuntimeError(f"rootfs directory not found: {root_dir}")
+        ok, first_hash, second_hash = check_reproducible(root_dir)
+        print(f"    build #1 sha256: {first_hash}")
+        print(f"    build #2 sha256: {second_hash}")
+        if not ok:
+            raise RuntimeError("initramfs is NOT reproducible (digests differ)")
+        print("[OK] Initramfs is byte-for-byte reproducible.")
+        return 0
+
+    ensure_kernel(skip_download=args.skip_kernel_download)
     prepare_rootfs()
     create_initramfs(ROOTFS, INITRD_PATH)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        print(f"[ERROR] Initramfs build failed: {exc}", file=sys.stderr)
+        sys.exit(1)

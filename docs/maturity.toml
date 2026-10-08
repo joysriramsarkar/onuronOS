@@ -1,0 +1,233 @@
+# Maturity table data file.
+#
+# This is the source of truth for the "Subsystem Maturity & Reality" table in
+# README.md. Regenerate the table with:
+#
+#     python build/gen-maturity.py
+#
+# and verify it is up to date (CI) with:
+#
+#     python build/gen-maturity.py --check
+#
+# Schema (one [[entries]] table per subsystem):
+#   name        Display name (may contain Markdown).
+#   tier        One of: production, functional-prototype, experimental,
+#               stub, not-implemented. Maps to the README legend emoji.
+#   details     "Details & Reality" cell text.
+#   evidence    Repo-relative paths that justify the claim. Every path must
+#               exist; a missing path fails the generator.
+#   simulated   true when the subsystem's user-facing screen shows fabricated
+#               data. Such rows get a visible [SIMULATED] marker.
+#   ui_screens  Screen keys from shell/src/simulated.rs that back the
+#               `simulated` claim. Must match the Rust registry in both
+#               directions (no orphan screens, no phantom claims).
+#
+# Tier honesty note: 🟢 production means "hardened and verified in real
+# environments". Nothing here has passed that bar yet (the Linux CI/QEMU gate
+# is still unproven and no physical target boots), so no row is 🟢.
+
+[[entries]]
+name = "Linux Kernel Boot"
+tier = "functional-prototype"
+details = "Linux LTS 6.6 x86_64, bootable under QEMU with initramfs"
+evidence = ["build/qemu-boot.sh", "build/qemu-boot.ps1", "docs/boot-process.md"]
+simulated = false
+
+[[entries]]
+name = "System Init (`nilinit`)"
+tier = "functional-prototype"
+details = "PID 1 init, clean `[  OK  ]` boot logging, mounts, supervision, socket activation"
+evidence = ["nilinit/src/main.rs", "nilinit/src/supervisor.rs"]
+simulated = false
+
+[[entries]]
+name = "Storage Hierarchy"
+tier = "functional-prototype"
+details = "`/data` ext4 persistent disk on virtio-blk + tmpfs fallback; mobile layout"
+evidence = ["build/mkdisk.py", "nilinit/src/main.rs"]
+simulated = false
+
+[[entries]]
+name = "QEMU Boot Automation"
+tier = "functional-prototype"
+details = "Persistent `nilos.img` disk + virtio-blk + user-mode NAT networking"
+evidence = ["build/qemu-boot.sh", "build/qemu-boot.ps1"]
+simulated = false
+
+[[entries]]
+name = "First-Boot Setup (OOBE)"
+tier = "functional-prototype"
+details = "Name & PIN setup wizard, writes configuration to `/data/config/`"
+evidence = ["shell/src/main.rs"]
+simulated = false
+
+[[entries]]
+name = "Lock Screen"
+tier = "functional-prototype"
+details = "Salted + stretched (100k-round SHA-256) PIN record with constant-time verify; displayed clock/date/weather are static demo values"
+evidence = ["shell/src/pin.rs", "shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["lockscreen"]
+
+[[entries]]
+name = "Home Launcher"
+tier = "functional-prototype"
+details = "App grid, status bar, notification shade; hero clock/date and status-bar battery/signal are static demo values"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["home"]
+
+[[entries]]
+name = "Phone App"
+tier = "stub"
+details = "Dialer UI & contact list functional; **simulated VoLTE** (real modem AT layer planned); recent-call list is fabricated"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["phone"]
+
+[[entries]]
+name = "Messages App"
+tier = "functional-prototype"
+details = "SMS message threads, composer, persistent storage under `/data/sms/`; ships with seeded demo threads"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["messages"]
+
+[[entries]]
+name = "Files App"
+tier = "functional-prototype"
+details = "Directory explorer for `/data`, `/etc`, `/tmp`, `/data/app`"
+evidence = ["shell/src/main.rs"]
+simulated = false
+
+[[entries]]
+name = "Settings App"
+tier = "functional-prototype"
+details = "System settings UI for Network, Display, Security, Battery, Storage; security/status lines (SELinux, fscrypt) are unverified"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["settings"]
+
+[[entries]]
+name = "Notification Center"
+tier = "stub"
+details = "Notification shade renders a fabricated notification history (real SMS threads are mixed in)"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["notifications"]
+
+[[entries]]
+name = "Permission Broker"
+tier = "functional-prototype"
+details = "JSON-persisted grants with 7-day auto-revoke; atomic writes and corrupt-database quarantine; clock-skew safe"
+evidence = ["runtime/nilrt/src/permbroker.rs"]
+simulated = false
+
+[[entries]]
+name = "Namespace Sandbox"
+tier = "functional-prototype"
+details = "`unshare(CLONE_NEWPID|CLONE_NEWNS|CLONE_NEWIPC|CLONE_NEWUTS)` + private mount propagation + `chroot`/`pivot_root` with `chdir(\"/\")` escape fix"
+evidence = ["runtime/nilrt/src/sandbox.rs"]
+simulated = false
+
+[[entries]]
+name = "Seccomp BPF Filter"
+tier = "functional-prototype"
+details = "Real `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)` syscall allowlist (~110 syscalls)"
+evidence = ["runtime/nilrt/src/seccomp.rs"]
+simulated = false
+
+[[entries]]
+name = "SoftBus Distributed Mesh"
+tier = "functional-prototype"
+details = "Real mDNS-SD peer discovery + Quinn QUIC/TLS 1.3 transport; the UI's discovered-peer list is fabricated"
+evidence = ["softbus/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["softbus"]
+
+[[entries]]
+name = "Input Daemon (`inputd`)"
+tier = "functional-prototype"
+details = "Linux `evdev` & Android Host bridge with gesture recognition (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch); not yet verified on a physical target"
+evidence = ["services/inputd/src/main.rs"]
+simulated = false
+
+[[entries]]
+name = "Power Daemon (`powerd`)"
+tier = "functional-prototype"
+details = "NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes"
+evidence = ["services/powerd/src/main.rs"]
+simulated = false
+
+[[entries]]
+name = "Network Daemon (`netd`)"
+tier = "functional-prototype"
+details = "NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC"
+evidence = ["services/netd/src/main.rs"]
+simulated = false
+
+[[entries]]
+name = "Package Manager (`nilpkg`)"
+tier = "functional-prototype"
+details = "Signed `.nilax` package format (`nilpkg pack`), atomic unpack & install, upgrade with rollback, crash-recovery journal, cross-process locking, key revocation, and shell integration; store catalogue simulated"
+evidence = ["pkg/nilpkg/src/main.rs", "pkg/nilpkg/src/lib.rs", "pkg/nilpkg/src/extract.rs", "pkg/nilpkg/src/keymgmt.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["nilpkg"]
+
+[[entries]]
+name = "Canonical Framed IPC (`nilprotocol`)"
+tier = "functional-prototype"
+details = "Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) with client/server codecs wired into `powerd`"
+evidence = ["protocol/src/lib.rs", "services/powerd/src/main.rs"]
+simulated = false
+
+[[entries]]
+name = "Hardware Watchdog (`nilwdt`)"
+tier = "functional-prototype"
+details = "Feeds `/dev/watchdog` with configurable interval/timeout, subsystem health monitoring, trip-on-hang, and graceful disarm"
+evidence = ["services/nilwdt/src/main.rs"]
+simulated = false
+
+[[entries]]
+name = "Android Compatibility Layer"
+tier = "stub"
+details = "Android screen shows placeholder container state; no LXC/Waydroid container is launched from the UI yet"
+evidence = ["android/agent/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["android"]
+
+[[entries]]
+name = "Diagnostic Terminal (`nilshell`)"
+tier = "stub"
+details = "`ps`, `services` and `net` output is fabricated; `ls`/`cat`/`mem` read real kernel/filesystem data"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["terminal"]
+
+[[entries]]
+name = "NilHAL Unified Subsystem"
+tier = "functional-prototype"
+details = "Rust trait abstraction with mock in-memory `FakeHAL` for automated CI, plus scaffold backends for Linux sysfs, evdev, and Android host"
+evidence = ["runtime/nilhal/src/lib.rs", "runtime/nilhal/src/backends/fake.rs"]
+simulated = false
+
+[[entries]]
+name = "S25 Hosted Mobile Runtime"
+tier = "functional-prototype"
+details = "Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & bridge (`android-host/`)"
+evidence = ["android-host/src/lib.rs", "android-host/src/bridge.rs"]
+simulated = false
+
+[[entries]]
+name = "Operating Modes (1, 2, 3)"
+tier = "experimental"
+details = "Mode 1 (QEMU) working; Mode 2 (Galaxy S25 Hosted Lab) in progress; Mode 3 (Future Bare Metal Phone) not implemented"
+evidence = ["docs/architecture.md"]
+simulated = false
+
+[[entries]]
+name = "Status Bar (simulated indicators)"
+tier = "stub"
+details = "Battery, signal and clock indicators are demo values, marked `⚠SIM` on screen across the shell"
+evidence = ["shell/src/main.rs"]
+simulated = true

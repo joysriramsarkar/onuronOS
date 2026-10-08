@@ -43,6 +43,7 @@ members = [
   "runtime/nilcam",
   "runtime/nilaudio",
   "runtime/nilauth",
+  "protocol",
   "softbus",
   "shell",
   "nilgui",

@@ -34,7 +34,8 @@ impl SocketActivationManager {
     }
 
     pub fn check_pending(&self) -> Vec<String> {
-        let pending = Vec::new();
+        #[allow(unused_mut)] // only mutated in the unix branch
+        let mut pending = Vec::new();
         #[cfg(unix)]
         {
             for (name, listener) in &self.listeners {

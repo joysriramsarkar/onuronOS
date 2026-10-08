@@ -3,7 +3,9 @@ param (
     [switch]$Headless,
     [switch]$NoRebuild,
     [switch]$NoDisk,
-    [switch]$NoNet
+    [switch]$NoNet,
+    # PID 1 override — e.g. "/usr/bin/calculator-nilLang" to boot a NilLang app directly
+    [string]$Init = "/init"
 )
 
 $ErrorActionPreference = "Stop"
@@ -64,12 +66,19 @@ if (-not $NoDisk) {
 }
 
 # 4. Build QEMU arguments
+# /dev/console maps to the LAST console= (empirically verified).
+#   - Graphical: VGA (tty0) is last  -> nilshell / app TUI renders INSIDE the
+#     QEMU window; keyboard input goes to the window (click it and type).
+#   - Headless:  serial (ttyS0) is last -> all I/O in THIS terminal.
+$ConsoleOrder = "console=ttyS0 console=tty0"
+if ($Headless) { $ConsoleOrder = "console=tty0 console=ttyS0" }
+
 $qemuArgs = @(
     "-m", "1024",
     "-smp", "2",
     "-kernel", $KERNEL,
     "-initrd", $INITRD,
-    "-append", "console=ttyS0 console=tty0 init=/init panic=10 rw"
+    "-append", "$ConsoleOrder rdinit=$Init init=$Init panic=10 rw"
 )
 
 # Persistent data disk (virtio-blk)
@@ -94,7 +103,7 @@ if (-not $NoNet) {
 if (-not $Headless) {
     Write-Host "    Mode: Graphical Window + Serial console" -ForegroundColor DarkCyan
     Write-Host "    (QEMU window opens + serial output in this terminal)" -ForegroundColor Gray
-    Write-Host "    TIP: Type commands in THIS terminal window." -ForegroundColor Yellow
+    Write-Host "    TIP: Click the QEMU window and type there (console = VGA window)." -ForegroundColor Yellow
     $qemuArgs += @("-vga", "std", "-serial", "stdio")
 } else {
     Write-Host "    Mode: Headless — all I/O in this terminal" -ForegroundColor DarkCyan
@@ -102,15 +111,37 @@ if (-not $Headless) {
     $qemuArgs += @("-nographic", "-serial", "mon:stdio")
 }
 
-Write-Host ""
-Write-Host "=========================================================" -ForegroundColor Cyan
-Write-Host "  NilOS UI Controls (once booted):" -ForegroundColor White
-Write-Host "    OOBE Wizard:  Follow on-screen prompts" -ForegroundColor Gray
-Write-Host "    Lockscreen:   Enter your PIN" -ForegroundColor Gray
-Write-Host "    Home:         Type 1-8 and Enter to open apps" -ForegroundColor Gray
-Write-Host "    Apps:         Type 'back' or 'home' to navigate" -ForegroundColor Gray
-Write-Host "    Quit QEMU:    Press Ctrl+A then X (headless)" -ForegroundColor Gray
-Write-Host "=========================================================" -ForegroundColor Cyan
+# App-as-init (-Init): the app becomes PID 1 with stdin/stdout = /dev/console,
+# which maps to the LAST console= — the QEMU VGA window in graphical mode, or
+# this terminal in headless mode (see $ConsoleOrder above). Also, NilOS's
+# OOBE/lockscreen UI does not exist when a custom app is PID 1.
+if ($Init -ne "/init") {
+    Write-Host ""
+    Write-Host "=========================================================" -ForegroundColor Green
+    Write-Host "  🧮 App-as-init: $Init" -ForegroundColor Green
+    if ($Headless) {
+        Write-Host "    The calculator runs in THIS terminal." -ForegroundColor White
+        Write-Host "    Type like:  52+63   then Enter" -ForegroundColor Yellow
+    } else {
+        Write-Host "    The calculator TUI runs INSIDE the QEMU window —" -ForegroundColor White
+        Write-Host "    a colored window with display + keypad + history." -ForegroundColor Gray
+        Write-Host "    CLICK the QEMU window, then type like:  52+63" -ForegroundColor Yellow
+        Write-Host "    (this terminal only shows the kernel boot log)" -ForegroundColor Gray
+    }
+    Write-Host "    Quit:       exit    (PID 1 exit = auto-reboot in 10s)" -ForegroundColor Gray
+    Write-Host "=========================================================" -ForegroundColor Green
+} else {
+    Write-Host ""
+    Write-Host "=========================================================" -ForegroundColor Cyan
+    Write-Host "  NilOS UI Controls (once booted):" -ForegroundColor White
+    Write-Host "    Interact IN THE QEMU window (click it first)" -ForegroundColor Yellow
+    Write-Host "    OOBE Wizard:  Follow on-screen prompts" -ForegroundColor Gray
+    Write-Host "    Lockscreen:   Enter your PIN" -ForegroundColor Gray
+    Write-Host "    Home:         Type 1-8 and Enter to open apps" -ForegroundColor Gray
+    Write-Host "    Apps:         Type 'back' or 'home' to navigate" -ForegroundColor Gray
+    Write-Host "    Quit QEMU:    Close the window (or Ctrl+A then X if headless)" -ForegroundColor Gray
+    Write-Host "=========================================================" -ForegroundColor Cyan
+}
 Write-Host ""
 
 & $qemu @qemuArgs

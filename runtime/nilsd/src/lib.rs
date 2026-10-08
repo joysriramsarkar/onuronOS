@@ -1,4 +1,10 @@
 // runtime/nilsd/src/lib.rs — Systemd/NilInit compatible socket activation helper
+pub mod auth;
+pub use auth::{IpcPolicy, PeerCred};
+
+#[cfg(unix)]
+pub use auth::{authorize_fd, authorize_stream, peer_cred, peer_cred_fd};
+
 #[cfg(unix)]
 use std::env;
 #[cfg(unix)]

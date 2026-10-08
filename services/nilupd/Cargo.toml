@@ -5,3 +5,8 @@ edition = "2021"
 
 [dependencies]
 nilsd = { path = "../../runtime/nilsd" }
+nilpkg = { path = "../../pkg/nilpkg" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }

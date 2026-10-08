@@ -30,6 +30,7 @@ const COLOR_TEXT_MED: u32 = 0x94A3B8;    // Light Slate
 const COLOR_TEXT_DIM: u32 = 0x475569;    // Dim Slate
 const COLOR_ACCENT_BG: u32 = 0x0B3C5D;   // Translucent Accent
 const COLOR_TERM_BG: u32 = 0x040609;     // Pure Terminal Black
+const SIMULATED_BADGE: &str = "[SIMULATED]";
 
 // ─── Data Paths ───────────────────────────────────────────────────────────────
 const OOBE_DONE: &str = "/data/nilos/oobe_done";
@@ -517,6 +518,7 @@ impl<'a, C: Connection> Painter<'a, C> {
 fn render_status_bar<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
     p.fill_rect(0, 0, p.width, 36, 0x080C14);
     p.draw_text(16, 12, 2, "NilOS", COLOR_CYAN);
+    p.draw_text(100, 12, 1, SIMULATED_BADGE, COLOR_AMBER);
 
     // Dynamic right-side indicators
     let mut cur_x = (p.width as i16) - 170;
@@ -699,6 +701,7 @@ fn render_lockscreen<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
     let center_x = p.width as i16 / 2;
 
     p.draw_digital_clock(center_x, 60, 2);
+    p.draw_text(20, 48, 1, SIMULATED_BADGE, COLOR_AMBER);
 
     p.draw_text(center_x - 120, 160, 2, "Tuesday, Sep 1, 2026", COLOR_TEXT_MED);
 
@@ -757,6 +760,7 @@ fn render_home<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
 
     // Small Clock widget
     p.draw_digital_clock(center_x, 48, 1);
+    p.draw_text(20, 48, 1, SIMULATED_BADGE, COLOR_AMBER);
     p.draw_text(center_x - 120, 94, 2, "Tue, Sep 1 | 28 C  Sunny", COLOR_TEXT_MED);
 
     // Search Bar Widget
@@ -821,6 +825,7 @@ fn render_app_browser<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
 
 fn render_app_phone<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
     p.draw_text(20, 48, 3, "Phone & Dialer", COLOR_GREEN);
+    p.draw_text(250, 50, 2, SIMULATED_BADGE, COLOR_AMBER);
 
     let num_w = p.width - 40;
     p.fill_rect(20, 90, num_w, 50, COLOR_SURFACE);
@@ -862,6 +867,7 @@ fn render_app_phone<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
 
 fn render_app_messages<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
     p.draw_text(20, 48, 3, "Messages (SMS)", COLOR_AMBER);
+    p.draw_text(220, 50, 2, SIMULATED_BADGE, COLOR_AMBER);
 
     let btn_w = p.width - 40;
     p.draw_button(20, 90, btn_w, 44, "+ NEW ENCRYPTED CHAT", COLOR_ACCENT_BG, COLOR_CYAN, "msg_new");
@@ -918,6 +924,7 @@ fn render_app_files<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
 
 fn render_app_settings<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
     p.draw_text(20, 48, 3, "Settings", COLOR_PURPLE);
+    p.draw_text(250, 50, 2, SIMULATED_BADGE, COLOR_AMBER);
 
     let card_w = p.width - 40;
     let mut y = 90;
@@ -958,6 +965,7 @@ fn render_app_settings<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
 
 fn render_app_nilpkg<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
     p.draw_text(20, 48, 3, "NilPkg App Store", COLOR_CYAN);
+    p.draw_text(280, 50, 2, SIMULATED_BADGE, COLOR_AMBER);
 
     let card_w = p.width - 40;
     let packages = [
@@ -990,6 +998,7 @@ fn render_app_nilpkg<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
 
 fn render_app_softbus<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
     p.draw_text(20, 48, 3, "SoftBus Mesh", COLOR_CYAN);
+    p.draw_text(220, 50, 2, SIMULATED_BADGE, COLOR_AMBER);
     p.draw_text(20, 84, 2, "Distributed Device Fabric", COLOR_TEXT_MED);
 
     let card_w = p.width - 40;
@@ -1013,6 +1022,7 @@ fn render_app_softbus<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
 
 fn render_app_android<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
     p.draw_text(20, 48, 3, "Android Container", COLOR_GREEN);
+    p.draw_text(280, 50, 2, SIMULATED_BADGE, COLOR_AMBER);
 
     let card_w = p.width - 40;
     p.fill_rect(20, 90, card_w, 180, COLOR_SURFACE);
@@ -1030,6 +1040,7 @@ fn render_app_android<C: Connection>(p: &mut Painter<C>, _state: &GuiState) {
 // ─── Real Terminal Emulator UI ────────────────────────────────────────────────
 fn render_app_terminal<C: Connection>(p: &mut Painter<C>, state: &GuiState) {
     p.draw_text(20, 44, 2, "NilOS Terminal CLI", COLOR_CYAN);
+    p.draw_text(280, 46, 2, SIMULATED_BADGE, COLOR_AMBER);
     
     let cwd_display = format!("nilos:{}$", state.term_cwd);
     p.draw_text(20, 68, 2, &cwd_display, COLOR_GREEN);

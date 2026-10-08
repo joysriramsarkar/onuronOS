@@ -21,6 +21,10 @@ out/
 *.exe
 *.pdb
 
+# Python build-script caches
+__pycache__/
+*.pyc
+
 # OS generated files
 .DS_Store
 Thumbs.db

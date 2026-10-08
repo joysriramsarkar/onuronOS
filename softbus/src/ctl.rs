@@ -16,6 +16,7 @@ pub struct SoftBusControl {
     peers: PeerMap,
     quic_endpoint: Arc<Endpoint>,
     device_id: String,
+    policy: nilsd::auth::IpcPolicy,
 }
 
 impl SoftBusControl {
@@ -31,6 +32,7 @@ impl SoftBusControl {
             peers,
             quic_endpoint,
             device_id: device_id.to_string(),
+            policy: nilsd::auth::load_default_policy(),
         }
     }
 
@@ -40,6 +42,13 @@ impl SoftBusControl {
 
         loop {
             let (mut stream, _) = listener.accept().await?;
+            // C1: authorize before doing any work on behalf of the peer.
+            {
+                use std::os::unix::io::AsRawFd;
+                if !nilsd::auth::authorize_fd(&self.policy, "softbus", stream.as_raw_fd()) {
+                    continue;
+                }
+            }
             let ctrl = self.clone();
 
             tokio::spawn(async move {

@@ -1,6 +1,7 @@
 // runtime/nilhal/src/backends/linux.rs — Native Linux Hardware Backend (sysfs, evdev, DRM)
 use crate::traits::*;
 use std::fs;
+use std::net::IpAddr;
 use std::path::Path;
 
 pub struct LinuxDisplay {
@@ -92,6 +93,31 @@ impl InputHal for LinuxInput {
 
 pub struct LinuxNetwork;
 
+fn parse_dns_servers(contents: &str) -> Vec<String> {
+    let mut servers = Vec::new();
+    for line in contents.lines() {
+        let mut fields = line.split('#').next().unwrap_or("").split_whitespace();
+        if fields.next() != Some("nameserver") { continue; }
+        if let Some(value) = fields.next() {
+            if value.parse::<IpAddr>().is_ok() && !servers.iter().any(|s| s == value) {
+                servers.push(value.to_string());
+            }
+        }
+    }
+    servers
+}
+
+#[cfg(test)]
+mod network_tests {
+    use super::*;
+
+    #[test]
+    fn dns_parser_accepts_only_unique_ip_nameservers() {
+        assert_eq!(parse_dns_servers("nameserver 1.1.1.1\nnameserver 2001:4860::1 # v6\nnameserver bogus\nnameserverx 8.8.8.8\nnameserver 1.1.1.1\n"),
+            vec!["1.1.1.1", "2001:4860::1"]);
+    }
+}
+
 impl NetworkHal for LinuxNetwork {
     fn get_state(&self) -> HalNetworkState {
         let mut is_connected = false;
@@ -112,8 +138,10 @@ impl NetworkHal for LinuxNetwork {
                             conn_type = ConnectionType::Wifi;
                         } else if name.starts_with("rmnet") || name.starts_with("wwan") {
                             conn_type = ConnectionType::Cellular;
-                        } else {
+                        } else if name.starts_with("eth") || name.starts_with("en") || name.starts_with("virt") {
                             conn_type = ConnectionType::Ethernet;
+                        } else {
+                            conn_type = ConnectionType::None;
                         }
                         break;
                     }
@@ -121,12 +149,15 @@ impl NetworkHal for LinuxNetwork {
             }
         }
 
+        let dns_servers = fs::read_to_string("/etc/resolv.conf")
+            .map(|contents| parse_dns_servers(&contents))
+            .unwrap_or_default();
         HalNetworkState {
             is_connected,
             active_interface: active_iface,
             connection_type: conn_type,
             ip_address: None,
-            dns_servers: vec!["1.1.1.1".into(), "8.8.8.8".into()],
+            dns_servers,
             wifi_ssid: None,
             cellular_carrier: None,
         }

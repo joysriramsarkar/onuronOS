@@ -1,14 +1,50 @@
 // nilinit/src/main.rs — Onuron OS PID 1: Mount, Disk Init, Mobile Storage Hierarchy, SELinux, Supervisor, Socket Activation
-use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
-use std::process::{Child, Command};
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 use serde::Deserialize;
 
 mod activate;
+mod recovery;
+mod supervisor;
 use activate::SocketActivationManager;
+use recovery::BootDecision;
+use supervisor::{ServiceSpec, Supervisor};
+
+/// Read the kernel command line and the persisted failed-boot counter, and
+/// decide whether to continue a normal boot or drop into recovery.
+fn decide_boot() -> BootDecision {
+    let cmdline = fs::read_to_string("/proc/cmdline").unwrap_or_default();
+    let previous = recovery::read_boot_count(recovery::BOOT_COUNT_PATH);
+    recovery::plan_boot(&cmdline, previous)
+}
+
+/// Run the recovery menu and then reboot. Never returns.
+fn enter_recovery(reason: &str) -> ! {
+    kmsg(&format!(
+        "\x1b[1;33m[ WARN ]\x1b[0m Entering recovery mode: {}",
+        reason
+    ));
+    match Command::new("/usr/bin/nilrecovery").status() {
+        Ok(status) => log_info(&format!("Recovery menu exited with {}", status)),
+        Err(e) => log_warn(&format!("Could not start /usr/bin/nilrecovery: {}", e)),
+    }
+    #[cfg(target_os = "linux")]
+    {
+        unsafe {
+            libc::sync();
+            libc::reboot(libc::RB_AUTOBOOT);
+        }
+    }
+    // If the reboot syscall failed (for example when not actually PID 1), do
+    // not fall through into normal boot; stay parked so the operator can see
+    // the failure.
+    loop {
+        thread::sleep(Duration::from_secs(60));
+    }
+}
 
 #[derive(Deserialize, Clone)]
 struct Service {
@@ -199,12 +235,9 @@ fn write_system_env() {
     let _ = fs::write("/run/nilos/env", &env_content);
 }
 
-fn handle_system_shutdown(action: &str, running: &mut HashMap<String, Child>) {
+fn handle_system_shutdown(action: &str, supervisor: &mut Supervisor) {
     log_info(&format!("Initiating system {}", action));
-    for (name, child) in running.iter_mut() {
-        log_info(&format!("Stopping service: {}", name));
-        let _ = child.kill();
-    }
+    supervisor.shutdown();
     #[cfg(target_os = "linux")]
     unsafe {
         libc::sync();
@@ -222,6 +255,21 @@ fn main() {
     setup_cgroups();
     mount_data_partition();
     load_selinux();
+
+    // Recovery decision: an explicit kernel flag or too many consecutive
+    // failed boots drops the device into `nilrecovery` instead of the UI.
+    match decide_boot() {
+        BootDecision::Recovery { reason } => enter_recovery(&reason.describe()),
+        BootDecision::Normal { failed_boots } => {
+            // Persist the incremented counter *before* services start; it is
+            // only cleared once boot genuinely completes below. If we die
+            // before that point, the next boot sees the higher count.
+            if let Err(e) = recovery::write_boot_count(recovery::BOOT_COUNT_PATH, failed_boots) {
+                log_warn(&format!("Could not persist boot counter: {}", e));
+            }
+        }
+    }
+
     check_live_install();
     write_system_env();
 
@@ -247,7 +295,6 @@ fn main() {
     };
 
     let mut activator = SocketActivationManager::new();
-    let mut running: HashMap<String, Child> = HashMap::new();
 
     for s in &config.services {
         if let Some(sock_path) = &s.socket_activation {
@@ -256,80 +303,40 @@ fn main() {
     }
     log_ok("Socket activation manager initialized");
 
-    for s in &config.services {
-        if s.socket_activation.is_none() {
-            let parts: Vec<&str> = s.exec.split_whitespace().collect();
-            if let Some((bin, args)) = parts.split_first() {
-                match Command::new(bin).args(args).spawn() {
-                    Ok(child) => {
-                        log_ok(&format!("Service '{}' started (PID {})", s.name, child.id()));
-                        running.insert(s.name.clone(), child);
-                    }
-                    Err(e) => {
-                        log_warn(&format!("Service '{}' not available: {}", s.name, e));
-                    }
-                }
-            }
-        }
-    }
+    // Supervision is driven by the extracted Supervisor so it can be tested
+    // with real child processes.
+    let services: Vec<ServiceSpec> = config
+        .services
+        .iter()
+        .map(|s| ServiceSpec {
+            name: s.name.clone(),
+            exec: s.exec.clone(),
+            restart: s.restart.clone(),
+        })
+        .collect();
+    let mut supervisor = Supervisor::new(services);
+    supervisor.start_all();
 
     log_ok(&format!(
         "Onuron OS boot completed in {:.2} ms ({} services active)",
         boot_start.elapsed().as_secs_f64() * 1000.0,
-        running.len()
+        supervisor.live_count()
     ));
+
+    // Boot reached completion: the failed-boot counter can be cleared. If
+    // nilinit had crashed before this point the counter would have been left
+    // incremented, eventually routing the device into recovery.
+    if let Err(e) = recovery::write_boot_count(
+        recovery::BOOT_COUNT_PATH,
+        recovery::successful_boot_counter(),
+    ) {
+        log_warn(&format!("Could not clear boot counter: {}", e));
+    }
 
     // Supervision Loop
     loop {
-        let pending = activator.check_pending();
-        for name in pending {
-            if !running.contains_key(&name) {
-                if let Some(s) = config.services.iter().find(|svc| svc.name == name) {
-                    log_info(&format!("Waking socket-activated service: {}", name));
-                    let parts: Vec<&str> = s.exec.split_whitespace().collect();
-                    if let Some((bin, args)) = parts.split_first() {
-                        let mut cmd = Command::new(bin);
-                        cmd.args(args);
-                        if let Some(_fd) = activator.get_raw_fd(&name) {
-                            cmd.env("LISTEN_FDS", "1");
-                            cmd.env("LISTEN_FDNAMES", &name);
-                        }
-                        if let Ok(child) = cmd.spawn() {
-                            running.insert(name.clone(), child);
-                        }
-                    }
-                }
-            }
-        }
-
-        let mut dead = Vec::new();
-        for (name, child) in running.iter_mut() {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    log_warn(&format!("Service '{}' exited with status: {}", name, status));
-                    dead.push(name.clone());
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    log_warn(&format!("Error polling service '{}': {}", name, e));
-                    dead.push(name.clone());
-                }
-            }
-        }
-
-        for name in dead {
-            running.remove(&name);
-            if let Some(s) = config.services.iter().find(|svc| svc.name == name) {
-                if s.restart == "always" {
-                    log_info(&format!("Auto-restarting supervisor daemon: {}", name));
-                    let parts: Vec<&str> = s.exec.split_whitespace().collect();
-                    if let Some((bin, args)) = parts.split_first() {
-                        if let Ok(child) = Command::new(bin).args(args).spawn() {
-                            running.insert(name, child);
-                        }
-                    }
-                }
-            }
+        if !supervisor.tick() {
+            break;
         }
 
         // Check for pending shutdown / reboot requests
@@ -338,7 +345,7 @@ fn main() {
             if let Ok(action) = fs::read_to_string(power_req) {
                 let action = action.trim();
                 let _ = fs::remove_file(power_req);
-                handle_system_shutdown(action, &mut running);
+                handle_system_shutdown(action, &mut supervisor);
                 break;
             }
         }

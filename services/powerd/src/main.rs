@@ -118,6 +118,79 @@ pub fn read_sysfs_battery() -> BatteryInfo {
     read_battery_info()
 }
 
+// ─── Battery policy (pure, testable) ────────────────────────────────────────
+
+/// Warn when the battery drops *below* this capacity percentage.
+///
+/// Conservative default: 5%. The comparison is strict, so exactly 5% does not
+/// warn; 4% does.
+pub const LOW_BATTERY_WARN_PERCENT: u8 = 5;
+
+/// Request a graceful shutdown when the battery drops *below* this capacity.
+///
+/// Conservative default: 3%. Deliberately lower than the warning threshold so
+/// a device that cannot charge still has headroom to warn the user and persist
+/// state before powering off.
+pub const CRITICAL_BATTERY_SHUTDOWN_PERCENT: u8 = 3;
+
+/// What the power governor should do for a battery reading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatteryAction {
+    /// Battery is healthy (or charging): do nothing.
+    None,
+    /// Battery is low: emit a warning event.
+    WarnLowBattery,
+    /// Battery is critically low: request an orderly poweroff.
+    RequestShutdown,
+}
+
+/// Parse a sysfs `capacity` value, e.g. `"42\n"`. Values above 100 are clamped.
+/// Malformed or empty input yields `None` rather than a fabricated reading.
+pub fn parse_capacity(raw: &str) -> Option<u8> {
+    raw.trim().parse::<u8>().ok().map(|v| v.min(100))
+}
+
+/// Parse a sysfs `status` value into `(normalized status, power connected)`.
+///
+/// A device that is `Charging` or `Full` is treated as power-connected, which
+/// suppresses the shutdown path.
+pub fn parse_status(raw: &str) -> (String, bool) {
+    let status = raw.trim().to_string();
+    let connected = status.eq_ignore_ascii_case("charging")
+        || status.eq_ignore_ascii_case("full");
+    (status, connected)
+}
+
+/// Pure battery policy.
+///
+/// `power_connected` (charging or full) always suppresses the shutdown request:
+/// a device that is plugged in must never power itself off. The low-battery
+/// *warning* is still emitted while charging, since it is informational.
+pub fn battery_action(capacity: u8, power_connected: bool) -> BatteryAction {
+    if !power_connected && capacity < CRITICAL_BATTERY_SHUTDOWN_PERCENT {
+        BatteryAction::RequestShutdown
+    } else if capacity < LOW_BATTERY_WARN_PERCENT {
+        BatteryAction::WarnLowBattery
+    } else {
+        BatteryAction::None
+    }
+}
+
+/// Ask the system to power off gracefully. Prefers the init-provided poweroff
+/// binary; failure is logged and never panics. This only *requests* shutdown —
+/// nilinit remains the component that actually stops the system.
+pub fn request_graceful_shutdown() {
+    for cmd in ["/sbin/poweroff", "/bin/poweroff", "/usr/bin/poweroff"] {
+        if Path::new(cmd).exists() {
+            match std::process::Command::new(cmd).status() {
+                Ok(_) => return,
+                Err(e) => eprintln!("[powerd] poweroff via {} failed: {}", cmd, e),
+            }
+        }
+    }
+    eprintln!("[powerd] no poweroff binary found; graceful shutdown request logged only.");
+}
+
 pub fn set_backlight(level: u32) -> Result<(), String> {
     let backlight_dir = Path::new("/sys/class/backlight");
     if backlight_dir.exists() {
@@ -132,6 +205,41 @@ pub fn set_backlight(level: u32) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+use nilprotocol::{Frame, MessageType};
+
+pub fn handle_ipc_request(frame: &Frame, governor: &Arc<Mutex<PowerGovernor>>) -> Frame {
+    let msg_type = MessageType::from(frame.message_type);
+    match msg_type {
+        MessageType::Ping => {
+            Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec())
+        }
+        MessageType::PowerGetBattery => {
+            let bat = read_sysfs_battery();
+            let json = serde_json::to_vec(&bat).unwrap_or_default();
+            Frame::new(MessageType::PowerBatteryInfo, frame.request_id, json)
+        }
+        MessageType::PowerAcquireWakelock => {
+            let tag = String::from_utf8_lossy(&frame.payload).trim().to_string();
+            let mut g = governor.lock().unwrap();
+            g.acquire_wakelock(&tag);
+            Frame::new(MessageType::Pong, frame.request_id, b"acquired".to_vec())
+        }
+        MessageType::PowerReleaseWakelock => {
+            let tag = String::from_utf8_lossy(&frame.payload).trim().to_string();
+            let mut g = governor.lock().unwrap();
+            let ok = g.release_wakelock(&tag);
+            Frame::new(
+                MessageType::Pong,
+                frame.request_id,
+                if ok { b"released".to_vec() } else { b"not_found".to_vec() },
+            )
+        }
+        _ => {
+            Frame::new(MessageType::ErrorResponse, frame.request_id, b"unsupported message type".to_vec())
+        }
+    }
 }
 
 fn main() {
@@ -154,8 +262,21 @@ fn main() {
             let mut gov = gov_clone.lock().unwrap();
             let bat = read_sysfs_battery();
 
-            if bat.capacity <= 5 && !bat.is_charging {
-                eprintln!("\x1b[1;31m[powerd] [CRITICAL]\x1b[0m Battery level <= 5%! Requesting safe poweroff.");
+            match battery_action(bat.capacity, bat.is_charging) {
+                BatteryAction::RequestShutdown => {
+                    eprintln!(
+                        "\x1b[1;31m[powerd] [CRITICAL]\x1b[0m Battery {}% is below {}%! Requesting graceful shutdown.",
+                        bat.capacity, CRITICAL_BATTERY_SHUTDOWN_PERCENT
+                    );
+                    request_graceful_shutdown();
+                }
+                BatteryAction::WarnLowBattery => {
+                    eprintln!(
+                        "\x1b[1;33m[powerd] [WARN]\x1b[0m Battery low: {}% is below {}%.",
+                        bat.capacity, LOW_BATTERY_WARN_PERCENT
+                    );
+                }
+                BatteryAction::None => {}
             }
 
             if gov.check_idle_timeout() {
@@ -164,6 +285,36 @@ fn main() {
             }
         }
     });
+
+    #[cfg(unix)]
+    {
+        let gov_ipc = Arc::clone(&governor);
+        thread::spawn(move || {
+            let listener = match nilsd::first_listener_or_bind("/run/onuron/power.sock") {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("[powerd] Failed to bind IPC socket /run/onuron/power.sock: {}", e);
+                    return;
+                }
+            };
+            println!("\x1b[1;32m[powerd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/power.sock");
+
+            for stream in listener.incoming() {
+                if let Ok(mut sock) = stream {
+                    let gov = Arc::clone(&gov_ipc);
+                    thread::spawn(move || {
+                        while let Ok(frame) = Frame::read_from(&mut sock) {
+                            let resp = handle_ipc_request(&frame, &gov);
+                            if let Err(e) = resp.write_to(&mut sock) {
+                                eprintln!("[powerd] IPC send error: {}", e);
+                                break;
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }
 
     println!("\x1b[1;32m[powerd] [  OK  ]\x1b[0m Power manager daemon active (/run/onuron/power.sock)");
 
@@ -202,4 +353,107 @@ mod tests {
         assert_eq!(bat.is_charging, false);
         assert!(bat.is_simulated);
     }
+
+    // ── Synthetic sysfs parsing ─────────────────────────────────────────────
+
+    #[test]
+    fn capacity_parses_sysfs_formatting_and_rejects_garbage() {
+        assert_eq!(parse_capacity("57\n"), Some(57));
+        assert_eq!(parse_capacity("  4 "), Some(4));
+        assert_eq!(parse_capacity("0"), Some(0));
+        assert_eq!(parse_capacity("100"), Some(100));
+        // Values above 100 are clamped rather than trusted.
+        assert_eq!(parse_capacity("255"), Some(100));
+        // Malformed / empty readings are rejected, never defaulted silently.
+        assert_eq!(parse_capacity(""), None);
+        assert_eq!(parse_capacity("not-a-number"), None);
+        assert_eq!(parse_capacity("1.5"), None);
+        assert_eq!(parse_capacity("-1"), None);
+    }
+
+    #[test]
+    fn status_parser_flags_power_connected_states() {
+        assert!(parse_status("Charging\n").1);
+        assert!(parse_status("Full").1);
+        assert!(!parse_status("Discharging\n").1);
+        assert!(!parse_status("Not charging").1);
+        let (status, connected) = parse_status("Discharging\n");
+        assert_eq!(status, "Discharging");
+        assert!(!connected);
+        // Missing/empty status is treated as not connected.
+        assert!(!parse_status("").1);
+    }
+
+    // ── Policy boundaries ───────────────────────────────────────────────────
+
+    #[test]
+    fn battery_policy_boundary_values() {
+        // 6% and exactly-at-threshold 5% are fine.
+        assert_eq!(battery_action(6, false), BatteryAction::None);
+        assert_eq!(battery_action(5, false), BatteryAction::None);
+
+        // Below the warning threshold but at/above critical: warn only.
+        assert_eq!(battery_action(4, false), BatteryAction::WarnLowBattery);
+        assert_eq!(battery_action(3, false), BatteryAction::WarnLowBattery);
+
+        // Below the critical threshold: graceful shutdown request.
+        assert_eq!(battery_action(2, false), BatteryAction::RequestShutdown);
+        assert_eq!(battery_action(1, false), BatteryAction::RequestShutdown);
+        assert_eq!(battery_action(0, false), BatteryAction::RequestShutdown);
+    }
+
+    #[test]
+    fn charging_suppresses_shutdown_but_still_warns() {
+        // A charging device must never request shutdown, even at 0%.
+        assert_eq!(battery_action(0, true), BatteryAction::WarnLowBattery);
+        assert_eq!(battery_action(2, true), BatteryAction::WarnLowBattery);
+        // Below the warning threshold it warns; at/above it does nothing.
+        assert_eq!(battery_action(4, true), BatteryAction::WarnLowBattery);
+        assert_eq!(battery_action(5, true), BatteryAction::None);
+        assert_eq!(battery_action(80, true), BatteryAction::None);
+    }
+
+    #[test]
+    fn full_status_is_power_connected_and_suppresses_shutdown() {
+        let (status, connected) = parse_status("Full\n");
+        assert_eq!(status, "Full");
+        assert!(connected);
+        // 1% would shut down when discharging, but not while full/plugged in.
+        assert_ne!(battery_action(1, connected), BatteryAction::RequestShutdown);
+        assert_eq!(battery_action(1, connected), BatteryAction::WarnLowBattery);
+    }
+
+    #[test]
+    fn test_power_ipc_handling() {
+        let gov = Arc::new(Mutex::new(PowerGovernor::new()));
+
+        // Ping -> Pong
+        let ping_frame = Frame::new(MessageType::Ping, 10, b"ping".to_vec());
+        let resp = handle_ipc_request(&ping_frame, &gov);
+        assert_eq!(MessageType::from(resp.message_type), MessageType::Pong);
+        assert_eq!(resp.request_id, 10);
+        assert_eq!(resp.payload, b"pong");
+
+        // PowerGetBattery -> PowerBatteryInfo
+        let bat_frame = Frame::new(MessageType::PowerGetBattery, 11, vec![]);
+        let resp = handle_ipc_request(&bat_frame, &gov);
+        assert_eq!(MessageType::from(resp.message_type), MessageType::PowerBatteryInfo);
+        assert_eq!(resp.request_id, 11);
+        let bat: BatteryInfo = serde_json::from_slice(&resp.payload).unwrap();
+        assert!(bat.capacity <= 100);
+
+        // Wakelock acquire and release
+        let lock_frame = Frame::new(MessageType::PowerAcquireWakelock, 12, b"music_player".to_vec());
+        let resp = handle_ipc_request(&lock_frame, &gov);
+        assert_eq!(MessageType::from(resp.message_type), MessageType::Pong);
+        assert_eq!(resp.payload, b"acquired");
+        assert!(gov.lock().unwrap().has_wakelocks());
+
+        let unlock_frame = Frame::new(MessageType::PowerReleaseWakelock, 13, b"music_player".to_vec());
+        let resp = handle_ipc_request(&unlock_frame, &gov);
+        assert_eq!(MessageType::from(resp.message_type), MessageType::Pong);
+        assert_eq!(resp.payload, b"released");
+        assert!(!gov.lock().unwrap().has_wakelocks());
+    }
 }
+

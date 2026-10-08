@@ -254,9 +254,17 @@ async fn main() {
             }
         };
 
+        let policy = nilsd::auth::load_default_policy();
         loop {
             match listener.accept().await {
-                Ok((stream, _)) => { tokio::spawn(handle_connection(stream)); }
+                Ok((stream, _)) => {
+                    // C1: the Android bridge is root-only by policy.
+                    use std::os::unix::io::AsRawFd;
+                    if !nilsd::auth::authorize_fd(&policy, "android-agent", stream.as_raw_fd()) {
+                        continue;
+                    }
+                    tokio::spawn(handle_connection(stream));
+                }
                 Err(e) => { eprintln!("[nilagent] accept error: {e}"); }
             }
         }

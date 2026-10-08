@@ -103,32 +103,28 @@ impl AndroidNetwork {
 
 impl NetworkHal for AndroidNetwork {
     fn get_state(&self) -> HalNetworkState {
-        // Android ConnectivityManager state
+        // This bridge is not yet wired to ConnectivityManager. Report unknown
+        // state honestly rather than fabricating live connectivity and details.
         HalNetworkState {
-            is_connected: true,
-            active_interface: Some("wlan0".into()),
-            connection_type: ConnectionType::Wifi,
-            ip_address: Some("192.168.1.105".into()),
-            dns_servers: vec!["8.8.8.8".into(), "1.1.1.1".into()],
-            wifi_ssid: Some("Onuron-WiFi".into()),
-            cellular_carrier: Some("Jio 5G".into()),
+            is_connected: false,
+            active_interface: None,
+            connection_type: ConnectionType::None,
+            ip_address: None,
+            dns_servers: Vec::new(),
+            wifi_ssid: None,
+            cellular_carrier: None,
         }
     }
     fn scan_wifi(&mut self) -> Result<Vec<WifiApInfo>, HalError> {
-        Ok(vec![
-            WifiApInfo {
-                ssid: "Home-WiFi-6E".into(),
-                bssid: "AA:BB:CC:11:22:33".into(),
-                signal_level: -52,
-                security: "WPA3".into(),
-            }
-        ])
+        Err(HalError::UnsupportedOperation("Wi-Fi scan bridge not connected".into()))
     }
     fn connect_wifi(&mut self, _ssid: &str, _psk: &str) -> Result<(), HalError> {
-        Ok(())
+        let _ = (_ssid, _psk);
+        Err(HalError::UnsupportedOperation("Wi-Fi connect bridge not connected".into()))
     }
     fn set_cellular_enabled(&mut self, _enabled: bool) -> Result<(), HalError> {
-        Ok(())
+        let _ = _enabled;
+        Err(HalError::UnsupportedOperation("Cellular control bridge not connected".into()))
     }
 }
 

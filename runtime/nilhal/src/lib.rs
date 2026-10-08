@@ -5,7 +5,7 @@ pub mod traits;
 pub mod backends;
 
 pub use traits::*;
-pub use backends::{BackendType, qemu, linux, android};
+pub use backends::{BackendType, qemu, linux, android, fake};
 
 use std::path::Path;
 use std::ffi::CStr;
@@ -18,6 +18,7 @@ pub fn detect_backend() -> BackendType {
     // 1. Explicit override via environment variable
     if let Ok(val) = std::env::var("ONURON_BACKEND") {
         match val.to_lowercase().as_str() {
+            "fake" | "mock" | "test" => return BackendType::Fake,
             "android" | "s25" | "mode2" => return BackendType::Android,
             "linux" | "drm" => return BackendType::Linux,
             "qemu" | "sim" | "desktop" => return BackendType::Qemu,
@@ -102,6 +103,20 @@ impl NilHal {
                     audio: Box::new(linux::LinuxAudio),
                     bluetooth: Box::new(linux::LinuxBluetooth),
                     sensors: Box::new(linux::LinuxSensors),
+                }
+            }
+            BackendType::Fake => {
+                Self {
+                    backend_type: backend,
+                    display: Box::new(fake::FakeDisplay::default()),
+                    input: Box::new(fake::FakeInput::new()),
+                    network: Box::new(fake::FakeNetwork::new()),
+                    power: Box::new(fake::FakePower::new()),
+                    telephony: Box::new(fake::FakeTelephony::default()),
+                    camera: Box::new(fake::FakeCamera::default()),
+                    audio: Box::new(fake::FakeAudio::default()),
+                    bluetooth: Box::new(fake::FakeBluetooth::default()),
+                    sensors: Box::new(fake::FakeSensors),
                 }
             }
             BackendType::Qemu | BackendType::NativeArm64 => {
@@ -219,5 +234,47 @@ mod tests {
         assert!(sim.is_ready);
         let sensors = hal.sensors.get_accelerometer();
         assert_eq!(sensors.1, 9.81);
+    }
+
+    #[test]
+    fn test_fake_backend_in_memory_simulation() {
+        let mut hal = NilHal::new(BackendType::Fake);
+        assert_eq!(hal.display.get_dimensions(), (1080, 2400));
+        assert_eq!(hal.display.get_brightness(), 100);
+        assert!(hal.display.present_frame(&[0xFFFFFFFF, 0x00000000]).is_ok());
+
+        // Test input injection and polling
+        let event = HalInputEvent::KeyDown {
+            code: 28,
+            name: "Enter".to_string(),
+        };
+        assert!(hal.input.send_event(event).is_ok());
+        let polled = hal.input.poll_events();
+        assert_eq!(polled.len(), 1);
+
+        // Test power and battery
+        assert_eq!(hal.power.get_battery_info().capacity, 85);
+        assert!(hal.power.acquire_wakelock("test-screen").is_ok());
+        assert!(hal.power.release_wakelock("test-screen").is_ok());
+
+        // Test network
+        let net = hal.network.get_state();
+        assert!(net.is_connected);
+        assert_eq!(net.connection_type, ConnectionType::Wifi);
+
+        // Test telephony
+        let call_id = hal.telephony.dial("+1234567890").unwrap();
+        assert!(!call_id.is_empty());
+        match hal.telephony.get_call_state() {
+            CallState::Active { number, .. } => assert_eq!(number, "+1234567890"),
+            _ => panic!("Expected active call"),
+        }
+        assert!(hal.telephony.hangup(&call_id).is_ok());
+        assert_eq!(hal.telephony.get_call_state(), CallState::Idle);
+
+        // Test audio
+        assert!(hal.audio.set_master_volume(75).is_ok());
+        assert_eq!(hal.audio.get_master_volume(), 75);
+        assert!(hal.audio.play_stream(&[100, 200, -100]).is_ok());
     }
 }

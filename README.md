@@ -18,31 +18,38 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 - 🟠 **Stub / simulated**: Skeleton daemon or UI-level simulation; underlying hardware/protocol not yet wired.
 - 🔴 **Not implemented**: Architecture planned or designed; implementation pending.
 
+<!-- BEGIN GENERATED: maturity -->
 | Subsystem / Feature | Maturity | Details & Reality |
 |---|---|---|
 | **Linux Kernel Boot** | 🔵 Functional prototype | Linux LTS 6.6 x86_64, bootable under QEMU with initramfs |
 | **System Init (`nilinit`)** | 🔵 Functional prototype | PID 1 init, clean `[  OK  ]` boot logging, mounts, supervision, socket activation |
-| **Storage Hierarchy** | 🔵 Functional prototype | `/data` ext4 persistent disk on virtio-blk + tmpfs fallback; mobile layout (`/system`, `/vendor`, `/data/user/`) |
+| **Storage Hierarchy** | 🔵 Functional prototype | `/data` ext4 persistent disk on virtio-blk + tmpfs fallback; mobile layout |
 | **QEMU Boot Automation** | 🔵 Functional prototype | Persistent `nilos.img` disk + virtio-blk + user-mode NAT networking |
 | **First-Boot Setup (OOBE)** | 🔵 Functional prototype | Name & PIN setup wizard, writes configuration to `/data/config/` |
-| **Lock Screen** | 🔵 Functional prototype | PIN verification, clock/date display, unlock lifecycle |
-| **Home Launcher** | 🔵 Functional prototype | App grid, status bar, notification shade |
-| **Phone App** | 🟠 Stub / Simulated | Dialer UI & contact list functional; **simulated VoLTE** (real modem AT layer planned) |
-| **Messages App** | 🔵 Functional prototype | SMS message threads, composer, persistent storage under `/data/sms/` |
+| **Lock Screen** | 🔵 Functional prototype | Salted + stretched (100k-round SHA-256) PIN record with constant-time verify; displayed clock/date/weather are static demo values **[SIMULATED]** |
+| **Home Launcher** | 🔵 Functional prototype | App grid, status bar, notification shade; hero clock/date and status-bar battery/signal are static demo values **[SIMULATED]** |
+| **Phone App** | 🟠 Stub / simulated | Dialer UI & contact list functional; **simulated VoLTE** (real modem AT layer planned); recent-call list is fabricated **[SIMULATED]** |
+| **Messages App** | 🔵 Functional prototype | SMS message threads, composer, persistent storage under `/data/sms/`; ships with seeded demo threads **[SIMULATED]** |
 | **Files App** | 🔵 Functional prototype | Directory explorer for `/data`, `/etc`, `/tmp`, `/data/app` |
-| **Settings App** | 🔵 Functional prototype | System settings UI for Network, Display, Security, Battery, Storage |
-| **Permission Broker** | 🔵 Functional prototype | JSON-persisted grants with 7-day auto-revoke policy |
-| **Namespace Sandbox** | 🔵 Functional prototype | Linux `unshare(CLONE_NEWPID\|CLONE_NEWNS\|CLONE_NEWIPC\|CLONE_NEWUTS)` + `chroot` isolation |
+| **Settings App** | 🔵 Functional prototype | System settings UI for Network, Display, Security, Battery, Storage; security/status lines (SELinux, fscrypt) are unverified **[SIMULATED]** |
+| **Notification Center** | 🟠 Stub / simulated | Notification shade renders a fabricated notification history (real SMS threads are mixed in) **[SIMULATED]** |
+| **Permission Broker** | 🔵 Functional prototype | JSON-persisted grants with 7-day auto-revoke; atomic writes and corrupt-database quarantine; clock-skew safe |
+| **Namespace Sandbox** | 🔵 Functional prototype | `unshare(CLONE_NEWPID|CLONE_NEWNS|CLONE_NEWIPC|CLONE_NEWUTS)` + private mount propagation + `chroot`/`pivot_root` with `chdir("/")` escape fix |
 | **Seccomp BPF Filter** | 🔵 Functional prototype | Real `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)` syscall allowlist (~110 syscalls) |
-| **SoftBus Distributed Mesh** | 🔵 Functional prototype | Real mDNS-SD peer discovery + Quinn QUIC/TLS 1.3 transport |
-| **Input Daemon (`inputd`)** | 🟢 Functional / Active | Linux `evdev` & Android Host bridge with **full gesture recognition engine** (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch) |
-| **Power Daemon (`powerd`)** | 🟢 Functional / Active | NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes |
-| **Network Daemon (`netd`)** | 🟢 Functional / Active | NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC |
-| **Package Manager (`nilpkg`)** | 🟢 Functional / Active | Atomic install to `/data/app/`; **Ed25519 digital signature + SHA-256 integrity verification** |
-| **NilHAL Unified Subsystem** | 🟢 Functional / Active | Rust trait abstraction (`Display`, `Input`, `Network`, `Power`, `Telephony`, `Camera`, `Audio`, `Sensors`) |
-| **S25 Hosted Mobile Runtime** | 🟢 Functional / Active | Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & bridge (`android-host/`) |
-| **Operating Modes (1, 2, 3)** | 🟢 Architectural Standard | Mode 1 (QEMU), Mode 2 (Galaxy S25 Hosted Lab), Mode 3 (Future Bare Metal Phone) |
-
+| **SoftBus Distributed Mesh** | 🔵 Functional prototype | Real mDNS-SD peer discovery + Quinn QUIC/TLS 1.3 transport; the UI's discovered-peer list is fabricated **[SIMULATED]** |
+| **Input Daemon (`inputd`)** | 🔵 Functional prototype | Linux `evdev` & Android Host bridge with gesture recognition (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch); not yet verified on a physical target |
+| **Power Daemon (`powerd`)** | 🔵 Functional prototype | NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes |
+| **Network Daemon (`netd`)** | 🔵 Functional prototype | NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC |
+| **Package Manager (`nilpkg`)** | 🔵 Functional prototype | Signed `.nilax` package format (`nilpkg pack`), atomic unpack & install, upgrade with rollback, crash-recovery journal, cross-process locking, key revocation, and shell integration; store catalogue simulated **[SIMULATED]** |
+| **Canonical Framed IPC (`nilprotocol`)** | 🔵 Functional prototype | Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) with client/server codecs wired into `powerd` |
+| **Hardware Watchdog (`nilwdt`)** | 🔵 Functional prototype | Feeds `/dev/watchdog` with configurable interval/timeout, subsystem health monitoring, trip-on-hang, and graceful disarm |
+| **Android Compatibility Layer** | 🟠 Stub / simulated | Android screen shows placeholder container state; no LXC/Waydroid container is launched from the UI yet **[SIMULATED]** |
+| **Diagnostic Terminal (`nilshell`)** | 🟠 Stub / simulated | `ps`, `services` and `net` output is fabricated; `ls`/`cat`/`mem` read real kernel/filesystem data **[SIMULATED]** |
+| **NilHAL Unified Subsystem** | 🔵 Functional prototype | Rust trait abstraction with mock in-memory `FakeHAL` for automated CI, plus scaffold backends for Linux sysfs, evdev, and Android host |
+| **S25 Hosted Mobile Runtime** | 🔵 Functional prototype | Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & bridge (`android-host/`) |
+| **Operating Modes (1, 2, 3)** | 🟡 Experimental | Mode 1 (QEMU) working; Mode 2 (Galaxy S25 Hosted Lab) in progress; Mode 3 (Future Bare Metal Phone) not implemented |
+| **Status Bar (simulated indicators)** | 🟠 Stub / simulated | Battery, signal and clock indicators are demo values, marked `⚠SIM` on screen across the shell **[SIMULATED]** |
+<!-- END GENERATED: maturity -->
 ---
 
 ## 🗺️ 6-Phase Engineering Roadmap

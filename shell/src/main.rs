@@ -6,6 +6,9 @@ use std::fs::{self};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
+mod pin;
+mod simulated;
+
 // ─── ANSI Colors ──────────────────────────────────────────────────────────────
 const R: &str = "\x1b[0m";            // Reset
 const B: &str = "\x1b[1m";            // Bold
@@ -154,7 +157,9 @@ impl AppState {
 
     fn save_pin(&self) {
         let _ = fs::create_dir_all("/data/nilos");
-        let _ = fs::write(PIN_FILE, &self.pin);
+        if let Err(e) = pin::write_pin_file(PIN_FILE, &self.pin) {
+            eprintln!("[nilshell] WARNING: could not persist PIN record: {e}");
+        }
     }
 
     fn mark_oobe_done(&self) {
@@ -201,7 +206,7 @@ fn status_bar(state: &AppState) -> String {
         "✈️ Offline"
     };
     format!(
-        "{}  {} │ {} │ {} │ 🔋 88%  {}",
+        "{}  {} │ {} │ {} │ 🔋 88%  ⚠SIM  {}",
         FG_BLACK_ON_WHITE, wifi_ico, cell_str, state.user_name, R
     )
 }
@@ -257,8 +262,7 @@ fn draw_oobe_pin(sink: &mut Sink) {
     sink.println("  │   Your PIN protects the lock screen.                  │");
     sink.println("  │   Use 4–8 digits. Store it safely.                    │");
     sink.println("  │                                                       │");
-    sink.println("  │   Tip: PIN is stored as plain text for now           │");
-    sink.println("  │   (hashing comes in Phase 2 nilkeyd integration).    │");
+    sink.println("  │   Stored salted + stretched (SHA-256, 100k rounds).   │");
     sink.println("  │                                                       │");
     sink.println("  ╰───────────────────────────────────────────────────────╯");
     sink.println(R);
@@ -301,6 +305,7 @@ fn draw_lockscreen(sink: &mut Sink, state: &AppState, error: bool) {
     sink.print(CL);
     sink.println(&format!("{}", FG_BLUE));
     sink.println("  ╭────────────────────────────────────────────────────────╮");
+    sink.println(&format!("  │   {}{}  — static demo clock/date/weather{}", FG_RED, simulated::badge(), FG_BLUE));
     sink.println("  │                                                        │");
     sink.println(&format!("  │               {}{}12:45 PM{}                            │", FG_WHITE, B, FG_BLUE));
     sink.println("  │         Tuesday, September 1, 2026                     │");
@@ -324,6 +329,7 @@ fn draw_lockscreen(sink: &mut Sink, state: &AppState, error: bool) {
 fn draw_home(sink: &mut Sink, state: &AppState) {
     sink.print(CL);
     sink.println(&status_bar(state));
+    sink.println(&format!("  {}{}  — hero clock/date/weather are static demo values{}", FG_RED, simulated::badge(), R));
     let wifi_badge = if state.wifi_enabled { "📶 Wi-Fi" } else { "✕ Wi-Fi" };
     let cell_badge = if state.cellular_enabled {
         match state.signal_bars {
@@ -353,22 +359,22 @@ fn draw_home(sink: &mut Sink, state: &AppState) {
     sink.println(&format!("  │  {}[4] ⚙️  Settings{}  {}[5] 📦 NilPkg{}    {}[6] 🔄 SoftBus{}    │", FG_MAGENTA, FG_CYAN, FG_GREEN, FG_CYAN, FG_CYAN, FG_CYAN));
     sink.println("  │   System Config    Package Store     Mesh Network     │");
     sink.println("  │                                                        │");
-    sink.println(&format!("  │  {}[7] 🤖 Android{}   {}[8] 💻 Terminal{}                    │", FG_YELLOW, FG_CYAN, FG_WHITE, FG_CYAN));
-    sink.println("  │   AOSP Container   Diagnostic CLI                     │");
+    sink.println(&format!("  │  {}[7] 🤖 Android{}   {}[8] 💻 Terminal{}   {}[9] 🌟 Hello (.nilax){}│", FG_YELLOW, FG_CYAN, FG_WHITE, FG_CYAN, FG_GREEN, FG_CYAN));
+    sink.println("  │   AOSP Container   Diagnostic CLI    Native Sandbox   │");
     sink.println("  │                                                        │");
-    sink.println(&format!("  │  {}[n] 🔔 Notifications  [l] 🔒 Lock screen{}              │", FG_GRAY, FG_CYAN));
+    sink.println(&format!("  │  {}[n] 🔔 Notifications  [l] 🔒 Lock screen  [run <id>]{}   │", FG_GRAY, FG_CYAN));
     sink.println("  ├────────────────────────────────────────────────────────┤");
-    sink.println(&format!("  │  {}[📞]  [💬]  [📁]  [⚙️]  [📦]{}                          │", FG_WHITE, FG_CYAN));
+    sink.println(&format!("  │  {}[📞]  [💬]  [📁]  [⚙️]  [📦]  [🌟]{}                     │", FG_WHITE, FG_CYAN));
     sink.println(&format!("  │                    {}━━━━━━━━{}                             │", FG_WHITE, FG_CYAN));
     sink.println("  ╰────────────────────────────────────────────────────────╯");
     sink.println(R);
-    sink.print(&format!("  {}Choice (1-8 / n / l): {}", FG_YELLOW, R));
+    sink.print(&format!("  {}Choice (1-9 / run <id> / n / l): {}", FG_YELLOW, R));
 }
 
 // ─── Phone App ────────────────────────────────────────────────────────────────
 fn draw_phone(sink: &mut Sink, state: &AppState) {
     sink.print(CL);
-    sink.println(&format!("{}  📞 NilOS Phone  —  oFono VoLTE + HD Voice{}", FG_GREEN, R));
+    sink.println(&format!("{}  📞 NilOS Phone  —  oFono VoLTE + HD Voice  {}{}", FG_GREEN, simulated::badge(), R));
     sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
     sink.println("");
 
@@ -405,7 +411,7 @@ fn draw_phone(sink: &mut Sink, state: &AppState) {
 // ─── Messages App ─────────────────────────────────────────────────────────────
 fn draw_messages(sink: &mut Sink, state: &AppState) {
     sink.print(CL);
-    sink.println(&format!("{}  💬 NilOS Messages  —  E2E Encrypted P2P SMS{}", FG_YELLOW, R));
+    sink.println(&format!("{}  💬 NilOS Messages  —  E2E Encrypted P2P SMS  {}{}", FG_YELLOW, simulated::badge(), R));
     sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
     sink.println("");
     sink.println("  Message Threads:");
@@ -485,7 +491,7 @@ fn draw_settings(sink: &mut Sink) {
     sink.println(&format!("  {}  OS: NilOS 1.0-alpha (Phase 1+2 Active){}", FG_GRAY, R));
     sink.println(&format!("  {}  Kernel: Linux 6.6.110-0-lts (Alpine LTS){}", FG_GRAY, R));
     sink.println(&format!("  {}  Userspace: 100% Rust (Memory Safe){}", FG_GRAY, R));
-    sink.println(&format!("  {}  SELinux: Enforcing · Telemetry: ZERO{}", FG_GRAY, R));
+    sink.println(&format!("  {}  SELinux: Enforcing · Telemetry: ZERO  {}{}", FG_GRAY, simulated::badge(), R));
     sink.println("");
     sink.println(&format!("  {}Commands: '1'-'8' to enter section, 'home', 'back'{}", FG_YELLOW, R));
     sink.print(&format!("  {}> {}", FG_CYAN, R));
@@ -508,10 +514,10 @@ fn draw_settings_section(sink: &mut Sink, section: usize, state: &AppState) {
         }
         3 => {
             sink.println("  PIN Lock:        [ENABLED]");
-            sink.println("  SELinux Policy:  Enforcing (policy.33)");
-            sink.println("  fscrypt v2:      Active (nilkeyd manages keystore)");
-            sink.println("  Namespace Sand:  Enabled for all apps via nilrt");
-            sink.println("  Telemetry:       ZERO — no data leaves device");
+            sink.println(&format!("  SELinux Policy:  Enforcing (policy.33)  {}", simulated::badge()));
+            sink.println(&format!("  fscrypt v2:      Active (nilkeyd manages keystore)  {}", simulated::badge()));
+            sink.println(&format!("  Namespace Sand:  Enabled for all apps via nilrt  {}", simulated::badge()));
+            sink.println(&format!("  Telemetry:       ZERO — no data leaves device  {}", simulated::badge()));
         }
         7 => {
             sink.println("  NilOS Version:   1.0.0-alpha");
@@ -532,34 +538,109 @@ fn draw_settings_section(sink: &mut Sink, section: usize, state: &AppState) {
     sink.print(&format!("  {}> {}", FG_CYAN, R));
 }
 
+fn find_binary(bin_name: &str) -> std::path::PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(bin_name);
+            if candidate.is_file() {
+                return candidate;
+            }
+            #[cfg(target_os = "windows")]
+            {
+                let candidate_exe = dir.join(format!("{}.exe", bin_name));
+                if candidate_exe.is_file() {
+                    return candidate_exe;
+                }
+            }
+        }
+    }
+    let target_debug = std::path::Path::new("target").join("debug").join(bin_name);
+    if target_debug.is_file() {
+        return target_debug;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let target_debug_exe = std::path::Path::new("target").join("debug").join(format!("{}.exe", bin_name));
+        if target_debug_exe.is_file() {
+            return target_debug_exe;
+        }
+    }
+    std::path::PathBuf::from(bin_name)
+}
+
+fn launch_app(sink: &mut Sink, app_id: &str) {
+    sink.println(&format!("\n  {}🚀 Launching {} via nilrt sandbox...{}", FG_GREEN, app_id, R));
+    let launcher = find_binary("nilrt-launch");
+    match std::process::Command::new(&launcher)
+        .arg(app_id)
+        .status()
+    {
+        Ok(status) => {
+            sink.println(&format!("  {}Application finished with exit status: {}{}", FG_GREEN, status, R));
+        }
+        Err(e) => {
+            sink.println(&format!("  {}Failed to run nilrt-launch ({}): {}{}", FG_RED, launcher.display(), e, R));
+        }
+    }
+    sink.print("  Press Enter to continue...");
+    read_line();
+}
+
+fn get_installed_packages() -> Vec<(String, String)> {
+    let mut pkgs = Vec::new();
+    let app_root = nilpkg::get_app_dir();
+    if let Ok(entries) = std::fs::read_dir(&app_root) {
+        for entry in entries.flatten() {
+            let manifest_path = entry.path().join("manifest.json");
+            if manifest_path.is_file() {
+                if let Ok(text) = std::fs::read_to_string(&manifest_path) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                        let name = val.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+                        let version = val.get("version").and_then(|v| v.as_str()).unwrap_or("1.0.0").to_string();
+                        let id = val.get("app_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        pkgs.push((id, format!("{} v{}", name, version)));
+                    }
+                }
+            }
+        }
+    }
+    pkgs
+}
+
 // ─── NilPkg App ──────────────────────────────────────────────────────────────
 fn draw_nilpkg(sink: &mut Sink) {
     sink.print(CL);
-    sink.println(&format!("{}  📦 NilPkg — Atomic Package Manager & App Store{}", FG_GREEN, R));
+    sink.println(&format!("{}  📦 NilPkg — Atomic Package Manager & App Store  {}{}", FG_GREEN, simulated::badge(), R));
     sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
     sink.println("");
-    sink.println(&format!("  {}Installed Packages (Ed25519 Signed):{}", FG_WHITE, R));
-    sink.println(&format!("  {}• com.nil.shell     v1.0.0  — NilOS Compositor & Launcher{}", FG_GREEN, R));
-    sink.println(&format!("  {}• com.nil.settings  v1.0.0  — System Configuration App{}", FG_GREEN, R));
-    sink.println(&format!("  {}• com.nil.softbus   v0.1.0  — Distributed SoftBus Fabric{}", FG_GREEN, R));
-    sink.println(&format!("  {}• com.nil.nilpkg    v0.1.0  — Package Manager{}", FG_GREEN, R));
+    sink.println(&format!("  {}Installed Native Packages (.nilax):{}", FG_WHITE, R));
+    let app_dir = nilpkg::get_app_dir();
+    let pkgs = get_installed_packages();
+    if pkgs.is_empty() {
+        sink.println(&format!("    {}No third-party packages installed in {}{}", FG_GRAY, app_dir.display(), R));
+        sink.println(&format!("    {}Run: 'install out/hello.nilax' to install the signed Hello app{}", FG_YELLOW, R));
+    } else {
+        for (id, desc) in &pkgs {
+            sink.println(&format!("    {}• {} ({}){}", FG_GREEN, id, desc, R));
+        }
+    }
     sink.println("");
-    sink.println(&format!("  {}Available in Repository:{}", FG_WHITE, R));
-    sink.println(&format!("  {}[i] org.videolan.vlc    v3.5.4  — Media Player{}", FG_CYAN, R));
-    sink.println(&format!("  {}[i] org.mozilla.fenix   v124.0  — Privacy Browser{}", FG_CYAN, R));
-    sink.println(&format!("  {}[i] org.openstreetmap   v3.1.0  — Offline Maps{}", FG_CYAN, R));
-    sink.println(&format!("  {}[i] com.signal.android  v7.2.1  — Signal Messenger{}", FG_CYAN, R));
+    sink.println(&format!("  {}Core System Modules:{}", FG_WHITE, R));
+    sink.println(&format!("    {}• com.nil.shell     v1.0.0  — NilOS Compositor & Shell{}", FG_GREEN, R));
+    sink.println(&format!("    {}• com.nil.nilinit   v1.0.0  — PID 1 Supervisor{}", FG_GREEN, R));
+    sink.println(&format!("    {}• com.nil.nilhal    v1.0.0  — Hardware Abstraction Layer{}", FG_GREEN, R));
+    sink.println(&format!("    {}• com.nil.nilrt     v1.0.0  — Sandboxed Native Runtime{}", FG_GREEN, R));
     sink.println("");
-    sink.println(&format!("  {}Storage: /data/app/  •  Signature: Ed25519{}", FG_GRAY, R));
+    sink.println(&format!("  {}Storage: {}  •  Signatures: Ed25519{}", FG_GRAY, app_dir.display(), R));
     sink.println("");
-    sink.println(&format!("  {}Commands: 'install <pkg>', 'list', 'home', 'back'{}", FG_YELLOW, R));
+    sink.println(&format!("  {}Commands: 'install <pkg.nilax>', 'verify <id>', 'run <id>', 'list', 'home'{}", FG_YELLOW, R));
     sink.print(&format!("  {}> {}", FG_CYAN, R));
 }
 
 // ─── SoftBus App ─────────────────────────────────────────────────────────────
 fn draw_softbus(sink: &mut Sink) {
     sink.print(CL);
-    sink.println(&format!("{}  🔄 SoftBus — Distributed Peer-to-Peer Device Mesh{}", FG_CYAN, R));
+    sink.println(&format!("{}  🔄 SoftBus — Distributed Peer-to-Peer Device Mesh  {}{}", FG_CYAN, simulated::badge(), R));
     sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
     sink.println("");
     sink.println(&format!("  {}Discovered Nearby Devices (BLE + Wi-Fi Aware + mDNS):{}", FG_WHITE, R));
@@ -585,7 +666,7 @@ fn draw_softbus(sink: &mut Sink) {
 // ─── Android App ─────────────────────────────────────────────────────────────
 fn draw_android(sink: &mut Sink) {
     sink.print(CL);
-    sink.println(&format!("{}  🤖 Android Compatibility Layer — LXC / Waydroid{}", FG_YELLOW, R));
+    sink.println(&format!("{}  🤖 Android Compatibility Layer — LXC / Waydroid  {}{}", FG_YELLOW, simulated::badge(), R));
     sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
     sink.println("");
     sink.println(&format!("  {}Container Status:{}", FG_WHITE, R));
@@ -606,7 +687,7 @@ fn draw_android(sink: &mut Sink) {
 // ─── Terminal App ─────────────────────────────────────────────────────────────
 fn draw_terminal(sink: &mut Sink, state: &AppState) {
     sink.print(CL);
-    sink.println(&format!("{}  💻 NilOS Diagnostic Shell{}", FG_WHITE, R));
+    sink.println(&format!("{}  💻 NilOS Diagnostic Shell  {}{}", FG_WHITE, simulated::badge(), R));
     sink.println(&format!("{}  Type 'help' for commands, 'home' to exit{}", FG_GRAY, R));
     sink.println("");
     for line in &state.terminal_history {
@@ -619,10 +700,10 @@ fn draw_terminal(sink: &mut Sink, state: &AppState) {
 fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
     let output = match cmd {
         "help" => {
-            "Commands: services, mem, disk, net, ps, cat <file>, ls <dir>, uname, reboot, home".to_string()
+            format!("Commands: services, mem, disk, net, ps, cat <file>, ls <dir>, uname, reboot, home  {}", simulated::badge())
         }
         "services" => {
-            let mut out = String::from("Active NilOS Supervised Daemons:\n");
+            let mut out = String::from(format!("Active NilOS Supervised Daemons {}:\n", simulated::badge()));
             for (name, pid) in &[("nilinit","1"),("nild","428"),("nilkeyd","429"),("nilbus","430"),("netd","431"),("audiod","433"),("powerd","434"),("nilshell","435")] {
                 out.push_str(&format!("  • {:12} PID {:<5} RUNNING\n", name, pid));
             }
@@ -640,9 +721,9 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
                 state.user_name
             )
         }
-        "net" => "Network:\n  eth0:  10.0.2.15/24 (QEMU NAT via -netdev user)\n  SoftBus: /run/nilos/bus.sock active\n  Wi-Fi:   disabled (no wpa_supplicant yet)".to_string(),
+        "net" => format!("Network {}:\n  eth0:  10.0.2.15/24 (QEMU NAT via -netdev user)\n  SoftBus: /run/nilos/bus.sock active\n  Wi-Fi:   disabled (no wpa_supplicant yet)", simulated::badge()),
         "uname" => "NilOS 1.0.0-alpha x86_64  Linux 6.6.110-lts  Rust Userspace".to_string(),
-        "ps" => "PID  CMD\n  1   nilinit\n428   nild\n429   nilkeyd\n430   nilbus\n431   netd\n433   audiod\n434   powerd\n435   nilshell".to_string(),
+        "ps" => format!("PID  CMD {}\n  1   nilinit\n428   nild\n429   nilkeyd\n430   nilbus\n431   netd\n433   audiod\n434   powerd\n435   nilshell", simulated::badge()),
         _ if cmd.starts_with("ls ") => {
             let path = cmd.trim_start_matches("ls ").trim();
             match fs::read_dir(path) {
@@ -679,7 +760,7 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
 // ─── Notification Shade ──────────────────────────────────────────────────────
 fn draw_notifications(sink: &mut Sink, state: &AppState) {
     sink.print(CL);
-    sink.println(&format!("{}  🔔 Notification Center{}", FG_YELLOW, R));
+    sink.println(&format!("{}  🔔 Notification Center  {}{}", FG_YELLOW, simulated::badge(), R));
     sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
     sink.println("");
     sink.println(&format!("  {}🔒 Security — nilkeyd{}", FG_BLUE, R));
@@ -744,6 +825,10 @@ fn main() {
             Screen::NotificationShade => draw_notifications(&mut sink, &state),
         }
 
+        // Stamp a visible SIMULATED badge on screens from the registry
+        // (shell/src/simulated.rs) before reading input.
+        simulated::render_badge(&mut sink, simulated::screen_key(&screen));
+
         let cmd = read_line();
 
         // ── OOBE flow ─────────────────────────────────────────────────────────
@@ -759,7 +844,7 @@ fn main() {
                 screen = Screen::OobePin;
             }
             Screen::OobePin => {
-                if cmd.len() >= 4 && cmd.chars().all(|c| c.is_ascii_digit()) {
+                if pin::valid_pin(&cmd) {
                     state.pending_pin = cmd.clone();
                     screen = Screen::OobeConfirmPin;
                 } else {
@@ -769,11 +854,20 @@ fn main() {
             }
             Screen::OobeConfirmPin => {
                 if cmd == state.pending_pin {
-                    state.pin = state.pending_pin.clone();
-                    state.pending_pin.clear();
-                    state.save_pin();
-                    state.mark_oobe_done();
-                    screen = Screen::OobeDone;
+                    match pin::create_record(&cmd) {
+                        Ok(record) => {
+                            state.pin = record;
+                            state.pending_pin.clear();
+                            state.save_pin();
+                            state.mark_oobe_done();
+                            screen = Screen::OobeDone;
+                        }
+                        Err(e) => {
+                            sink.println(&format!("{}  Invalid PIN: {}. Try again.{}", FG_RED, e, R));
+                            let _ = io::stdin().lock().read_line(&mut String::new());
+                            screen = Screen::OobePin;
+                        }
+                    }
                 } else {
                     sink.println(&format!("{}  PINs don't match. Let's try again.{}", FG_RED, R));
                     let _ = io::stdin().lock().read_line(&mut String::new());
@@ -787,29 +881,48 @@ fn main() {
 
             // ── Lock Screen ───────────────────────────────────────────────────
             Screen::Lockscreen => {
-                if cmd == state.pin {
-                    lock_error = false;
-                    screen = Screen::Home;
-                } else {
-                    lock_error = true;
+                match pin::check_pin(&state.pin, &cmd) {
+                    pin::CheckResult::Verified => {
+                        lock_error = false;
+                        screen = Screen::Home;
+                    }
+                    pin::CheckResult::VerifiedNeedsMigration => {
+                        // A pre-hash plaintext file matched: upgrade it now so
+                        // the secret is never stored in the clear again.
+                        if let Ok(record) = pin::create_record(&cmd) {
+                            state.pin = record;
+                            state.save_pin();
+                        }
+                        lock_error = false;
+                        screen = Screen::Home;
+                    }
+                    pin::CheckResult::Rejected => {
+                        lock_error = true;
+                    }
                 }
             }
 
             // ── Home Launcher ─────────────────────────────────────────────────
             Screen::Home => {
                 settings_in_section = None;
-                match cmd.as_str() {
-                    "1" | "phone"    => { screen = Screen::AppPhone; state.call_number.clear(); }
-                    "2" | "messages" => { screen = Screen::AppMessages; composing_sms = false; }
-                    "3" | "files"    => { screen = Screen::AppFiles; state.files_path = "/data".into(); }
-                    "4" | "settings" => screen = Screen::AppSettings,
-                    "5" | "pkg"      => screen = Screen::AppNilPkg,
-                    "6" | "softbus"  => screen = Screen::AppSoftBus,
-                    "7" | "android"  => screen = Screen::AppAndroid,
-                    "8" | "terminal" => screen = Screen::AppTerminal,
-                    "n" | "notif"    => screen = Screen::NotificationShade,
-                    "l" | "lock"     => { screen = Screen::Lockscreen; lock_error = false; }
-                    _ => {} // re-render home
+                if cmd.starts_with("run ") {
+                    let app_id = cmd.trim_start_matches("run ").trim();
+                    launch_app(&mut sink, app_id);
+                } else {
+                    match cmd.as_str() {
+                        "1" | "phone"    => { screen = Screen::AppPhone; state.call_number.clear(); }
+                        "2" | "messages" => { screen = Screen::AppMessages; composing_sms = false; }
+                        "3" | "files"    => { screen = Screen::AppFiles; state.files_path = "/data".into(); }
+                        "4" | "settings" => screen = Screen::AppSettings,
+                        "5" | "pkg"      => screen = Screen::AppNilPkg,
+                        "6" | "softbus"  => screen = Screen::AppSoftBus,
+                        "7" | "android"  => screen = Screen::AppAndroid,
+                        "8" | "terminal" => screen = Screen::AppTerminal,
+                        "9" | "hello"    => launch_app(&mut sink, "org.onuron.hello"),
+                        "n" | "notif"    => screen = Screen::NotificationShade,
+                        "l" | "lock"     => { screen = Screen::Lockscreen; lock_error = false; }
+                        _ => {} // re-render home
+                    }
                 }
             }
 
@@ -820,7 +933,7 @@ fn main() {
                 } else if cmd.starts_with("call ") {
                     let number = cmd.trim_start_matches("call ").trim().to_string();
                     state.call_number = number.clone();
-                    sink.println(&format!("\n  {}📞 Calling {}...  (simulated — oFono in Phase 3){}", FG_GREEN, number, R));
+                    sink.println(&format!("\n  {}📞 Calling {}...  (simulated — oFono in Phase 3)  {}{}", FG_GREEN, number, simulated::badge(), R));
                     sink.println("  Press Enter to hang up.");
                     read_line();
                     state.call_number.clear();
@@ -926,23 +1039,43 @@ fn main() {
                 if cmd == "home" || cmd == "back" {
                     screen = Screen::Home;
                 } else if cmd.starts_with("install ") {
-                    let pkg = cmd.trim_start_matches("install ").trim();
-                    sink.println(&format!("\n  {}📦 Installing {}...{}", FG_GREEN, pkg, R));
-                    sink.println("  Verifying Ed25519 signature...");
-                    sink.println("  Downloading chunks (simulated)...");
-                    sink.println("  Unpacking to /data/app/...");
-                    sink.println(&format!("  {}✅ {} installed successfully.{}", FG_GREEN, pkg, R));
+                    let path_str = cmd.trim_start_matches("install ").trim();
+                    let path = Path::new(path_str);
+                    sink.println(&format!("\n  {}📦 Installing package from {}...{}", FG_GREEN, path_str, R));
+                    match nilpkg::install_local(path, &nilpkg::get_app_dir(), &nilpkg::get_key_dir()) {
+                        Ok(()) => {
+                            sink.println(&format!("  {}✅ Successfully installed package: {}!{}", FG_GREEN, path_str, R));
+                        }
+                        Err(e) => {
+                            sink.println(&format!("  {}❌ Installation failed: {}{}", FG_RED, e, R));
+                        }
+                    }
                     sink.print("  Press Enter...");
                     read_line();
+                } else if cmd.starts_with("verify ") {
+                    let app_id = cmd.trim_start_matches("verify ").trim();
+                    sink.println(&format!("\n  🔍 Verifying package integrity: {}...", app_id));
+                    match nilpkg::verify_installed(app_id, &nilpkg::get_app_dir(), &nilpkg::get_key_dir()) {
+                        Ok(()) => {
+                            sink.println(&format!("  {}✅ Verification PASSED: {} is authentic and verified!{}", FG_GREEN, app_id, R));
+                        }
+                        Err(e) => {
+                            sink.println(&format!("  {}❌ Verification failed: {}{}", FG_RED, e, R));
+                        }
+                    }
+                    sink.print("  Press Enter...");
+                    read_line();
+                } else if cmd.starts_with("run ") {
+                    let app_id = cmd.trim_start_matches("run ").trim();
+                    launch_app(&mut sink, app_id);
                 } else if cmd == "list" {
-                    if let Ok(entries) = fs::read_dir("/data/app") {
-                        let pkgs: Vec<_> = entries.flatten().collect();
-                        if pkgs.is_empty() {
-                            sink.println("\n  No packages installed yet.");
-                        } else {
-                            for p in pkgs {
-                                sink.println(&format!("  • {}", p.file_name().to_string_lossy()));
-                            }
+                    sink.println(&format!("\n  {}Packages in {}:{}", FG_WHITE, nilpkg::get_app_dir().display(), R));
+                    let pkgs = get_installed_packages();
+                    if pkgs.is_empty() {
+                        sink.println("    No packages installed yet.");
+                    } else {
+                        for (id, desc) in pkgs {
+                            sink.println(&format!("    • {} — {}", id, desc));
                         }
                     }
                     sink.print("  Press Enter...");

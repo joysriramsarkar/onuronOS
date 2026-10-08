@@ -1,0 +1,36 @@
+# etc/nilos/ipc-policy.toml — Unix-socket authorization policy (improvement C1)
+#
+# Each service that opens a Unix socket must be listed here. A peer is accepted
+# when its kernel-attested uid is in `allowed_uids` or its gid is in
+# `allowed_gids`. A service that is not listed is denied entirely, so a new
+# socket cannot be exposed by accident.
+#
+# uid 0     = root (nilinit-owned system services)
+# uid 1000  = the Onuron UI / shell user
+#
+# This file is loaded by runtime/nilsd's `auth` module. The same text is
+# embedded in the nilsd binary as the fallback policy, so a device with a
+# corrupt/missing /etc copy still denies unknown callers rather than allowing
+# everything.
+
+[services.keyd]
+# Encryption-key lifecycle requests: root only.
+allowed_uids = [0]
+
+[services.notifyd]
+allowed_uids = [0, 1000]
+
+[services.nilimed]
+allowed_uids = [0, 1000]
+
+[services.nilttsd]
+allowed_uids = [0, 1000]
+
+[services.nilandroidd]
+allowed_uids = [0, 1000]
+
+[services.softbus]
+allowed_uids = [0, 1000]
+
+[services.android-agent]
+allowed_uids = [0]

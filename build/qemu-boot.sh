@@ -19,6 +19,11 @@ for arg in "$@"; do
         --no-rebuild)  NO_REBUILD=1 ;;
         --no-disk)     NO_DISK=1 ;;
         --no-net)      NO_NET=1 ;;
+        -h|--help)
+            echo "Usage: $0 [--headless] [--no-rebuild] [--no-disk] [--no-net]"
+            exit 0
+            ;;
+        *) echo "Error: unknown option: $arg" >&2; exit 2 ;;
     esac
 done
 
