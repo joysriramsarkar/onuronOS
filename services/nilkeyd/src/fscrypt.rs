@@ -216,7 +216,7 @@ mod linux {
         buf.extend_from_slice(header_bytes);
         buf.extend_from_slice(&raw_key);
 
-        let ret = unsafe { libc::ioctl(fd, FS_IOC_ADD_ENCRYPTION_KEY, buf.as_mut_ptr()) };
+        let ret = unsafe { libc::ioctl(fd, FS_IOC_ADD_ENCRYPTION_KEY as _, buf.as_mut_ptr()) };
         if ret < 0 {
             return unsupported("FS_IOC_ADD_ENCRYPTION_KEY", std::io::Error::last_os_error());
         }
@@ -236,7 +236,7 @@ mod linux {
             master_key_identifier: identifier,
         };
 
-        let ret = unsafe { libc::ioctl(fd, FS_IOC_SET_ENCRYPTION_POLICY, &policy) };
+        let ret = unsafe { libc::ioctl(fd, FS_IOC_SET_ENCRYPTION_POLICY as _, &policy) };
         if ret < 0 {
             let err = std::io::Error::last_os_error();
             if err.raw_os_error() == Some(libc::EEXIST) {
