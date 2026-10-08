@@ -184,8 +184,8 @@ ui_screens = ["nilpkg"]
 [[entries]]
 name = "Canonical Framed IPC (`nilprotocol`)"
 tier = "functional-prototype"
-details = "Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `nilupd`, `nilkeyd`, `nilandroidd`)"
-evidence = ["protocol/src/lib.rs", "services/powerd/src/main.rs", "services/inputd/src/main.rs", "services/netd/src/main.rs", "services/nilupd/src/lib.rs", "services/nilkeyd/src/lib.rs"]
+details = "Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `audiod`, `nilimed`, `nilupd`, `nilkeyd`, `nilandroidd`)"
+evidence = ["protocol/src/lib.rs", "services/powerd/src/main.rs", "services/inputd/src/main.rs", "services/netd/src/main.rs", "services/audiod/src/main.rs", "services/nilimed/src/main.rs", "services/nilupd/src/lib.rs", "services/nilkeyd/src/lib.rs"]
 simulated = false
 
 [[entries]]
@@ -221,8 +221,8 @@ simulated = false
 [[entries]]
 name = "S25 Hosted Mobile Runtime"
 tier = "functional-prototype"
-details = "Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & bridge (`android-host/`)"
-evidence = ["android-host/src/lib.rs", "android-host/src/bridge.rs"]
+details = "Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & JNI bridge (`android-host/`)"
+evidence = ["android-host/src/lib.rs", "android-host/src/bridge.rs", "android-host/src/jni_bridge.rs"]
 simulated = false
 
 [[entries]]

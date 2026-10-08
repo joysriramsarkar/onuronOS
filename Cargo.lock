@@ -63,7 +63,10 @@ dependencies = [
 name = "audiod"
 version = "0.1.0"
 dependencies = [
+ "nilprotocol",
  "nilsd",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1151,7 +1154,10 @@ dependencies = [
 name = "nilimed"
 version = "0.1.0"
 dependencies = [
+ "nilprotocol",
  "nilsd",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

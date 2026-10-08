@@ -181,3 +181,52 @@ pub mod chromium {
         wait_with_pump(rx).map_err(|_| windows::core::Error::from(E_POINTER))?
     }
 }
+
+#[cfg(not(target_os = "windows"))]
+pub mod chromium {
+    pub struct NilBrowser {
+        pub is_visible: bool,
+    }
+
+    pub fn create_embedded_browser(
+        _parent_hwnd: isize,
+        _x: i32,
+        _y: i32,
+        _w: i32,
+        _h: i32,
+        _url: &str,
+    ) -> Result<NilBrowser, String> {
+        Ok(NilBrowser { is_visible: true })
+    }
+
+    pub fn set_bounds(
+        _browser: &NilBrowser,
+        _x: i32,
+        _y: i32,
+        _w: i32,
+        _h: i32,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn set_visible(browser: &mut NilBrowser, visible: bool) -> Result<(), String> {
+        browser.is_visible = visible;
+        Ok(())
+    }
+
+    pub fn navigate_to(_browser: &NilBrowser, _url: &str) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn reload(_browser: &NilBrowser) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn go_back(_browser: &NilBrowser) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn go_forward(_browser: &NilBrowser) -> Result<(), String> {
+        Ok(())
+    }
+}

@@ -9,7 +9,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::*;
-use x11rb::protocol::xproto::ConnectionExt as _;
 use x11rb::protocol::Event;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -38,6 +37,7 @@ const PIN_FILE: &str = "/data/nilos/pin_hash";
 const USER_CONF: &str = "/data/nilos/user.conf";
 
 // ─── Screen Enum ──────────────────────────────────────────────────────────────
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
 enum Screen {
     OobeWelcome,
@@ -200,6 +200,7 @@ struct GuiState {
     term_cwd: String,
     term_output: Vec<String>,
     term_shift: bool,
+    #[allow(dead_code)]
     term_symbols: bool,
 }
 
@@ -1265,7 +1266,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut current_width = win_width;
     let mut current_height = win_height;
 
-    let mut redraw = |w: u16, h: u16, state: &GuiState| -> Vec<TouchButton> {
+    let redraw = |w: u16, h: u16, state: &GuiState| -> Vec<TouchButton> {
         let mut p = Painter::new(&conn, pixmap, gc, w, h);
         p.fill_rect(0, 0, w, h, COLOR_BG);
 

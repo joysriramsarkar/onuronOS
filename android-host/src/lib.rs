@@ -10,8 +10,10 @@ pub mod camera;
 pub mod audio;
 pub mod sensors;
 pub mod storage;
+pub mod jni_bridge;
 
 pub use bridge::*;
+pub use jni_bridge::*;
 pub use display::AndroidHostDisplay;
 pub use input::AndroidHostInput;
 pub use network::AndroidHostNetwork;

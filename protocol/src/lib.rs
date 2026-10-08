@@ -108,6 +108,16 @@ pub enum MessageType {
     KeyStatusInfo = 0x0602,
     KeyUnlock = 0x0603,
 
+    // Audio Service (0x0700 - 0x07FF)
+    AudioGetStatus = 0x0701,
+    AudioStatusInfo = 0x0702,
+    AudioSetVolume = 0x0703,
+    AudioSetMute = 0x0704,
+
+    // IME Service (0x0800 - 0x08FF)
+    ImeTransliterate = 0x0801,
+    ImeTransliterateResult = 0x0802,
+
     // Unknown/Custom
     Custom(u16),
 }
@@ -138,6 +148,12 @@ impl From<u16> for MessageType {
             0x0601 => MessageType::KeyGetStatus,
             0x0602 => MessageType::KeyStatusInfo,
             0x0603 => MessageType::KeyUnlock,
+            0x0701 => MessageType::AudioGetStatus,
+            0x0702 => MessageType::AudioStatusInfo,
+            0x0703 => MessageType::AudioSetVolume,
+            0x0704 => MessageType::AudioSetMute,
+            0x0801 => MessageType::ImeTransliterate,
+            0x0802 => MessageType::ImeTransliterateResult,
             other => MessageType::Custom(other),
         }
     }
@@ -169,6 +185,12 @@ impl From<MessageType> for u16 {
             MessageType::KeyGetStatus => 0x0601,
             MessageType::KeyStatusInfo => 0x0602,
             MessageType::KeyUnlock => 0x0603,
+            MessageType::AudioGetStatus => 0x0701,
+            MessageType::AudioStatusInfo => 0x0702,
+            MessageType::AudioSetVolume => 0x0703,
+            MessageType::AudioSetMute => 0x0704,
+            MessageType::ImeTransliterate => 0x0801,
+            MessageType::ImeTransliterateResult => 0x0802,
             MessageType::Custom(c) => c,
         }
     }
@@ -329,6 +351,35 @@ pub fn get_peer_credentials(stream: &std::os::unix::net::UnixStream) -> io::Resu
     {
         Ok(PeerCredentials { pid: 1000, uid: 1000, gid: 1000 })
     }
+}
+
+// ─── Standard Payloads ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioStatusPayload {
+    pub volume: u8,
+    pub is_muted: bool,
+    pub sink_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioSetVolumePayload {
+    pub volume: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioSetMutePayload {
+    pub is_muted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImeTransliteratePayload {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImeTransliterateResultPayload {
+    pub transliterated: String,
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
