@@ -823,6 +823,7 @@ dependencies = [
 name = "inputd"
 version = "0.1.0"
 dependencies = [
+ "nilprotocol",
  "nilsd",
  "serde",
  "serde_json",
@@ -1056,6 +1057,7 @@ name = "netd"
 version = "0.1.0"
 dependencies = [
  "nilhal",
+ "nilprotocol",
  "nilsd",
  "serde",
  "serde_json",
@@ -1079,7 +1081,10 @@ version = "0.1.0"
 name = "nilandroidd"
 version = "0.1.0"
 dependencies = [
+ "nilprotocol",
  "nilsd",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1165,6 +1170,7 @@ name = "nilkeyd"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "nilprotocol",
  "nilsd",
  "ring",
  "serde",
@@ -1317,6 +1323,7 @@ version = "0.1.0"
 dependencies = [
  "ed25519-dalek",
  "nilpkg",
+ "nilprotocol",
  "nilsd",
  "serde",
  "serde_json",

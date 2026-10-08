@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use nilupd::{
-    apply_update, get_install_root, recover_pending, rollback, status, verify_image,
+    apply_update, get_install_root, rollback, status, verify_image,
 };
 use nilpkg::get_key_dir;
 
@@ -91,15 +91,7 @@ fn main() -> ExitCode {
             Err(e) => failure("Status", e),
         },
         "daemon" | "run" => {
-            let root = get_install_root();
-            if let Err(e) = recover_pending(&root) {
-                eprintln!("[nilupd] Recovery failed: {e}");
-                return ExitCode::FAILURE;
-            }
-            println!("[nilupd] A/B System Image Chunk-Delta Updater active.");
-            loop {
-                std::thread::sleep(std::time::Duration::from_secs(60));
-            }
+            nilupd::run_daemon();
         }
         cmd => {
             eprintln!("Unknown command '{cmd}'. Type 'nilupd help' for usage.");

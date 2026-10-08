@@ -485,6 +485,14 @@ fn run_daemon() -> i32 {
                     }
                     let mut buf = [0u8; 128];
                     if let Ok(n) = s.read(&mut buf) {
+                        if n >= 4 && &buf[..4] == &nilprotocol::PROTOCOL_MAGIC {
+                            let mut cursor = std::io::Cursor::new(&buf[..n]);
+                            if let Ok(frame) = nilprotocol::Frame::read_from(&mut cursor) {
+                                let resp = nilkeyd::handle_ipc_request(&frame, &default_record_path(), &default_master_key_path());
+                                let _ = resp.write_to(&mut s);
+                                continue;
+                            }
+                        }
                         let cmd = String::from_utf8_lossy(&buf[..n]);
                         println!("[nilkeyd] Key Request: {}", cmd.trim());
                         if is_unlocked(&default_record_path(), &default_master_key_path()) {

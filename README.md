@@ -42,9 +42,9 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **Power Daemon (`powerd`)** | 🔵 Functional prototype | NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes |
 | **Network Daemon (`netd`)** | 🔵 Functional prototype | NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC |
 | **Package Manager (`nilpkg`)** | 🔵 Functional prototype | Signed `.nilax` package format (`nilpkg pack`), atomic unpack & install, upgrade with rollback, crash-recovery journal, cross-process locking, key revocation, and shell integration; store catalogue simulated **[SIMULATED]** |
-| **Canonical Framed IPC (`nilprotocol`)** | 🔵 Functional prototype | Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) with client/server codecs wired into `powerd` |
+| **Canonical Framed IPC (`nilprotocol`)** | 🔵 Functional prototype | Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `nilupd`, `nilkeyd`, `nilandroidd`) |
 | **Hardware Watchdog (`nilwdt`)** | 🔵 Functional prototype | Feeds `/dev/watchdog` with configurable interval/timeout, subsystem health monitoring, trip-on-hang, and graceful disarm |
-| **Android Compatibility Layer** | 🟠 Stub / simulated | Android screen shows placeholder container state; no LXC/Waydroid container is launched from the UI yet **[SIMULATED]** |
+| **Android Compatibility Layer** | 🟠 Stub / simulated | Android screen shows placeholder container state; guest container isolation verified (namespaces, cgroups, device whitelist); no LXC/Waydroid container is launched from the UI yet **[SIMULATED]** |
 | **Diagnostic Terminal (`nilshell`)** | 🟠 Stub / simulated | `ps`, `services` and `net` output is fabricated; `ls`/`cat`/`mem` read real kernel/filesystem data **[SIMULATED]** |
 | **NilHAL Unified Subsystem** | 🔵 Functional prototype | Rust trait abstraction with mock in-memory `FakeHAL` for automated CI, plus scaffold backends for Linux sysfs, evdev, and Android host |
 | **S25 Hosted Mobile Runtime** | 🔵 Functional prototype | Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & bridge (`android-host/`) |

@@ -2,12 +2,13 @@
 // Reads raw Linux evdev (/dev/input/event*) & Android Host bridge events,
 // recognizes touch gestures (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch), and broadcasts over IPC.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
+use nilprotocol::{Frame, MessageType};
 
 // ─── Linux evdev constants ────────────────────────────────────────────────────
 pub const EV_SYN: u16 = 0x00;
@@ -285,16 +286,57 @@ pub fn key_name(code: u16) -> &'static str {
     }
 }
 
+pub fn handle_ipc_request(
+    frame: &Frame,
+    _tracker: &Arc<Mutex<MultiTouchTracker>>,
+    event_queue: &Arc<Mutex<VecDeque<InputEvent>>>,
+) -> Frame {
+    let msg_type = MessageType::from(frame.message_type);
+    match msg_type {
+        MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
+        MessageType::InputPollEvents => {
+            let mut q = event_queue.lock().unwrap();
+            let events: Vec<InputEvent> = q.drain(..).collect();
+            let json = serde_json::to_vec(&events).unwrap_or_default();
+            Frame::new(MessageType::InputEventsBatch, frame.request_id, json)
+        }
+        MessageType::InputInjectEvent => {
+            match serde_json::from_slice::<InputEvent>(&frame.payload) {
+                Ok(ev) => {
+                    let mut q = event_queue.lock().unwrap();
+                    if q.len() >= 256 {
+                        q.pop_front();
+                    }
+                    q.push_back(ev);
+                    Frame::new(MessageType::Pong, frame.request_id, b"injected".to_vec())
+                }
+                Err(e) => Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    format!("Invalid InputEvent JSON: {}", e).into_bytes(),
+                ),
+            }
+        }
+        _ => Frame::new(
+            MessageType::ErrorResponse,
+            frame.request_id,
+            b"unsupported message type".to_vec(),
+        ),
+    }
+}
+
 fn main() {
     println!("\x1b[1;36m[inputd]\x1b[0m Onuron OS Unified Input Subsystem Initializing...");
 
     let tracker = Arc::new(Mutex::new(MultiTouchTracker::new(1080.0, 2340.0)));
-    let _ = &tracker; // used by the Linux scanner thread below
+    let event_queue: Arc<Mutex<VecDeque<InputEvent>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let _ = (&tracker, &event_queue);
     let _ = fs::create_dir_all("/run/onuron");
 
     #[cfg(target_os = "linux")]
     {
-        let _tracker_clone = Arc::clone(&tracker);
+        let tracker_clone = Arc::clone(&tracker);
+        let queue_clone = Arc::clone(&event_queue);
         thread::spawn(move || {
             // Scan /dev/input for event devices
             if let Ok(entries) = fs::read_dir("/dev/input") {
@@ -304,6 +346,39 @@ fn main() {
                         let path = entry.path();
                         println!("[inputd] Found input device: {}", path.display());
                     }
+                }
+            }
+            let _ = (tracker_clone, queue_clone);
+        });
+    }
+
+    #[cfg(unix)]
+    {
+        let tracker_ipc = Arc::clone(&tracker);
+        let queue_ipc = Arc::clone(&event_queue);
+        thread::spawn(move || {
+            let listener = match nilsd::first_listener_or_bind("/run/onuron/input.sock") {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("[inputd] Failed to bind IPC socket /run/onuron/input.sock: {}", e);
+                    return;
+                }
+            };
+            println!("\x1b[1;32m[inputd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/input.sock");
+
+            for stream in listener.incoming() {
+                if let Ok(mut sock) = stream {
+                    let tracker = Arc::clone(&tracker_ipc);
+                    let queue = Arc::clone(&queue_ipc);
+                    thread::spawn(move || {
+                        while let Ok(frame) = Frame::read_from(&mut sock) {
+                            let resp = handle_ipc_request(&frame, &tracker, &queue);
+                            if let Err(e) = resp.write_to(&mut sock) {
+                                eprintln!("[inputd] IPC send error: {}", e);
+                                break;
+                            }
+                        }
+                    });
                 }
             }
         });
@@ -391,5 +466,38 @@ mod tests {
                 name: "VolumeUp".into(),
             })
         );
+    }
+
+    #[test]
+    fn test_input_ipc_poll_and_inject() {
+        let tracker = Arc::new(Mutex::new(MultiTouchTracker::new(720.0, 1280.0)));
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
+
+        // 1. Ping
+        let ping_frame = Frame::new(MessageType::Ping, 1, vec![]);
+        let pong_frame = handle_ipc_request(&ping_frame, &tracker, &queue);
+        assert_eq!(pong_frame.message_type, u16::from(MessageType::Pong));
+        assert_eq!(pong_frame.payload, b"pong");
+
+        // 2. Poll empty
+        let poll_frame = Frame::new(MessageType::InputPollEvents, 2, vec![]);
+        let batch_frame = handle_ipc_request(&poll_frame, &tracker, &queue);
+        assert_eq!(batch_frame.message_type, u16::from(MessageType::InputEventsBatch));
+        let events: Vec<InputEvent> = serde_json::from_slice(&batch_frame.payload).unwrap();
+        assert!(events.is_empty());
+
+        // 3. Inject event
+        let inject_ev = InputEvent::Tap { x: 100.0, y: 200.0 };
+        let inject_payload = serde_json::to_vec(&inject_ev).unwrap();
+        let inject_frame = Frame::new(MessageType::InputInjectEvent, 3, inject_payload);
+        let resp = handle_ipc_request(&inject_frame, &tracker, &queue);
+        assert_eq!(resp.message_type, u16::from(MessageType::Pong));
+        assert_eq!(resp.payload, b"injected");
+
+        // 4. Poll again
+        let batch_frame2 = handle_ipc_request(&poll_frame, &tracker, &queue);
+        let events2: Vec<InputEvent> = serde_json::from_slice(&batch_frame2.payload).unwrap();
+        assert_eq!(events2.len(), 1);
+        assert_eq!(events2[0], inject_ev);
     }
 }

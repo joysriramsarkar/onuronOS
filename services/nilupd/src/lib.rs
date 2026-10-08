@@ -30,6 +30,7 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use nilprotocol::{Frame, MessageType};
 
 use nilpkg::durable::{sync_dir, sync_tree, write_file_atomic};
 use nilpkg::lockfile::PackageLock;
@@ -144,7 +145,7 @@ struct PendingUpdate {
 }
 
 /// Per-slot view for `nilupd status`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SlotStatus {
     pub slot: String,
     pub active: bool,
@@ -153,7 +154,7 @@ pub struct SlotStatus {
 }
 
 /// Whole-install view for `nilupd status`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Status {
     pub active_slot: String,
     pub running_image_sha256: String,
@@ -727,16 +728,80 @@ pub fn status(install_root: &std::path::Path) -> Result<Status, String> {
     })
 }
 
-/// Keep the original daemon shape: recover once, then sleep forever. The real
-/// supervision/triggering loop is a follow-up; this only guarantees recovery.
+/// Handle framed IPC requests for system update queries and triggers.
+pub fn handle_ipc_request(
+    frame: &Frame,
+    install_root: &std::path::Path,
+    _key_dir: &std::path::Path,
+) -> Frame {
+    let msg_type = MessageType::from(frame.message_type);
+    match msg_type {
+        MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
+        MessageType::UpdateGetStatus => match status(install_root) {
+            Ok(s) => {
+                let json = serde_json::to_vec(&s).unwrap_or_default();
+                Frame::new(MessageType::UpdateStatusInfo, frame.request_id, json)
+            }
+            Err(e) => Frame::new(MessageType::ErrorResponse, frame.request_id, e.into_bytes()),
+        },
+        MessageType::UpdateRollback => match rollback(install_root) {
+            Ok(()) => Frame::new(MessageType::Pong, frame.request_id, b"rolled_back".to_vec()),
+            Err(e) => Frame::new(MessageType::ErrorResponse, frame.request_id, e.into_bytes()),
+        },
+        _ => Frame::new(
+            MessageType::ErrorResponse,
+            frame.request_id,
+            b"unsupported message type".to_vec(),
+        ),
+    }
+}
+
+/// Run nilupd daemon: recover pending updates on startup, then serve IPC requests.
 pub fn run_daemon() -> ! {
     println!("[nilupd] A/B System Image Updater daemon active.");
     let install_root = get_install_root();
+    let _key_dir = nilpkg::get_key_dir();
+    let _ = &_key_dir;
+    let _ = std::fs::create_dir_all("/run/onuron");
+
     if let Err(e) = recover_pending(&install_root) {
         eprintln!("[nilupd] Recovery failed: {e}");
     } else {
         println!("[nilupd] Pending updates recovered (if any).");
     }
+
+    #[cfg(unix)]
+    {
+        let root_ipc = install_root.clone();
+        let key_ipc = key_dir.clone();
+        std::thread::spawn(move || {
+            let listener = match nilsd::first_listener_or_bind("/run/onuron/update.sock") {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("[nilupd] Failed to bind IPC socket /run/onuron/update.sock: {e}");
+                    return;
+                }
+            };
+            println!("\x1b[1;32m[nilupd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/update.sock");
+
+            for stream in listener.incoming() {
+                if let Ok(mut sock) = stream {
+                    let root = root_ipc.clone();
+                    let key = key_ipc.clone();
+                    std::thread::spawn(move || {
+                        while let Ok(frame) = Frame::read_from(&mut sock) {
+                            let resp = handle_ipc_request(&frame, &root, &key);
+                            if let Err(e) = resp.write_to(&mut sock) {
+                                eprintln!("[nilupd] IPC send error: {e}");
+                                break;
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }
+
     loop {
         std::thread::sleep(std::time::Duration::from_secs(60));
     }
@@ -949,5 +1014,37 @@ mod tests {
         let m = signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), b"payload");
         let verified = verify_image(&update, &fx.keys).unwrap();
         assert_eq!(verified, m);
+    }
+
+    #[test]
+    fn test_update_ipc_status_and_rollback() {
+        let fx = fixture("ipc");
+        let update = fx.root.join("update");
+        let new_image = b"image-for-ipc";
+        signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), new_image);
+        apply_update(&update, &fx.install, &fx.keys).unwrap();
+
+        // 1. Ping
+        let ping_frame = Frame::new(MessageType::Ping, 1, vec![]);
+        let pong_frame = handle_ipc_request(&ping_frame, &fx.install, &fx.keys);
+        assert_eq!(pong_frame.message_type, u16::from(MessageType::Pong));
+
+        // 2. UpdateGetStatus
+        let stat_req = Frame::new(MessageType::UpdateGetStatus, 2, vec![]);
+        let stat_resp = handle_ipc_request(&stat_req, &fx.install, &fx.keys);
+        assert_eq!(stat_resp.message_type, u16::from(MessageType::UpdateStatusInfo));
+        let s: Status = serde_json::from_slice(&stat_resp.payload).unwrap();
+        assert_eq!(s.active_slot, "B");
+
+        // 3. UpdateRollback
+        let rb_req = Frame::new(MessageType::UpdateRollback, 3, vec![]);
+        let rb_resp = handle_ipc_request(&rb_req, &fx.install, &fx.keys);
+        assert_eq!(rb_resp.message_type, u16::from(MessageType::Pong));
+        assert_eq!(rb_resp.payload, b"rolled_back");
+
+        // Verify status after rollback
+        let stat_resp2 = handle_ipc_request(&stat_req, &fx.install, &fx.keys);
+        let s2: Status = serde_json::from_slice(&stat_resp2.payload).unwrap();
+        assert_eq!(s2.active_slot, "A");
     }
 }

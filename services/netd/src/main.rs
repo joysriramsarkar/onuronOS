@@ -7,6 +7,7 @@ use std::thread;
 use std::time::Duration;
 use std::net::IpAddr;
 use serde::{Deserialize, Serialize};
+use nilprotocol::{Frame, MessageType};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ConnectionType {
@@ -175,6 +176,29 @@ pub fn scan_network_interfaces() -> NetworkState {
     NetworkState::default()
 }
 
+pub fn handle_ipc_request(frame: &Frame) -> Frame {
+    let msg_type = MessageType::from(frame.message_type);
+    match msg_type {
+        MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
+        MessageType::NetGetState => {
+            let state = scan_network_interfaces();
+            let json = serde_json::to_vec(&state).unwrap_or_default();
+            Frame::new(MessageType::NetStateInfo, frame.request_id, json)
+        }
+        MessageType::NetScanWifi => {
+            let mut hal = nilhal::NilHal::auto();
+            let aps = hal.network.scan_wifi().unwrap_or_default();
+            let json = serde_json::to_vec(&aps).unwrap_or_default();
+            Frame::new(MessageType::NetStateInfo, frame.request_id, json)
+        }
+        _ => Frame::new(
+            MessageType::ErrorResponse,
+            frame.request_id,
+            b"unsupported message type".to_vec(),
+        ),
+    }
+}
+
 fn main() {
     println!("\x1b[1;36m[netd]\x1b[0m Onuron OS Network Subsystem Initializing...");
 
@@ -200,6 +224,34 @@ fn main() {
             }
         }
     });
+
+    #[cfg(unix)]
+    {
+        thread::spawn(move || {
+            let listener = match nilsd::first_listener_or_bind("/run/onuron/net.sock") {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("[netd] Failed to bind IPC socket /run/onuron/net.sock: {}", e);
+                    return;
+                }
+            };
+            println!("\x1b[1;32m[netd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/net.sock");
+
+            for stream in listener.incoming() {
+                if let Ok(mut sock) = stream {
+                    thread::spawn(move || {
+                        while let Ok(frame) = Frame::read_from(&mut sock) {
+                            let resp = handle_ipc_request(&frame);
+                            if let Err(e) = resp.write_to(&mut sock) {
+                                eprintln!("[netd] IPC send error: {}", e);
+                                break;
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }
 
     println!("\x1b[1;32m[netd] [  OK  ]\x1b[0m Network manager active (/run/onuron/net.sock)");
 
@@ -241,5 +293,26 @@ mod tests {
         assert!(state.active_interface.is_none());
         assert!(state.dns_servers.is_empty());
         assert!(state.is_simulated);
+    }
+
+    #[test]
+    fn test_net_ipc_ping_and_state() {
+        // 1. Ping
+        let ping_frame = Frame::new(MessageType::Ping, 1, vec![]);
+        let pong_frame = handle_ipc_request(&ping_frame);
+        assert_eq!(pong_frame.message_type, u16::from(MessageType::Pong));
+        assert_eq!(pong_frame.payload, b"pong");
+
+        // 2. NetGetState
+        let state_frame = Frame::new(MessageType::NetGetState, 2, vec![]);
+        let resp_frame = handle_ipc_request(&state_frame);
+        assert_eq!(resp_frame.message_type, u16::from(MessageType::NetStateInfo));
+        let state: NetworkState = serde_json::from_slice(&resp_frame.payload).unwrap();
+        assert_eq!(state.is_connected, scan_network_interfaces().is_connected);
+
+        // 3. NetScanWifi
+        let scan_frame = Frame::new(MessageType::NetScanWifi, 3, vec![]);
+        let scan_resp = handle_ipc_request(&scan_frame);
+        assert_eq!(scan_resp.message_type, u16::from(MessageType::NetStateInfo));
     }
 }

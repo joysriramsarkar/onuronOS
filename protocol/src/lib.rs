@@ -97,6 +97,17 @@ pub enum MessageType {
     TelephonyHangup = 0x0402,
     TelephonySendSms = 0x0403,
 
+    // Update Service (0x0500 - 0x05FF)
+    UpdateGetStatus = 0x0501,
+    UpdateStatusInfo = 0x0502,
+    UpdateApplyPayload = 0x0503,
+    UpdateRollback = 0x0504,
+
+    // Security / Keystore Service (0x0600 - 0x06FF)
+    KeyGetStatus = 0x0601,
+    KeyStatusInfo = 0x0602,
+    KeyUnlock = 0x0603,
+
     // Unknown/Custom
     Custom(u16),
 }
@@ -120,6 +131,13 @@ impl From<u16> for MessageType {
             0x0401 => MessageType::TelephonyDial,
             0x0402 => MessageType::TelephonyHangup,
             0x0403 => MessageType::TelephonySendSms,
+            0x0501 => MessageType::UpdateGetStatus,
+            0x0502 => MessageType::UpdateStatusInfo,
+            0x0503 => MessageType::UpdateApplyPayload,
+            0x0504 => MessageType::UpdateRollback,
+            0x0601 => MessageType::KeyGetStatus,
+            0x0602 => MessageType::KeyStatusInfo,
+            0x0603 => MessageType::KeyUnlock,
             other => MessageType::Custom(other),
         }
     }
@@ -144,6 +162,13 @@ impl From<MessageType> for u16 {
             MessageType::TelephonyDial => 0x0401,
             MessageType::TelephonyHangup => 0x0402,
             MessageType::TelephonySendSms => 0x0403,
+            MessageType::UpdateGetStatus => 0x0501,
+            MessageType::UpdateStatusInfo => 0x0502,
+            MessageType::UpdateApplyPayload => 0x0503,
+            MessageType::UpdateRollback => 0x0504,
+            MessageType::KeyGetStatus => 0x0601,
+            MessageType::KeyStatusInfo => 0x0602,
+            MessageType::KeyUnlock => 0x0603,
             MessageType::Custom(c) => c,
         }
     }

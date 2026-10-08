@@ -22,6 +22,8 @@ use std::path::{Path, PathBuf};
 use ring::aead;
 use ring::pbkdf2;
 use sha2::{Digest, Sha256};
+use serde::{Deserialize, Serialize};
+use nilprotocol::{Frame, MessageType};
 
 pub mod fscrypt;
 pub use fscrypt::{apply_fscrypt_policy, FscryptResult};
@@ -47,6 +49,44 @@ pub struct KeyRecord {
     pub kdf_iterations: u32,
     pub nonce: String,
     pub ciphertext: String,
+}
+
+/// Key unlock status payload for IPC queries.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct KeyStatusInfo {
+    pub unlocked: bool,
+    pub record_present: bool,
+    pub master_key_present: bool,
+    pub device_secret_fingerprint: Option<String>,
+}
+
+/// Handle framed IPC requests for key management queries.
+pub fn handle_ipc_request(
+    frame: &Frame,
+    record_path: &Path,
+    master_path: &Path,
+) -> Frame {
+    let msg_type = MessageType::from(frame.message_type);
+    match msg_type {
+        MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
+        MessageType::KeyGetStatus => {
+            let unlocked = is_unlocked(record_path, master_path);
+            let fp = read_record(record_path).ok().map(|r| r.device_secret_fingerprint);
+            let info = KeyStatusInfo {
+                unlocked,
+                record_present: record_path.exists(),
+                master_key_present: master_path.exists(),
+                device_secret_fingerprint: fp,
+            };
+            let json = serde_json::to_vec(&info).unwrap_or_default();
+            Frame::new(MessageType::KeyStatusInfo, frame.request_id, json)
+        }
+        _ => Frame::new(
+            MessageType::ErrorResponse,
+            frame.request_id,
+            b"unsupported message type".to_vec(),
+        ),
+    }
 }
 
 /// An AES-256-GCM encrypted data blob (nonce prepended by convention).
@@ -809,5 +849,35 @@ mod tests {
         assert_eq!(mode(&secret_path), 0o400);
         assert_eq!(mode(&record_path), 0o600);
         assert_eq!(mode(&master_path), 0o600);
+    }
+
+    #[test]
+    fn test_keyd_ipc_status() {
+        let dir = tempdir().unwrap();
+        let (record_path, secret_path, master_path) = setup(dir.path());
+        init_record(&record_path, &secret_path, "1234", false).unwrap();
+
+        // 1. Ping
+        let ping_frame = Frame::new(MessageType::Ping, 1, vec![]);
+        let pong_frame = handle_ipc_request(&ping_frame, &record_path, &master_path);
+        assert_eq!(pong_frame.message_type, u16::from(MessageType::Pong));
+        assert_eq!(pong_frame.payload, b"pong");
+
+        // 2. Status when locked
+        let stat_req = Frame::new(MessageType::KeyGetStatus, 2, vec![]);
+        let stat_resp = handle_ipc_request(&stat_req, &record_path, &master_path);
+        assert_eq!(stat_resp.message_type, u16::from(MessageType::KeyStatusInfo));
+        let info: KeyStatusInfo = serde_json::from_slice(&stat_resp.payload).unwrap();
+        assert!(!info.unlocked);
+        assert!(info.record_present);
+        assert!(!info.master_key_present);
+        assert!(info.device_secret_fingerprint.is_some());
+
+        // 3. Unlock and verify status
+        unwrap_to_file(&record_path, &secret_path, "1234", &master_path, false).unwrap();
+        let stat_resp2 = handle_ipc_request(&stat_req, &record_path, &master_path);
+        let info2: KeyStatusInfo = serde_json::from_slice(&stat_resp2.payload).unwrap();
+        assert!(info2.unlocked);
+        assert!(info2.master_key_present);
     }
 }
