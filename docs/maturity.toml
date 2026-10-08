@@ -50,8 +50,15 @@ simulated = false
 [[entries]]
 name = "QEMU Boot Automation"
 tier = "functional-prototype"
-details = "Persistent `nilos.img` disk + virtio-blk + user-mode NAT networking"
-evidence = ["build/qemu-boot.sh", "build/qemu-boot.ps1"]
+details = "Persistent `nilos.img` disk + virtio-blk + automated headless boot smoke testing harness"
+evidence = ["build/qemu-boot.sh", "build/qemu-boot.ps1", "build/qemu-smoke.py", "build/test_qemu_smoke.py"]
+simulated = false
+
+[[entries]]
+name = "DRM/KMS Direct Compositor (`nilui-gpu`)"
+tier = "functional-prototype"
+details = "Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, bootsplash & presentation demo"
+evidence = ["runtime/nilui-gpu/src/drm.rs", "runtime/nilui-gpu/src/compositor.rs", "runtime/nilui-gpu/src/present.rs", "docs/drm-kms-compositor.md"]
 simulated = false
 
 [[entries]]

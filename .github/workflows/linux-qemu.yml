@@ -23,13 +23,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools qemu-system-x86 python3 e2fsprogs
       - name: Workspace tests
         run: cargo test --workspace --all-targets
-      - name: Initramfs builder tests
-        run: python3 -m unittest build/test_mkinitramfs.py
-      - name: Reproducible build & persistent-data unit tests
+      - name: Build & harness unit tests
         run: >
           python3 -m unittest
+          build/test_mkinitramfs.py
+          build/test_qemu_smoke.py
           build/test_reproducible.py
           build/test_persistent_data.py
+          build/test_gen_maturity.py
       - name: Workspace lint
         run: cargo clippy --workspace --all-targets -- -W clippy::all
       - name: Build Linux musl binaries

@@ -1,11 +1,15 @@
-// runtime/nilui-gpu/src/lib.rs — Public C-ABI exports for nilshell
-pub mod vkctx;
-pub mod atlas;
-pub mod renderer;
+// runtime/nilui-gpu/src/lib.rs — Onuron OS Direct DRM/KMS Compositor & GPU Engine
+pub mod drm;
+pub mod compositor;
 pub mod present;
+pub mod renderer;
+pub mod atlas;
+pub mod vkctx;
 
+pub use compositor::{PixelBuffer, Rect};
+pub use drm::{DrmDevice, DrmMode, DumbBuffer};
+pub use present::{KmsPresenter, PresentationStats};
 pub use renderer::Renderer2D;
-pub use present::KmsPresenter;
 
 #[no_mangle]
 pub extern "C" fn nilgpu_init() -> *mut Renderer2D {

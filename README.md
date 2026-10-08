@@ -24,7 +24,8 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **Linux Kernel Boot** | 🔵 Functional prototype | Linux LTS 6.6 x86_64, bootable under QEMU with initramfs |
 | **System Init (`nilinit`)** | 🔵 Functional prototype | PID 1 init, clean `[  OK  ]` boot logging, mounts, supervision, socket activation |
 | **Storage Hierarchy** | 🔵 Functional prototype | `/data` ext4 persistent disk on virtio-blk + tmpfs fallback; mobile layout |
-| **QEMU Boot Automation** | 🔵 Functional prototype | Persistent `nilos.img` disk + virtio-blk + user-mode NAT networking |
+| **QEMU Boot Automation** | 🔵 Functional prototype | Persistent `nilos.img` disk + virtio-blk + automated headless boot smoke testing harness |
+| **DRM/KMS Direct Compositor (`nilui-gpu`)** | 🔵 Functional prototype | Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, bootsplash & presentation demo |
 | **First-Boot Setup (OOBE)** | 🔵 Functional prototype | Name & PIN setup wizard, writes configuration to `/data/config/` |
 | **Lock Screen** | 🔵 Functional prototype | Salted + stretched (100k-round SHA-256) PIN record with constant-time verify; displayed clock/date/weather are static demo values **[SIMULATED]** |
 | **Home Launcher** | 🔵 Functional prototype | App grid, status bar, notification shade; hero clock/date and status-bar battery/signal are static demo values **[SIMULATED]** |
