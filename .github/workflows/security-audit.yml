@@ -13,6 +13,9 @@ jobs:
   security-audit:
     name: Dependency Vulnerability Audit
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
