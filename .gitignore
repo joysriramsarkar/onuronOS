@@ -32,3 +32,12 @@ Thumbs.db
 # Simulated storage directory
 storage/
 
+# Android build & local configuration
+.gradle/
+android-host/app/build/
+android-host/app/local.properties
+local.properties
+*.apk
+*.aab
+
+

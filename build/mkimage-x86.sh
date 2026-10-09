@@ -6,7 +6,7 @@ IMG="$OUT/nilos-disk.raw"
 SIZE_MB=4096
 
 mkdir -p "$OUT"
-truncate -s ${SIZE_MB}M "$IMG" 2>/dev/null || true
+truncate -s ${SIZE_MB}M "$IMG"
 
 echo "==> Partitioning GPT disk image $IMG"
 if command -v parted >/dev/null 2>&1; then
@@ -17,7 +17,10 @@ if command -v parted >/dev/null 2>&1; then
     mkpart boot_b 193MiB 257MiB \
     mkpart system_a ext4 257MiB 1281MiB \
     mkpart system_b ext4 1281MiB 2305MiB \
-    mkpart userdata ext4 2305MiB 100% || true
+    mkpart userdata ext4 2305MiB 100%
+else
+  echo "[ERROR] parted command not found in PATH; cannot create GPT disk image" >&2
+  exit 1
 fi
 
 echo "[OK] Disk image created at $IMG"

@@ -1,5 +1,5 @@
 // nilinit/src/main.rs — Onuron OS PID 1: Mount, Disk Init, Mobile Storage Hierarchy, SELinux, Supervisor, Socket Activation
-use std::fs::{self, File};
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::process::Command;
 use std::thread;
@@ -207,10 +207,40 @@ fn check_live_install() {
 }
 
 fn load_selinux() {
-    if let Ok(mut f) = File::open("/sys/fs/selinux/load") {
-        if let Ok(policy) = fs::read("/etc/selinux/targeted/policy/policy.33") {
-            let _ = f.write_all(&policy);
-            log_ok("SELinux policy loaded in enforcing mode");
+    let policy_path = "/etc/selinux/targeted/policy/policy.33";
+    let selinux_load_path = "/sys/fs/selinux/load";
+
+    if !std::path::Path::new(selinux_load_path).exists() {
+        log_info("SELinux filesystem not present at /sys/fs/selinux/load (kernel disabled or not mounted)");
+        return;
+    }
+
+    let policy = match fs::read(policy_path) {
+        Ok(p) => p,
+        Err(e) => {
+            log_warn(&format!("SELinux policy file not found at {}: {}", policy_path, e));
+            return;
+        }
+    };
+
+    match OpenOptions::new().write(true).open(selinux_load_path) {
+        Ok(mut f) => match f.write_all(&policy) {
+            Ok(_) => {
+                log_ok("SELinux binary policy successfully committed to kernel (/sys/fs/selinux/load)");
+                if let Ok(mut enforce_file) = OpenOptions::new().write(true).open("/sys/fs/selinux/enforce") {
+                    if enforce_file.write_all(b"1").is_ok() {
+                        log_ok("SELinux policy active in enforcing mode (enforce=1)");
+                    } else {
+                        log_warn("Failed to set SELinux enforcing bit");
+                    }
+                }
+            }
+            Err(e) => {
+                log_warn(&format!("Failed writing SELinux binary policy to kernel: {}", e));
+            }
+        },
+        Err(e) => {
+            log_warn(&format!("Cannot open {} with write permissions: {}", selinux_load_path, e));
         }
     }
 }

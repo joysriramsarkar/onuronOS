@@ -401,11 +401,15 @@ pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativePushHostEvent
 }
 
 #[cfg(test)]
+pub(crate) static TEST_BRIDGE_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_jni_touch_lifecycle() {
+        let _guard = TEST_BRIDGE_MUTEX.lock().unwrap();
         unsafe {
             Java_org_onuron_mobile_NativeBridge_nativeSurfaceCreated(
                 std::ptr::null_mut(),
@@ -453,24 +457,38 @@ mod tests {
 
     #[test]
     fn test_command_and_audio_queues() {
+        let _guard = TEST_BRIDGE_MUTEX.lock().unwrap();
+
+        // Drain any existing leftover commands to ensure strict test isolation
+        while poll_guest_command().is_some() {}
+
         let cmd = GuestToHostCommand::DialNumber {
             number: "1234567890".into(),
         };
         enqueue_guest_command(cmd.clone());
-        assert!(pending_guest_command_count() >= 1);
+        assert_eq!(pending_guest_command_count(), 1);
         let popped = poll_guest_command().expect("Expected command");
-        // Command queue was populated
-        assert!(matches!(popped, GuestToHostCommand::DialNumber { .. } | GuestToHostCommand::SetBrightness { .. } | GuestToHostCommand::StartCameraPreview { .. } | GuestToHostCommand::SetTorch { .. } | GuestToHostCommand::CapturePhoto { .. } | GuestToHostCommand::HangupCall { .. }));
+        match popped {
+            GuestToHostCommand::DialNumber { number } => {
+                assert_eq!(number, "1234567890");
+            }
+            other => panic!("Expected DialNumber, got {:?}", other),
+        }
 
+        // Drain any previous audio playback samples
+        let _ = pull_audio_playback(100_000);
         let pcm = [100i16, 200, 300, 400];
         push_audio_playback(&pcm);
         let pulled = pull_audio_playback(100);
-        assert!(pulled.contains(&100) && pulled.contains(&200) && pulled.contains(&300) && pulled.contains(&400));
+        assert_eq!(pulled, vec![100, 200, 300, 400]);
 
+        // Drain any previous audio record samples
+        let mut discard = [0i16; 512];
+        while pull_audio_record(&mut discard) > 0 {}
         push_audio_record(&[50, 60]);
         let mut rec_buf = [0i16; 64];
         let n = pull_audio_record(&mut rec_buf);
-        assert!(n >= 2);
-        assert!(rec_buf[..n].contains(&50) && rec_buf[..n].contains(&60));
+        assert_eq!(n, 2);
+        assert_eq!(&rec_buf[..n], &[50, 60]);
     }
 }

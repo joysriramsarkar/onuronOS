@@ -204,6 +204,7 @@ mod tests {
 
     #[test]
     fn test_telephony_dial_and_hangup() {
+        let _guard = crate::jni_bridge::TEST_BRIDGE_MUTEX.lock().unwrap();
         let mut tel = AndroidHostTelephony::new();
         assert_eq!(tel.get_call_state(), CallState::Idle);
 
@@ -225,6 +226,7 @@ mod tests {
 
     #[test]
     fn test_telephony_sms_pipeline() {
+        let _guard = crate::jni_bridge::TEST_BRIDGE_MUTEX.lock().unwrap();
         let mut tel = AndroidHostTelephony::new();
 
         assert!(tel.send_sms("", "hello").is_err());

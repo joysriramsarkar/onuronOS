@@ -299,8 +299,8 @@ mod tests {
         let uid3 = allocate_app_uid("org.onuron.camera");
         assert_eq!(uid1, uid2, "UID allocation must be deterministic");
         assert_ne!(uid1, uid3, "Different apps should receive different UIDs");
-        assert!(uid1 >= 10000 && uid1 < 30000, "UID must be in isolated range: {uid1}");
-        assert!(uid3 >= 10000 && uid3 < 30000, "UID must be in isolated range: {uid3}");
+        assert!((10000..30000).contains(&uid1), "UID must be in isolated range: {uid1}");
+        assert!((10000..30000).contains(&uid3), "UID must be in isolated range: {uid3}");
     }
 
     #[test]

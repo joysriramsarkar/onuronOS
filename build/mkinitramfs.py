@@ -13,30 +13,77 @@ import io
 import shutil
 import urllib.request
 import argparse
+import json
 
 TOP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(TOP, "out", "x86_64-generic")
+
+ARCH_CONFIGS = {
+    "x86_64": {
+        "out_dir": os.path.join(TOP, "out", "x86_64-generic"),
+        "kernel_name": "vmlinuz-lts",
+        "kernel_url": "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/netboot/vmlinuz-lts",
+        "kernel_sha256": "4b6f6323ab44265435e1fe7ae5349f298cb37ba570f77bf64e9c704e6669931b",
+        "target_triple": "x86_64-unknown-linux-musl",
+        "initrd_name": "nilos-initramfs.cpio.gz",
+    },
+    "aarch64": {
+        "out_dir": os.path.join(TOP, "out", "aarch64-qemu"),
+        "kernel_name": "vmlinuz-lts",
+        "kernel_url": "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/netboot/vmlinuz-lts",
+        "kernel_sha256": "3cb15bf6bc44ea491f2b604084f707f4ebbe99cfdbef6324d4554b423aa63969",
+        "target_triple": "aarch64-unknown-linux-musl",
+        "initrd_name": "initramfs.cpio.gz",
+    },
+}
+
+# Default backwards-compatible globals for tests
+OUT = ARCH_CONFIGS["x86_64"]["out_dir"]
 ROOTFS = os.path.join(OUT, "rootfs")
 KERNEL_PATH = os.path.join(OUT, "vmlinuz-lts")
 INITRD_PATH = os.path.join(OUT, "nilos-initramfs.cpio.gz")
+KERNEL_URL = ARCH_CONFIGS["x86_64"]["kernel_url"]
 
-KERNEL_URL = "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/netboot/vmlinuz-lts"
+
+def compute_file_sha256(filepath):
+    """Compute SHA-256 hash of a file."""
+    if not os.path.exists(filepath):
+        return None
+    h = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
 
 
-def ensure_kernel(skip_download=False):
-    os.makedirs(OUT, exist_ok=True)
-    if os.path.exists(KERNEL_PATH) and os.path.getsize(KERNEL_PATH) > 1000000:
-        print(f"[OK] Kernel present: {KERNEL_PATH} ({os.path.getsize(KERNEL_PATH)} bytes)")
-        return
+def ensure_kernel(skip_download=False, arch="x86_64", out_dir=None):
+    cfg = ARCH_CONFIGS.get(arch, ARCH_CONFIGS["x86_64"])
+    target_out = out_dir or cfg["out_dir"]
+    os.makedirs(target_out, exist_ok=True)
+    kernel_path = os.path.join(target_out, cfg["kernel_name"])
+
+    if os.path.exists(kernel_path) and os.path.getsize(kernel_path) > 1000000:
+        digest = compute_file_sha256(kernel_path)
+        print(f"[OK] Kernel present: {kernel_path} ({os.path.getsize(kernel_path)} bytes, sha256: {digest[:16]}...)")
+        if cfg.get("kernel_sha256") and digest.lower() == cfg["kernel_sha256"].lower():
+            print("[OK] Kernel SHA-256 integrity verified against pinned release.")
+        return kernel_path
+
     if skip_download:
-        raise RuntimeError(f"Kernel missing at {KERNEL_PATH}; provide a pre-fetched kernel")
-    print(f"==> Downloading Linux LTS kernel for QEMU from:\n    {KERNEL_URL}")
+        raise RuntimeError(f"Kernel missing at {kernel_path}; provide a pre-fetched kernel")
+
+    k_url = cfg["kernel_url"]
+    print(f"==> Downloading Linux LTS kernel ({arch}) for QEMU from:\n    {k_url}")
     try:
-        urllib.request.urlretrieve(KERNEL_URL, KERNEL_PATH)
-        print(f"[OK] Downloaded kernel: {KERNEL_PATH} ({os.path.getsize(KERNEL_PATH)} bytes)")
+        urllib.request.urlretrieve(k_url, kernel_path)
+        digest = compute_file_sha256(kernel_path)
+        print(f"[OK] Downloaded kernel: {kernel_path} ({os.path.getsize(kernel_path)} bytes, sha256: {digest[:16]}...)")
+        if cfg.get("kernel_sha256") and digest.lower() == cfg["kernel_sha256"].lower():
+            print("[OK] Kernel SHA-256 integrity verified.")
+        return kernel_path
     except Exception as e:
         print(f"[WARN] Failed to download kernel automatically: {e}")
-        print("       Please download vmlinuz-lts into out/x86_64-generic/")
+        print(f"       Please place {cfg['kernel_name']} into {target_out}/")
+        return kernel_path
 
 
 class CpioWriter:
@@ -180,22 +227,25 @@ def check_reproducible(root_dir):
     return (first_hash == second_hash, first_hash, second_hash)
 
 
-def prepare_rootfs():
-    os.makedirs(ROOTFS, exist_ok=True)
+def prepare_rootfs(arch="x86_64", rootfs_dir=None):
+    target_rootfs = rootfs_dir or ROOTFS
+    os.makedirs(target_rootfs, exist_ok=True)
     dirs = [
         "bin", "sbin", "usr/bin", "usr/lib", "etc/nilos",
         "proc", "sys", "dev", "run/nilos", "tmp", "mnt", "data"
     ]
     for d in dirs:
-        os.makedirs(os.path.join(ROOTFS, d), exist_ok=True)
+        os.makedirs(os.path.join(target_rootfs, d), exist_ok=True)
 
     # Copy etc/nilos configs
     etc_src = os.path.join(TOP, "etc", "nilos")
     if os.path.exists(etc_src):
-        shutil.copytree(etc_src, os.path.join(ROOTFS, "etc", "nilos"), dirs_exist_ok=True)
+        shutil.copytree(etc_src, os.path.join(target_rootfs, "etc", "nilos"), dirs_exist_ok=True)
 
-    # Check compiled release binaries
-    release_dir = os.path.join(TOP, "target", "x86_64-unknown-linux-musl", "release")
+    # Target-specific release directories
+    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else "x86_64"
+    triple = ARCH_CONFIGS[norm_arch]["target_triple"]
+    release_dir = os.path.join(TOP, "target", triple, "release")
     fallback_release = os.path.join(TOP, "target", "release")
 
     bins = [
@@ -206,34 +256,72 @@ def prepare_rootfs():
         "userd", "crashd", "nilandroidd", "nilinstall", "nilup", "nilperf",
         "nilc", "nilrt-launch", "nilrt"
     ]
+    installed_bins = []
     for b in bins:
-        target_path = os.path.join(ROOTFS, "usr", "bin", b)
+        target_path = os.path.join(target_rootfs, "usr", "bin", b)
         src_musl = os.path.join(release_dir, b)
         src_fb = os.path.join(fallback_release, b)
 
         if os.path.exists(src_musl):
             shutil.copy2(src_musl, target_path)
-            shutil.copy2(src_musl, os.path.join(ROOTFS, "bin", b))
-            print(f"[+] Installed musl binary: {b}")
+            shutil.copy2(src_musl, os.path.join(target_rootfs, "bin", b))
+            installed_bins.append(b)
+            print(f"[+] Installed musl ({norm_arch}) binary: {b}")
         elif os.path.exists(src_fb):
             shutil.copy2(src_fb, target_path)
-            shutil.copy2(src_fb, os.path.join(ROOTFS, "bin", b))
+            shutil.copy2(src_fb, os.path.join(target_rootfs, "bin", b))
+            installed_bins.append(b)
             print(f"[+] Installed native binary: {b}")
 
-    if not os.path.isfile(os.path.join(ROOTFS, "usr", "bin", "nilinit")):
-        raise RuntimeError("nilinit binary is missing; build nilinit before creating a bootable initramfs")
+    if not os.path.isfile(os.path.join(target_rootfs, "usr", "bin", "nilinit")):
+        raise RuntimeError(f"nilinit binary is missing for {norm_arch}; build nilinit before creating a bootable initramfs")
 
-    # If nilinit was installed, link or copy to /init and /sbin/init
-    nilinit_bin = os.path.join(ROOTFS, "usr", "bin", "nilinit")
-    if os.path.exists(nilinit_bin):
-        shutil.copy2(nilinit_bin, os.path.join(ROOTFS, "init"))
-        shutil.copy2(nilinit_bin, os.path.join(ROOTFS, "bin", "nilinit"))
-        shutil.copy2(nilinit_bin, os.path.join(ROOTFS, "sbin", "init"))
-        print("[+] /init and /sbin/init linked to nilinit")
+    # Link /init and /sbin/init to nilinit
+    nilinit_bin = os.path.join(target_rootfs, "usr", "bin", "nilinit")
+    shutil.copy2(nilinit_bin, os.path.join(target_rootfs, "init"))
+    shutil.copy2(nilinit_bin, os.path.join(target_rootfs, "bin", "nilinit"))
+    shutil.copy2(nilinit_bin, os.path.join(target_rootfs, "sbin", "init"))
+    print("[+] /init and /sbin/init linked to nilinit")
+    return installed_bins
+
+
+def write_manifest_and_checksums(out_dir, arch, kernel_file, initrd_file, installed_bins):
+    """Write reproducible manifest.json and checksums.txt into out directory."""
+    k_hash = compute_file_sha256(kernel_file) if kernel_file and os.path.exists(kernel_file) else None
+    i_hash = compute_file_sha256(initrd_file) if initrd_file and os.path.exists(initrd_file) else None
+
+    checksums_path = os.path.join(out_dir, "checksums.txt")
+    with open(checksums_path, "w", encoding="utf-8") as f:
+        if k_hash:
+            f.write(f"{k_hash}  {os.path.basename(kernel_file)}\n")
+        if i_hash:
+            f.write(f"{i_hash}  {os.path.basename(initrd_file)}\n")
+
+    manifest = {
+        "target": arch,
+        "kernel": {
+            "file": os.path.basename(kernel_file) if kernel_file else None,
+            "sha256": k_hash,
+            "size_bytes": os.path.getsize(kernel_file) if kernel_file and os.path.exists(kernel_file) else 0,
+        },
+        "initramfs": {
+            "file": os.path.basename(initrd_file) if initrd_file else None,
+            "sha256": i_hash,
+            "size_bytes": os.path.getsize(initrd_file) if initrd_file and os.path.exists(initrd_file) else 0,
+        },
+        "installed_daemons": installed_bins,
+    }
+    manifest_path = os.path.join(out_dir, "manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"[OK] Generated manifest: {manifest_path}")
+    print(f"[OK] Generated checksums: {checksums_path}")
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="NilOS Initramfs & Image Builder")
+    parser.add_argument("--arch", choices=["x86_64", "aarch64", "arm64"], default="x86_64",
+                        help="Target CPU architecture (x86_64 or aarch64, default: x86_64)")
     parser.add_argument("--skip-kernel-download", action="store_true",
                         help="fail instead of downloading a missing kernel")
     parser.add_argument("--check-reproducible", action="store_true",
@@ -242,18 +330,24 @@ def main(argv=None):
                         help="rootfs directory to package (default: the generated one); "
                              "with --check-reproducible this can be any pre-populated tree")
     args = parser.parse_args(argv)
+
+    norm_arch = "aarch64" if args.arch in ("aarch64", "arm64") else "x86_64"
+    cfg = ARCH_CONFIGS[norm_arch]
+    out_dir = cfg["out_dir"]
+    target_rootfs = args.rootfs or os.path.join(out_dir, "rootfs")
+    initrd_path = os.path.join(out_dir, cfg["initrd_name"])
+
     print("=========================================================")
-    print("          NilOS Initramfs & Image Builder                ")
+    print(f"      NilOS Initramfs & Image Builder ({norm_arch})      ")
     print("=========================================================")
 
     if args.check_reproducible:
-        root_dir = args.rootfs or ROOTFS
         if args.rootfs is None:
-            ensure_kernel(skip_download=args.skip_kernel_download)
-            prepare_rootfs()
-        if not os.path.isdir(root_dir):
-            raise RuntimeError(f"rootfs directory not found: {root_dir}")
-        ok, first_hash, second_hash = check_reproducible(root_dir)
+            ensure_kernel(skip_download=args.skip_kernel_download, arch=norm_arch, out_dir=out_dir)
+            prepare_rootfs(arch=norm_arch, rootfs_dir=target_rootfs)
+        if not os.path.isdir(target_rootfs):
+            raise RuntimeError(f"rootfs directory not found: {target_rootfs}")
+        ok, first_hash, second_hash = check_reproducible(target_rootfs)
         print(f"    build #1 sha256: {first_hash}")
         print(f"    build #2 sha256: {second_hash}")
         if not ok:
@@ -261,9 +355,10 @@ def main(argv=None):
         print("[OK] Initramfs is byte-for-byte reproducible.")
         return 0
 
-    ensure_kernel(skip_download=args.skip_kernel_download)
-    prepare_rootfs()
-    create_initramfs(ROOTFS, INITRD_PATH)
+    kernel_path = ensure_kernel(skip_download=args.skip_kernel_download, arch=norm_arch, out_dir=out_dir)
+    installed_bins = prepare_rootfs(arch=norm_arch, rootfs_dir=target_rootfs)
+    create_initramfs(target_rootfs, initrd_path)
+    write_manifest_and_checksums(out_dir, norm_arch, kernel_path, initrd_path, installed_bins)
     return 0
 
 

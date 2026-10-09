@@ -10,6 +10,7 @@ android {
         getByName("main") {
             manifest.srcFile("AndroidManifest.xml")
             java.srcDirs("src/main/java")
+            jniLibs.srcDirs("src/main/jniLibs")
         }
     }
 

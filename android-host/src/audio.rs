@@ -129,6 +129,7 @@ mod tests {
 
     #[test]
     fn test_audio_playback_and_volume_scaling() {
+        let _guard = crate::jni_bridge::TEST_BRIDGE_MUTEX.lock().unwrap();
         let mut audio = AndroidHostAudio::new();
         assert_eq!(audio.get_master_volume(), 85);
         assert_eq!(audio.get_current_route(), AudioRoute::Speaker);
@@ -145,6 +146,7 @@ mod tests {
 
     #[test]
     fn test_audio_mute_and_record() {
+        let _guard = crate::jni_bridge::TEST_BRIDGE_MUTEX.lock().unwrap();
         let mut audio = AndroidHostAudio::new();
         audio.set_muted(true);
 
