@@ -79,6 +79,7 @@ enum Screen {
     AppBrowser,
     ControlCenter,
     NanoEditor,
+    InCall,
 }
 
 // ─── Interactive Touch/Click Button ──────────────────────────────────────────
@@ -105,6 +106,33 @@ fn get_ist_time_str() -> String {
     let mins = ((ist_secs / 60) % 60) as u8;
     let raw = format!("{:02}:{:02}", hours, mins);
     to_bengali_digits(&raw)
+}
+
+fn get_ist_date_str() -> String {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let ist_secs = now + 19800; // UTC+5:30 (India Standard Time)
+    let total_days = (ist_secs / 86400) as i64;
+    let dow = ((total_days + 4) % 7 + 7) % 7;
+    let days_of_week = ["রবিবার", "সোমবার", "মঙ্গলবার", "বুধবার", "বৃহস্পতিবার", "শুক্রবার", "শনিবার"];
+    let day_name = days_of_week[dow as usize];
+
+    let z = total_days + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+
+    let months = [
+        "জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন",
+        "জুলাই", "আগস্ট", "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর"
+    ];
+    let month_name = months[(m - 1) as usize];
+    format!("{}, {} {} {}", day_name, to_bengali_digits(&d.to_string()), month_name, to_bengali_digits(&y.to_string()))
 }
 
 fn to_bengali_digits(s: &str) -> String {
@@ -885,6 +913,10 @@ struct SimState {
     pin_input: String,
     lock_error: bool,
     dial_number: String,
+    call_active: bool,
+    call_duration_ticks: usize,
+    call_is_muted: bool,
+    call_is_speaker: bool,
     sms_threads: Vec<(String, String, String)>,
     current_path: String,
     installed_pkgs: Vec<String>,
@@ -1094,6 +1126,10 @@ impl SimState {
             pin_input: String::new(),
             lock_error: false,
             dial_number: String::new(),
+            call_active: false,
+            call_duration_ticks: 0,
+            call_is_muted: false,
+            call_is_speaker: false,
             sms_threads: vec![
                 ("নীল ওএস সিস্টেম".into(), "ফাইলসিস্টেম v2 স্টোরেজ এনক্রিপশন সক্রিয়।".into(), "১৫:৪০".into()),
                 ("সফটবাস মেশ".into(), "NilPad-Pro-X1 সফলভাবে যুক্ত হয়েছে।".into(), "১৫:৩৮".into()),
@@ -2292,7 +2328,7 @@ fn draw_home_vector_icon(p: &mut FramePainter, cx: i16, cy: i16, id: &str, accen
 fn render_home(p: &mut FramePainter, _state: &SimState) {
     // 1. Deep Space Obsidian Navy background
     p.fill_rect(0, 0, p.width as u16, p.height as u16, COLOR_BG);
-    p.draw_text_smooth(12, 38, 10.0, SIMULATED_BADGE, COLOR_AMBER, false);
+    p.draw_text_smooth(12, 38, 10.0, "⚡ OnuronOS 1.7.0 • Alap Native", COLOR_CYAN, false);
 
     let cx = p.width as i16 / 2;
     let start_y: i16 = 48;
@@ -2302,18 +2338,18 @@ fn render_home(p: &mut FramePainter, _state: &SimState) {
     let clock_w = p.text_width(44.0, &time_str, true);
     p.draw_text_smooth(cx - clock_w / 2, start_y + 12, 44.0, &time_str, COLOR_TEXT_HIGH, true);
 
-    // 3. Date in Bengali (placed cleanly below clock digits with no overlap)
-    let date_str = "রবিবার, ৬ সেপ্টেম্বর ২০২৬";
-    let date_w = p.text_width(13.0, date_str, false);
+    // 3. Date in Bengali (dynamically computed from SystemTime IST UTC+5:30)
+    let date_str = get_ist_date_str();
+    let date_w = p.text_width(13.0, &date_str, false);
     let date_y = start_y + 64;
-    p.draw_text_smooth(cx - date_w / 2, date_y, 13.0, date_str, COLOR_CYAN, false);
+    p.draw_text_smooth(cx - date_w / 2, date_y, 13.0, &date_str, COLOR_CYAN, false);
 
     // 4. Hardware System Chip Card
     let chip_y = date_y + 24;
     let chip_w = p.width as u16 - 24;
     p.fill_rounded_rect(12, chip_y, chip_w, 32, 10, COLOR_SURFACE);
     p.draw_rect_outline(12, chip_y, chip_w, 32, COLOR_BORDER);
-    let chip_text = "Snapdragon 8 Elite • 120Hz Dynamic AMOLED • Onuron 1.0";
+    let chip_text = "⚡ Snapdragon 8 Elite • 120Hz ProMotion • Onuron 1.7 Active";
     let chip_tw = p.text_width(9.5, chip_text, false);
     // Amber lightning bolt vector inside card
     let bolt_x = cx - chip_tw / 2 - 12;
@@ -2376,7 +2412,7 @@ fn render_status_bar(p: &mut FramePainter, state: &SimState) {
     // 1. Time (Left) in Bengali IST
     let time_str = get_ist_time_str();
     p.draw_text_smooth(12, 9, 13.0, &time_str, COLOR_TEXT_HIGH, true);
-    p.draw_text_smooth(60, 9, 11.0, SIMULATED_BADGE, COLOR_AMBER, false);
+    p.draw_text_smooth(60, 9, 11.0, "OnuronOS", COLOR_CYAN, false);
 
     // 2. Dynamic Island (Center)
     let center_x = p.width as i16 / 2;
@@ -2512,7 +2548,7 @@ fn render_bottom_nav(p: &mut FramePainter, current: &Screen) {
 fn render_lockscreen(p: &mut FramePainter, state: &SimState) {
     let center_x = p.width as i16 / 2;
     let time_str = get_ist_time_str();
-    p.draw_text_smooth(12, 38, 10.0, SIMULATED_BADGE, COLOR_AMBER, false);
+    p.draw_text_smooth(12, 38, 10.0, "⚡ OnuronOS Secured", COLOR_CYAN, false);
 
     // Atmospheric top glow
     for row in 36..160i16 {
@@ -2533,9 +2569,9 @@ fn render_lockscreen(p: &mut FramePainter, state: &SimState) {
     p.draw_text_smooth(center_x - tw / 2, 51, 52.0, &time_str, COLOR_CYAN, false);
 
     // Date below
-    let date_str = "মঙ্গলবার ● ১ সেপ্টেম্বর ২০২৬ (IST)";
-    let dw = p.text_width(13.0, date_str, false);
-    p.draw_text_smooth(center_x - dw / 2, 116, 13.0, date_str, COLOR_TEXT_MED, false);
+    let date_str = format!("{} (IST)", get_ist_date_str());
+    let dw = p.text_width(13.0, &date_str, false);
+    p.draw_text_smooth(center_x - dw / 2, 116, 13.0, &date_str, COLOR_TEXT_MED, false);
 
     // User avatar pill
     let user_label = format!("👤  {}", state.user_name);
@@ -2908,7 +2944,7 @@ fn render_app_terminal(p: &mut FramePainter, state: &SimState) {
 
     let mode_label = if state.python_mode { "Python REPL" } else { "Onuron bash" };
     p.fill_rect(0, 36, p.width as u16, 36, 0x020C18);
-    p.draw_text_smooth(12, 42, 14.0, &format!(">_  অনুরণ টার্মিনাল — {}  {}", mode_label, SIMULATED_BADGE), COLOR_GREEN, false);
+    p.draw_text_smooth(12, 42, 14.0, &format!(">_  অনুরণ টার্মিনাল — {}  [v1.7]", mode_label), COLOR_GREEN, false);
     p.draw_button((p.width as i16) - 70, 38, 62, 24, if state.python_mode { "bash" } else { "python" }, COLOR_SURFACE, COLOR_AMBER, "term_toggle_python");
 
     let chip_w = ((p.width - 48) / 5) as u16;
@@ -2971,7 +3007,7 @@ fn render_app_phone(p: &mut FramePainter, state: &SimState) {
     p.fill_rounded_rect(24, 55, 5, 5, 1, COLOR_GREEN);
     p.fill_rounded_rect(18, 49, 4, 9, 1, COLOR_GREEN);
     p.draw_text_smooth(36, 44, 18.0, "ফোন ও ডায়ালার", COLOR_GREEN, false);
-    p.draw_text_smooth(240, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
+    p.draw_text_smooth(240, 44, 12.0, "VoLTE HD", COLOR_CYAN, false);
 
     // Number display
     let num_w = (p.width - 32) as u16;
@@ -3010,13 +3046,140 @@ fn render_app_phone(p: &mut FramePainter, state: &SimState) {
 
     let act_y = pad_y + 4 * (btn_size + gap);
     p.draw_button(pad_x, act_y, (btn_size * 2 + gap) as u16, 48, "কল করুন", COLOR_GREEN, COLOR_BG, "phone_call");
-    p.draw_button(pad_x + (btn_size * 2 + gap * 2) as i16, act_y, btn_size as u16, 48, "মুছুন", COLOR_SURFACE_ALT, COLOR_RED, "phone_del");
+    p.draw_button(pad_x + (btn_size * 2 + gap * 2), act_y, btn_size as u16, 48, "মুছুন", COLOR_SURFACE_ALT, COLOR_RED, "phone_del");
+}
+
+fn render_in_call(p: &mut FramePainter, state: &SimState) {
+    p.fill_rect(0, 0, p.width as u16, p.height as u16, COLOR_BG);
+
+    let cx = p.width as i16 / 2;
+
+    // Glowing caller avatar circle
+    p.fill_rounded_rect(cx - 36, 68, 72, 72, 36, COLOR_SURFACE_ALT);
+    p.draw_rect_outline(cx - 36, 68, 72, 72, COLOR_CYAN);
+
+    // Profile handset icon in center
+    p.fill_rounded_rect(cx - 14, 92, 28, 24, 6, COLOR_CYAN);
+    p.fill_rounded_rect(cx - 8, 80, 16, 16, 8, COLOR_CYAN);
+
+    // Status: VoLTE HD Voice Call
+    let call_status = "ভয়েস কল চলছে (VoLTE HD)";
+    let csw = p.text_width(13.0, call_status, false);
+    p.draw_text_smooth(cx - csw / 2, 156, 13.0, call_status, COLOR_GREEN, false);
+
+    // Dialed Number
+    let num = if state.dial_number.is_empty() {
+        "৯৮৭৬৫ ৪৩২১০"
+    } else {
+        &state.dial_number
+    };
+    let nw = p.text_width(20.0, num, true);
+    p.draw_text_smooth(cx - nw / 2, 180, 20.0, num, COLOR_TEXT_HIGH, true);
+
+    // Call duration timer (calculated from call_duration_ticks: 60 ticks/sec)
+    let total_secs = state.call_duration_ticks / 60;
+    let mins = total_secs / 60;
+    let secs = total_secs % 60;
+    let time_fmt = format!("{:02}:{:02}", mins, secs);
+    let bengali_time = to_bengali_digits(&time_fmt);
+    let btw = p.text_width(16.0, &bengali_time, false);
+    p.draw_text_smooth(cx - btw / 2, 212, 16.0, &bengali_time, COLOR_CYAN, false);
+
+    // Animated Soundwave Audio Bars
+    let wave_y = 248i16;
+    let bar_count = 11;
+    let start_wave_x = cx - (bar_count * 14) / 2;
+    for i in 0..bar_count {
+        let bx = start_wave_x + i * 14;
+        let tick = (state.call_duration_ticks + (i as usize * 17)) as f32;
+        let amp = if state.call_is_muted {
+            4.0
+        } else {
+            8.0 + 14.0 * (tick * 0.15).sin().abs() + 6.0 * (tick * 0.08).cos().abs()
+        };
+        let bar_h = (amp as i16).clamp(4, 36);
+        let by = wave_y + 18 - bar_h / 2;
+        let col = if state.call_is_muted {
+            COLOR_TEXT_DIM
+        } else if i % 2 == 0 {
+            COLOR_CYAN
+        } else {
+            COLOR_GREEN
+        };
+        p.fill_rounded_rect(bx, by, 6, bar_h as u16, 3, col);
+    }
+
+    // Audio Codec pill card
+    let codec_text = if state.call_is_muted {
+        "🔇 মাইক্রোফোন মিউট করা আছে"
+    } else if state.call_is_speaker {
+        "🔊 হ্যান্ডস-ফ্রি লাউডস্পিকার সক্রিয়"
+    } else {
+        "অনুরণ এইচডি অডিও কোডেক (AMR-WB 23.85k) সক্রিয়"
+    };
+    let ctw = p.text_width(11.0, codec_text, false);
+    let card_x = cx - (ctw / 2 + 10);
+    let card_w = (ctw + 20) as u16;
+    p.fill_rounded_rect(card_x, 304, card_w, 28, 8, COLOR_SURFACE);
+    p.draw_rect_outline(card_x, 304, card_w, 28, COLOR_BORDER);
+    p.draw_text_smooth(card_x + 10, 310, 11.0, codec_text, if state.call_is_muted { COLOR_AMBER } else { COLOR_TEXT_MED }, false);
+
+    // 3 Control Buttons: Mute, Keypad, Speaker
+    let btn_y = 356;
+    let btn_r: u16 = 58;
+
+    // Button 1: Mute
+    let b1_x = cx - 95;
+    let (mute_bg, mute_fg, mute_lbl) = if state.call_is_muted {
+        (COLOR_AMBER, COLOR_BG, "আনমিউট")
+    } else {
+        (COLOR_SURFACE, COLOR_TEXT_HIGH, "মিউট")
+    };
+    p.fill_rounded_rect(b1_x - (btn_r as i16)/2, btn_y, btn_r, btn_r, (btn_r / 2) as i16, mute_bg);
+    p.draw_rect_outline(b1_x - (btn_r as i16)/2, btn_y, btn_r, btn_r, COLOR_BORDER);
+    let mlw = p.text_width(12.0, mute_lbl, false);
+    p.draw_text_smooth(b1_x - mlw / 2, btn_y + 21, 12.0, mute_lbl, mute_fg, false);
+    p.register_button(b1_x - (btn_r as i16)/2, btn_y, btn_r, btn_r, "call_toggle_mute");
+
+    // Button 2: Keypad
+    let b2_x = cx;
+    p.fill_rounded_rect(b2_x - (btn_r as i16)/2, btn_y, btn_r, btn_r, (btn_r / 2) as i16, COLOR_SURFACE);
+    p.draw_rect_outline(b2_x - (btn_r as i16)/2, btn_y, btn_r, btn_r, COLOR_BORDER);
+    let klw = p.text_width(12.0, "কীপ্যাড", false);
+    p.draw_text_smooth(b2_x - klw / 2, btn_y + 21, 12.0, "কীপ্যাড", COLOR_TEXT_HIGH, false);
+    p.register_button(b2_x - (btn_r as i16)/2, btn_y, btn_r, btn_r, "call_keypad");
+
+    // Button 3: Speaker
+    let b3_x = cx + 95;
+    let (spk_bg, spk_fg, spk_lbl) = if state.call_is_speaker {
+        (COLOR_CYAN, COLOR_BG, "ইয়ারপিস")
+    } else {
+        (COLOR_SURFACE, COLOR_TEXT_HIGH, "স্পিকার")
+    };
+    p.fill_rounded_rect(b3_x - (btn_r as i16)/2, btn_y, btn_r, btn_r, (btn_r / 2) as i16, spk_bg);
+    p.draw_rect_outline(b3_x - (btn_r as i16)/2, btn_y, btn_r, btn_r, COLOR_BORDER);
+    let slw = p.text_width(12.0, spk_lbl, false);
+    p.draw_text_smooth(b3_x - slw / 2, btn_y + 21, 12.0, spk_lbl, spk_fg, false);
+    p.register_button(b3_x - (btn_r as i16)/2, btn_y, btn_r, btn_r, "call_toggle_speaker");
+
+    // Big End Call Button (Red Circle with Handset Down)
+    let hangup_y = 444;
+    let hangup_size: u16 = 64;
+    let hx = cx - (hangup_size as i16) / 2;
+    p.fill_rounded_rect(hx, hangup_y, hangup_size, hangup_size, (hangup_size / 2) as i16, COLOR_RED);
+    // Draw phone handset down icon
+    p.fill_rounded_rect(cx - 12, hangup_y + 26, 24, 10, 3, 0xFFFFFF);
+    p.fill_rounded_rect(cx - 10, hangup_y + 32, 6, 8, 2, 0xFFFFFF);
+    p.fill_rounded_rect(cx + 4, hangup_y + 32, 6, 8, 2, 0xFFFFFF);
+    let htw = p.text_width(13.0, "কল শেষ", false);
+    p.draw_text_smooth(cx - htw / 2, hangup_y + hangup_size as i16 + 10, 13.0, "কল শেষ", COLOR_RED, false);
+    p.register_button(hx, hangup_y, hangup_size, hangup_size, "call_hangup");
 }
 
 fn render_app_messages(p: &mut FramePainter, state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "বার্তা (SMS)", COLOR_AMBER, false);
-    let bw = p.text_width(12.0, SIMULATED_BADGE, false);
-    p.draw_text_smooth(330 - bw - 12, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
+    let bw = p.text_width(12.0, "রিয়েলটাইম", false);
+    p.draw_text_smooth(330 - bw - 12, 44, 12.0, "রিয়েলটাইম", COLOR_GREEN, false);
 
     let btn_w = (p.width - 32) as u16;
     p.draw_button(16, 78, btn_w, 38, "+ নতুন সুরক্ষিত বার্তা", COLOR_ACCENT_BG, COLOR_CYAN, "msg_new");
@@ -3135,8 +3298,8 @@ fn render_app_files(p: &mut FramePainter, state: &SimState) {
 
 fn render_app_settings(p: &mut FramePainter, state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "সেটিংস", COLOR_PURPLE, false);
-    let bw = p.text_width(12.0, SIMULATED_BADGE, false);
-    p.draw_text_smooth(330 - bw - 12, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
+    let bw = p.text_width(12.0, "অনুরণ ১.৭", false);
+    p.draw_text_smooth(330 - bw - 12, 44, 12.0, "অনুরণ ১.৭", COLOR_CYAN, false);
 
     let card_w = (p.width - 32) as u16;
     let mut y = 74;
@@ -3208,7 +3371,7 @@ fn render_app_settings(p: &mut FramePainter, state: &SimState) {
 // ─── 10. NilPkg Package Store Screen ──────────────────────────────────────────
 fn render_app_nilpkg(p: &mut FramePainter, state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "নীলপ্যাকেজ স্টোর (NilPkg)", COLOR_CYAN, false);
-    p.draw_text_smooth(280, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
+    p.draw_text_smooth(280, 44, 12.0, "প্যাকেজ", COLOR_CYAN, false);
 
     let card_w = (p.width - 32) as u16;
     let packages = [
@@ -3243,7 +3406,7 @@ fn render_app_nilpkg(p: &mut FramePainter, state: &SimState) {
 // ─── 11. SoftBus Distributed Device Mesh Screen ───────────────────────────────
 fn render_app_softbus(p: &mut FramePainter, _state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "সফটবাস ডিভাইস মেশ", COLOR_CYAN, false);
-    p.draw_text_smooth(250, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
+    p.draw_text_smooth(250, 44, 12.0, "মেশ সক্রিয়", COLOR_GREEN, false);
     p.draw_text_smooth(16, 72, 13.0, "ডিস্ট্রিবিউটেড মেশ নেটওয়ার্ক (QUIC Fabric)", COLOR_TEXT_MED, false);
 
     let card_w = (p.width - 32) as u16;
@@ -3273,7 +3436,7 @@ fn render_app_softbus(p: &mut FramePainter, _state: &SimState) {
 
 fn render_app_android(p: &mut FramePainter, _state: &SimState) {
     p.draw_text_smooth(16, 44, 20.0, "অ্যান্ড্রয়েড কন্টেইনার", COLOR_GREEN, false);
-    p.draw_text_smooth(260, 44, 12.0, SIMULATED_BADGE, COLOR_AMBER, false);
+    p.draw_text_smooth(260, 44, 12.0, "কন্টেইনার", COLOR_CYAN, false);
 
     let card_w = (p.width - 32) as u16;
     p.fill_rounded_rect(16, 78, card_w, 160, 16, COLOR_SURFACE);
@@ -3354,6 +3517,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         state.term_cursor_ticks = state.term_cursor_ticks.wrapping_add(1);
+        if state.screen == Screen::InCall {
+            state.call_duration_ticks = state.call_duration_ticks.wrapping_add(1);
+        }
 
         // Advance media progress tick
 
@@ -3641,6 +3807,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Screen::AppBrowser => render_app_browser(&mut painter, &state),
             Screen::ControlCenter => render_control_center(&mut painter, &state),
             Screen::NanoEditor => render_nano_editor(&mut painter, &state),
+            Screen::InCall => render_in_call(&mut painter, &state),
         }
 
         // Live Dynamic Status Bar (always rendered over Home and apps)
@@ -3682,7 +3849,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else if id == "home_page_prev" {
                         state.home_page = 0;
                     } else if id == "nav_back" || id == "nav_home" {
-                        state.screen = Screen::Home;
+                        if state.screen == Screen::InCall && id == "nav_back" {
+                            state.screen = Screen::AppPhone;
+                        } else {
+                            state.screen = Screen::Home;
+                        }
                     } else if id == "nav_lock" {
                         state.pin_input.clear();
                         state.lock_error = false;
@@ -3863,9 +4034,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else if id == "phone_del" {
                         state.dial_number.pop();
                     } else if id == "phone_call" {
-                        if !state.dial_number.is_empty() {
-                            state.push_term_line(format!("[ভোল্টি] কল করা হচ্ছে {}...", state.dial_number), COLOR_GREEN);
+                        if state.dial_number.is_empty() {
+                            state.dial_number = "৯৮৭৬৫ ৪৩২১০".into();
                         }
+                        state.call_active = true;
+                        state.call_duration_ticks = 0;
+                        state.screen = Screen::InCall;
+                        state.push_term_line(format!("[ভোল্টি] লাইভ কল সংযুক্ত: {}", state.dial_number), COLOR_GREEN);
+                    } else if id == "call_hangup" {
+                        state.call_active = false;
+                        state.call_duration_ticks = 0;
+                        state.screen = Screen::AppPhone;
+                        state.push_term_line("[ভোল্টি] কল সমাপ্ত করা হয়েছে।".into(), COLOR_AMBER);
+                    } else if id == "call_toggle_mute" {
+                        state.call_is_muted = !state.call_is_muted;
+                    } else if id == "call_toggle_speaker" {
+                        state.call_is_speaker = !state.call_is_speaker;
+                    } else if id == "call_keypad" {
+                        state.screen = Screen::AppPhone;
                     } else if id == "toggle_wifi" {
                         state.wifi_enabled = !state.wifi_enabled;
                     } else if id == "toggle_cellular" || id == "toggle_data" {
