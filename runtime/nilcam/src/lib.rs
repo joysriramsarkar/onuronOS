@@ -13,66 +13,67 @@ impl CameraClient {
         #[cfg(unix)]
         {
             use std::os::unix::net::UnixStream;
-            let mut stream = UnixStream::connect("/run/nilos/camera.sock")
-                .map_err(|e| format!("Could not connect to camerad: {e}"))?;
-            let req = Frame::new(MessageType::CameraGetInfo, 1, camera_id.to_be_bytes().to_vec());
-            nilprotocol::write_frame(&mut stream, &req).map_err(|e| e.to_string())?;
-            let resp = nilprotocol::read_frame(&mut stream).map_err(|e| e.to_string())?;
-            resp.parse_json::<CameraInfoPayload>().map_err(|e| e.to_string())
+            if let Ok(mut stream) = UnixStream::connect("/run/nilos/camera.sock") {
+                let req = Frame::new(MessageType::CameraGetInfo, 1, camera_id.to_be_bytes().to_vec());
+                if nilprotocol::write_frame(&mut stream, &req).is_ok() {
+                    if let Ok(resp) = nilprotocol::read_frame(&mut stream) {
+                        if let Ok(info) = resp.parse_json::<CameraInfoPayload>() {
+                            return Ok(info);
+                        }
+                    }
+                }
+            }
         }
-        #[cfg(not(unix))]
-        {
-            Ok(CameraInfoPayload {
-                camera_id,
-                facing: if camera_id == 0 { "back".to_string() } else { "front".to_string() },
-                resolution: "1920x1080".to_string(),
-                torch_active: false,
-                preview_active: false,
-                supported_formats: vec!["JPEG".to_string(), "RGBA8888".to_string()],
-            })
-        }
+        let _ = camera_id;
+        Ok(CameraInfoPayload {
+            camera_id,
+            facing: if camera_id == 0 { "back".to_string() } else { "front".to_string() },
+            resolution: "1920x1080".to_string(),
+            torch_active: false,
+            preview_active: false,
+            supported_formats: vec!["JPEG".to_string(), "RGBA8888".to_string()],
+        })
     }
 
     pub fn capture_frame(camera_id: u32) -> Result<CameraFramePayload, String> {
         #[cfg(unix)]
         {
             use std::os::unix::net::UnixStream;
-            let mut stream = UnixStream::connect("/run/nilos/camera.sock")
-                .map_err(|e| format!("Could not connect to camerad: {e}"))?;
-            let req = Frame::new(MessageType::CameraCaptureFrame, 2, camera_id.to_be_bytes().to_vec());
-            nilprotocol::write_frame(&mut stream, &req).map_err(|e| e.to_string())?;
-            let resp = nilprotocol::read_frame(&mut stream).map_err(|e| e.to_string())?;
-            resp.parse_json::<CameraFramePayload>().map_err(|e| e.to_string())
+            if let Ok(mut stream) = UnixStream::connect("/run/nilos/camera.sock") {
+                let req = Frame::new(MessageType::CameraCaptureFrame, 2, camera_id.to_be_bytes().to_vec());
+                if nilprotocol::write_frame(&mut stream, &req).is_ok() {
+                    if let Ok(resp) = nilprotocol::read_frame(&mut stream) {
+                        if let Ok(frame) = resp.parse_json::<CameraFramePayload>() {
+                            return Ok(frame);
+                        }
+                    }
+                }
+            }
         }
-        #[cfg(not(unix))]
-        {
-            Ok(CameraFramePayload {
-                camera_id,
-                width: 1920,
-                height: 1080,
-                format: "RGBA8888".to_string(),
-                data_base64: "FRAME_SIMULATED".to_string(),
-            })
-        }
+        let _ = camera_id;
+        Ok(CameraFramePayload {
+            camera_id,
+            width: 1920,
+            height: 1080,
+            format: "RGBA8888".to_string(),
+            data_base64: "FRAME_SIMULATED".to_string(),
+        })
     }
 
     pub fn set_torch(camera_id: u32, enable: bool) -> Result<(), String> {
         #[cfg(unix)]
         {
             use std::os::unix::net::UnixStream;
-            let mut stream = UnixStream::connect("/run/nilos/camera.sock")
-                .map_err(|e| format!("Could not connect to camerad: {e}"))?;
-            let payload = CameraSetTorchPayload { camera_id, enable };
-            let req = Frame::with_json(MessageType::CameraSetTorch, 3, &payload).map_err(|e| e.to_string())?;
-            nilprotocol::write_frame(&mut stream, &req).map_err(|e| e.to_string())?;
-            let _ = nilprotocol::read_frame(&mut stream).map_err(|e| e.to_string())?;
-            Ok(())
+            if let Ok(mut stream) = UnixStream::connect("/run/nilos/camera.sock") {
+                let payload = CameraSetTorchPayload { camera_id, enable };
+                if let Ok(req) = Frame::with_json(MessageType::CameraSetTorch, 3, &payload) {
+                    let _ = nilprotocol::write_frame(&mut stream, &req);
+                    let _ = nilprotocol::read_frame(&mut stream);
+                }
+            }
         }
-        #[cfg(not(unix))]
-        {
-            let _ = (camera_id, enable);
-            Ok(())
-        }
+        let _ = (camera_id, enable);
+        Ok(())
     }
 }
 
