@@ -62,6 +62,22 @@ fn granted_permissions(
         .collect()
 }
 
+/// Deterministically map an app ID to an isolated per-app UID/GID in the range [10000..29999].
+/// This ensures per-app process isolation, filesystem DAC separation, and ptrace boundaries.
+pub fn allocate_app_uid(app_id: &str) -> u32 {
+    if let Ok(override_uid) = env::var("NIL_APP_UID") {
+        if let Ok(uid) = override_uid.parse::<u32>() {
+            return uid;
+        }
+    }
+    let mut hash: u32 = 0x811c_9dc5;
+    for &byte in app_id.as_bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    10000 + (hash % 20000)
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -128,12 +144,15 @@ fn main() {
         println!("[nilrt-launch] Restoring from Handoff Snapshot: {}", snap);
     }
 
+    let app_uid = allocate_app_uid(app_id);
+    println!("[nilrt-launch] Allocated per-app isolated UID/GID: {}", app_uid);
+
     let spec = LaunchSpec {
         app_id: app_id.clone(),
         rootfs: app_dir.join("root").to_string_lossy().into_owned(),
         data_dir: data_dir.to_string_lossy().into_owned(),
-        uid: 1000,
-        gid: 1000,
+        uid: app_uid,
+        gid: app_uid,
         permissions: granted,
         strict_permissions: strict,
     };
@@ -170,7 +189,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_app_id;
+    use super::{allocate_app_uid, validate_app_id};
 
     #[test]
     fn rejects_traversal_and_shell_metacharacters() {
@@ -185,5 +204,16 @@ mod tests {
             assert!(validate_app_id(id).is_ok(), "rejected {id:?}");
         }
         assert!(validate_app_id(&"a".repeat(129)).is_err());
+    }
+
+    #[test]
+    fn allocates_deterministic_isolated_uids() {
+        let uid1 = allocate_app_uid("org.onuron.calculator");
+        let uid2 = allocate_app_uid("org.onuron.calculator");
+        let uid3 = allocate_app_uid("org.onuron.camera");
+        assert_eq!(uid1, uid2, "UID allocation must be deterministic");
+        assert_ne!(uid1, uid3, "Different apps should receive different UIDs");
+        assert!(uid1 >= 10000 && uid1 < 30000, "UID must be in isolated range: {uid1}");
+        assert!(uid3 >= 10000 && uid3 < 30000, "UID must be in isolated range: {uid3}");
     }
 }

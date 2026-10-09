@@ -24,4 +24,4 @@ jobs:
         run: cargo check --workspace --verbose
 
       - name: Cargo Test Workspace
-        run: cargo test --workspace --no-fail-fast || true
+        run: cargo test --workspace --no-fail-fast

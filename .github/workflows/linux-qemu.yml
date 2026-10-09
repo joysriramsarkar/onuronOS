@@ -27,6 +27,8 @@ jobs:
         run: >
           python3 -m unittest
           build/test_mkinitramfs.py
+          build/test_mkbootimg.py
+          build/test_mkvbmeta.py
           build/test_qemu_smoke.py
           build/test_reproducible.py
           build/test_persistent_data.py

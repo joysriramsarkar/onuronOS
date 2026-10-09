@@ -30,24 +30,34 @@ if [ ! -f "$OUT/boot.img" ] && [ -f "$OUT/kernel" ] && [ -f "$OUT/initramfs.cpio
   echo "==> Packaging Android boot.img using build/mkbootimg.py..."
   python3 "$TOP/build/mkbootimg.py" create --kernel "$OUT/kernel" --ramdisk "$OUT/initramfs.cpio.gz" -o "$OUT/boot.img"
 fi
-if [ -f "$OUT/boot.img" ]; then
-  fastboot flash boot "$OUT/boot.img"
+if [ ! -f "$OUT/boot.img" ]; then
+  echo "[ERROR] Boot image not found at $OUT/boot.img" >&2
+  exit 1
 fi
+fastboot flash boot "$OUT/boot.img"
 
+SYS_IMG=""
 if [ -f "$OUT/system_a.img" ]; then
-  fastboot flash system "$OUT/system_a.img"
+  SYS_IMG="$OUT/system_a.img"
 elif [ -f "$OUT/system.img" ]; then
-  fastboot flash system "$OUT/system.img"
+  SYS_IMG="$OUT/system.img"
 else
-  echo "[WARN] system image not found in $OUT, creating test sparse system.img..."
+  echo "[ERROR] Valid system image not found in $OUT" >&2
+  exit 1
 fi
+fastboot flash system "$SYS_IMG"
 
 if [ -f "$OUT/vbmeta_a.img" ]; then
-  fastboot flash vbmeta --disable-verity --disable-verification "$OUT/vbmeta_a.img" || true
+  echo "==> Verifying and flashing cryptographic vbmeta image..."
+  python3 "$TOP/build/mkvbmeta.py" verify --image "$SYS_IMG" --vbmeta "$OUT/vbmeta_a.img"
+  fastboot flash vbmeta "$OUT/vbmeta_a.img"
+else
+  echo "[ERROR] Cryptographic vbmeta_a.img required for Verified Boot was not found in $OUT" >&2
+  exit 1
 fi
 
 echo "==> Formatting userdata (fscrypt encryption ready)..."
-fastboot erase userdata || true
+fastboot format userdata || fastboot erase userdata
 
 echo "========================================================="
 echo "   NilOS Flashed Successfully! Rebooting device...       "

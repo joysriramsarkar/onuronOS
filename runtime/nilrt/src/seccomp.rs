@@ -206,10 +206,157 @@ mod linux {
         pub const MEMFD_CREATE: u32 = 319;
         pub const STATX: u32 = 332;
         pub const RSEQ: u32 = 334;
+
+        pub const ALLOWED_SYSCALLS: &[u32] = &[
+            READ, WRITE, OPEN, CLOSE, STAT, FSTAT, LSTAT, POLL, LSEEK,
+            MMAP, MPROTECT, MUNMAP, BRK, RT_SIGACTION, RT_SIGPROCMASK,
+            RT_SIGRETURN, IOCTL, PREAD64, PWRITE64, READV, WRITEV,
+            ACCESS, PIPE, SELECT, NANOSLEEP, GETITIMER, SETITIMER,
+            GETPID, SOCKET, CONNECT, ACCEPT, SENDTO, RECVFROM, SENDMSG,
+            RECVMSG, BIND, GETSOCKNAME, GETPEERNAME, SOCKETPAIR,
+            SETSOCKOPT, GETSOCKOPT, CLONE, FORK, EXECVE, EXIT, WAIT4,
+            KILL, UNAME, FCNTL, FLOCK, FSYNC, TRUNCATE, FTRUNCATE,
+            GETDENTS, GETCWD, RENAME, MKDIR, RMDIR, UNLINK, READLINK,
+            CHMOD, CHOWN, UMASK, GETTIMEOFDAY, GETRLIMIT, SYSINFO,
+            GETUID, GETGID, GETEUID, GETEGID, GETPPID, GETPGRP, SETSID,
+            SETRLIMIT, GETTID, FUTEX, SCHED_SETAFFINITY, SCHED_GETAFFINITY,
+            EPOLL_CREATE, GETDENTS64, SET_TID_ADDRESS, EPOLL_CTL, EPOLL_WAIT,
+            CLOCK_GETTIME, CLOCK_GETRES, CLOCK_NANOSLEEP, EXIT_GROUP, TGKILL,
+            OPENAT, MKDIRAT, UNLINKAT, RENAMEAT, FSTATAT, READLINKAT,
+            SET_ROBUST_LIST, GET_ROBUST_LIST, SPLICE, EPOLL_PWAIT, EVENTFD,
+            TIMERFD_CREATE, TIMERFD_SETTIME, TIMERFD_GETTIME, ACCEPT4,
+            EVENTFD2, EPOLL_CREATE1, DUP3, PIPE2, PRLIMIT64, GETRANDOM,
+            MEMFD_CREATE, STATX, RSEQ,
+        ];
+    }
+
+    // ── ARM64 (AArch64) syscall numbers (Standard Linux generic ABI) ──────────
+    #[cfg(target_arch = "aarch64")]
+    mod nr {
+        pub const GETCWD: u32 = 17;
+        pub const EVENTFD2: u32 = 19;
+        pub const EPOLL_CREATE1: u32 = 20;
+        pub const EPOLL_CTL: u32 = 21;
+        pub const EPOLL_PWAIT: u32 = 22;
+        pub const DUP3: u32 = 24;
+        pub const FCNTL: u32 = 25;
+        pub const IOCTL: u32 = 29;
+        pub const FLOCK: u32 = 32;
+        pub const MKDIRAT: u32 = 34;
+        pub const UNLINKAT: u32 = 35;
+        pub const RENAMEAT: u32 = 38;
+        pub const FTRUNCATE: u32 = 46;
+        pub const CHDIR: u32 = 49;
+        pub const FCHDIR: u32 = 50;
+        pub const FCHMOD: u32 = 52;
+        pub const FCHMODAT: u32 = 53;
+        pub const FCHOWNAT: u32 = 54;
+        pub const FCHOWN: u32 = 55;
+        pub const OPENAT: u32 = 56;
+        pub const CLOSE: u32 = 57;
+        pub const PIPE2: u32 = 59;
+        pub const GETDENTS64: u32 = 61;
+        pub const LSEEK: u32 = 62;
+        pub const READ: u32 = 63;
+        pub const WRITE: u32 = 64;
+        pub const READV: u32 = 65;
+        pub const WRITEV: u32 = 66;
+        pub const PREAD64: u32 = 67;
+        pub const PWRITE64: u32 = 68;
+        pub const SPLICE: u32 = 76;
+        pub const READLINKAT: u32 = 78;
+        pub const FSTATAT: u32 = 79;
+        pub const FSTAT: u32 = 80;
+        pub const FSYNC: u32 = 82;
+        pub const FDATASYNC: u32 = 83;
+        pub const TIMERFD_CREATE: u32 = 85;
+        pub const TIMERFD_SETTIME: u32 = 86;
+        pub const TIMERFD_GETTIME: u32 = 87;
+        pub const EXIT: u32 = 93;
+        pub const EXIT_GROUP: u32 = 94;
+        pub const SET_TID_ADDRESS: u32 = 96;
+        pub const FUTEX: u32 = 98;
+        pub const SET_ROBUST_LIST: u32 = 99;
+        pub const GET_ROBUST_LIST: u32 = 100;
+        pub const NANOSLEEP: u32 = 101;
+        pub const CLOCK_GETTIME: u32 = 113;
+        pub const CLOCK_GETRES: u32 = 114;
+        pub const CLOCK_NANOSLEEP: u32 = 115;
+        pub const SCHED_SETAFFINITY: u32 = 122;
+        pub const SCHED_GETAFFINITY: u32 = 123;
+        pub const SCHED_YIELD: u32 = 124;
+        pub const KILL: u32 = 129;
+        pub const TGKILL: u32 = 131;
+        pub const RT_SIGACTION: u32 = 134;
+        pub const RT_SIGPROCMASK: u32 = 135;
+        pub const RT_SIGRETURN: u32 = 139;
+        pub const SETSID: u32 = 157;
+        pub const UNAME: u32 = 160;
+        pub const GETRLIMIT: u32 = 163;
+        pub const SETRLIMIT: u32 = 164;
+        pub const UMASK: u32 = 166;
+        pub const GETTIMEOFDAY: u32 = 169;
+        pub const GETPID: u32 = 172;
+        pub const GETPPID: u32 = 173;
+        pub const GETUID: u32 = 174;
+        pub const GETEUID: u32 = 175;
+        pub const GETGID: u32 = 176;
+        pub const GETEGID: u32 = 177;
+        pub const GETTID: u32 = 178;
+        pub const SYSINFO: u32 = 179;
+        pub const SOCKET: u32 = 198;
+        pub const SOCKETPAIR: u32 = 199;
+        pub const BIND: u32 = 200;
+        pub const LISTEN: u32 = 201;
+        pub const ACCEPT: u32 = 202;
+        pub const CONNECT: u32 = 203;
+        pub const GETSOCKNAME: u32 = 204;
+        pub const GETPEERNAME: u32 = 205;
+        pub const SENDTO: u32 = 206;
+        pub const RECVFROM: u32 = 207;
+        pub const SETSOCKOPT: u32 = 208;
+        pub const GETSOCKOPT: u32 = 209;
+        pub const SHUTDOWN: u32 = 210;
+        pub const SENDMSG: u32 = 211;
+        pub const RECVMSG: u32 = 212;
+        pub const BRK: u32 = 214;
+        pub const MUNMAP: u32 = 215;
+        pub const MREMAP: u32 = 216;
+        pub const CLONE: u32 = 220;
+        pub const EXECVE: u32 = 221;
+        pub const MMAP: u32 = 222;
+        pub const MPROTECT: u32 = 226;
+        pub const ACCEPT4: u32 = 242;
+        pub const WAIT4: u32 = 260;
+        pub const PRLIMIT64: u32 = 261;
+        pub const GETRANDOM: u32 = 278;
+        pub const MEMFD_CREATE: u32 = 279;
+        pub const STATX: u32 = 291;
+        pub const RSEQ: u32 = 293;
+
+        pub const ALLOWED_SYSCALLS: &[u32] = &[
+            GETCWD, EVENTFD2, EPOLL_CREATE1, EPOLL_CTL, EPOLL_PWAIT, DUP3,
+            FCNTL, IOCTL, FLOCK, MKDIRAT, UNLINKAT, RENAMEAT, FTRUNCATE,
+            CHDIR, FCHDIR, FCHMOD, FCHMODAT, FCHOWNAT, FCHOWN, OPENAT,
+            CLOSE, PIPE2, GETDENTS64, LSEEK, READ, WRITE, READV, WRITEV,
+            PREAD64, PWRITE64, SPLICE, READLINKAT, FSTATAT, FSTAT, FSYNC,
+            FDATASYNC, TIMERFD_CREATE, TIMERFD_SETTIME, TIMERFD_GETTIME,
+            EXIT, EXIT_GROUP, SET_TID_ADDRESS, FUTEX, SET_ROBUST_LIST,
+            GET_ROBUST_LIST, NANOSLEEP, CLOCK_GETTIME, CLOCK_GETRES,
+            CLOCK_NANOSLEEP, SCHED_SETAFFINITY, SCHED_GETAFFINITY,
+            SCHED_YIELD, KILL, TGKILL, RT_SIGACTION, RT_SIGPROCMASK,
+            RT_SIGRETURN, SETSID, UNAME, GETRLIMIT, SETRLIMIT, UMASK,
+            GETTIMEOFDAY, GETPID, GETPPID, GETUID, GETEUID, GETGID,
+            GETEGID, GETTID, SYSINFO, SOCKET, SOCKETPAIR, BIND, LISTEN,
+            ACCEPT, CONNECT, GETSOCKNAME, GETPEERNAME, SENDTO, RECVFROM,
+            SETSOCKOPT, GETSOCKOPT, SHUTDOWN, SENDMSG, RECVMSG, BRK,
+            MUNMAP, MREMAP, CLONE, EXECVE, MMAP, MPROTECT, ACCEPT4,
+            WAIT4, PRLIMIT64, GETRANDOM, MEMFD_CREATE, STATX, RSEQ,
+        ];
     }
 
     pub fn apply_app_seccomp() -> Result<(), String> {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             use nr::*;
 
@@ -223,31 +370,9 @@ mod linux {
             }
 
             // ── Build the BPF program ─────────────────────────────────────────
-            // Each allow_if() expands to 2 instructions; we concatenate them.
-            // Final instruction is the default action for unmatched syscalls.
             let mut filter: Vec<SockFilter> = vec![load_syscall_nr()];
 
-            for nr in [
-                READ, WRITE, OPEN, CLOSE, STAT, FSTAT, LSTAT, POLL, LSEEK,
-                MMAP, MPROTECT, MUNMAP, BRK, RT_SIGACTION, RT_SIGPROCMASK,
-                RT_SIGRETURN, IOCTL, PREAD64, PWRITE64, READV, WRITEV,
-                ACCESS, PIPE, SELECT, NANOSLEEP, GETITIMER, SETITIMER,
-                GETPID, SOCKET, CONNECT, ACCEPT, SENDTO, RECVFROM, SENDMSG,
-                RECVMSG, BIND, GETSOCKNAME, GETPEERNAME, SOCKETPAIR,
-                SETSOCKOPT, GETSOCKOPT, CLONE, FORK, EXECVE, EXIT, WAIT4,
-                KILL, UNAME, FCNTL, FLOCK, FSYNC, TRUNCATE, FTRUNCATE,
-                GETDENTS, GETCWD, RENAME, MKDIR, RMDIR, UNLINK, READLINK,
-                CHMOD, CHOWN, UMASK, GETTIMEOFDAY, GETRLIMIT, SYSINFO,
-                GETUID, GETGID, GETEUID, GETEGID, GETPPID, GETPGRP, SETSID,
-                SETRLIMIT, GETTID, FUTEX, SCHED_SETAFFINITY, SCHED_GETAFFINITY,
-                EPOLL_CREATE, GETDENTS64, SET_TID_ADDRESS, EPOLL_CTL, EPOLL_WAIT,
-                CLOCK_GETTIME, CLOCK_GETRES, CLOCK_NANOSLEEP, EXIT_GROUP, TGKILL,
-                OPENAT, MKDIRAT, UNLINKAT, RENAMEAT, FSTATAT, READLINKAT,
-                SET_ROBUST_LIST, GET_ROBUST_LIST, SPLICE, EPOLL_PWAIT, EVENTFD,
-                TIMERFD_CREATE, TIMERFD_SETTIME, TIMERFD_GETTIME, ACCEPT4,
-                EVENTFD2, EPOLL_CREATE1, DUP3, PIPE2, PRLIMIT64, GETRANDOM,
-                MEMFD_CREATE, STATX, RSEQ,
-            ] {
+            for &nr in ALLOWED_SYSCALLS {
                 let pair = allow_if(nr);
                 filter.push(pair[0]);
                 filter.push(pair[1]);
@@ -282,15 +407,14 @@ mod linux {
             println!(
                 "[nilrt:seccomp] BPF allowlist installed: {} instructions, {} syscalls allowed, default=EPERM",
                 filter.len(),
-                filter.len().saturating_sub(1) / 2  // subtract load + default
+                ALLOWED_SYSCALLS.len()
             );
             Ok(())
         }
 
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
         {
-            println!("[nilrt:seccomp] Architecture not yet supported; seccomp skipped.");
-            Ok(())
+            Err("[nilrt:seccomp] Unsupported Linux architecture (only x86_64 and aarch64 are supported)".to_string())
         }
     }
 }

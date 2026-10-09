@@ -179,15 +179,17 @@ pub fn spawn_sandboxed(
         | CloneFlags::CLONE_NEWUTS;
 
     if let Err(e) = unshare(flags) {
-        if e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES {
+        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES)
+            && std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref() == Ok("1")
+        {
             eprintln!(
-                "[nilrt:sandbox] unshare() not permitted ({e}); unprivileged or container environment. Falling back to direct launch."
+                "[nilrt:sandbox] WARNING: unshare() not permitted ({e}); NILRT_ALLOW_INSECURE_DEV=1 set. Falling back to direct launch."
             );
             return spawn_unprivileged(config, cmd, args);
         }
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
-            format!("[nilrt:sandbox] unshare() failed: {e}"),
+            format!("[nilrt:sandbox] unshare({flags:?}) failed: {e}. Refusing unconfined execution in production mode."),
         ));
     }
 
@@ -200,13 +202,18 @@ pub fn spawn_sandboxed(
         nix::mount::MsFlags::MS_REC | nix::mount::MsFlags::MS_PRIVATE,
         None::<&str>,
     ) {
-        if e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES {
+        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES)
+            && std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref() == Ok("1")
+        {
             eprintln!(
-                "[nilrt:sandbox] mount --make-rprivate not permitted ({e}); falling back to direct launch."
+                "[nilrt:sandbox] WARNING: mount --make-rprivate not permitted ({e}); NILRT_ALLOW_INSECURE_DEV=1 set. Falling back to direct launch."
             );
             return spawn_unprivileged(config, cmd, args);
         }
-        return Err(std::io::Error::other(format!("mount --make-rprivate: {e}")));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("[nilrt:sandbox] mount --make-rprivate failed: {e}. Refusing unconfined execution in production mode."),
+        ));
     }
 
     println!(

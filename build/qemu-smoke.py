@@ -47,7 +47,7 @@ def check_boot_log(log_text):
         return ("PANIC", "Kernel panic observed in console log")
     if "VFS: Unable to mount root" in log_text:
         return ("PANIC", "Root filesystem mount failure observed")
-    if "Onuron OS boot completed" in log_text or "NilOS Initializing" in log_text:
+    if "Onuron OS boot completed" in log_text:
         return ("SUCCESS", "Onuron OS PID 1 boot completed successfully")
     return ("IN_PROGRESS", "")
 

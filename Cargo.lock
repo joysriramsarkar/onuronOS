@@ -1196,6 +1196,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nillang"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "nilpkg",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "nilnotify"
 version = "0.1.0"
 

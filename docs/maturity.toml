@@ -174,6 +174,20 @@ evidence = ["services/netd/src/main.rs"]
 simulated = false
 
 [[entries]]
+name = "Native Language & Platform (`nillang` / `nilc`)"
+tier = "functional-prototype"
+details = "Native NilLang parser, AST, portable bytecode compiler (`nilc`), declarative UI engine (`NilVM`), and end-to-end integration with `nilpkg` & `nilrt`"
+evidence = ["runtime/nillang/src/lib.rs", "runtime/nillang/src/parser.rs", "runtime/nillang/src/vm.rs", "runtime/nillang/tests/native_app_slice.rs"]
+simulated = false
+
+[[entries]]
+name = "Cryptographic Verified Boot (`mkvbmeta`)"
+tier = "functional-prototype"
+details = "DM-verity root hash tree generation and Ed25519 signature signing & validation tool (`build/mkvbmeta.py`)"
+evidence = ["build/mkvbmeta.py", "build/test_mkvbmeta.py", "build/mkvbmeta.sh"]
+simulated = false
+
+[[entries]]
 name = "Package Manager (`nilpkg`)"
 tier = "functional-prototype"
 details = "Signed `.nilax` package format (`nilpkg pack`), atomic unpack & install, upgrade with rollback, crash-recovery journal, cross-process locking, key revocation, and shell integration; store catalogue simulated"
