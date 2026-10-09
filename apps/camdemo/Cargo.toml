@@ -7,5 +7,6 @@ edition = "2021"
 nilui = { path = "../../runtime/nilui" }
 nilbus-client = { path = "../../runtime/nilbus-client" }
 nilandroid-client = { path = "../../runtime/nilandroid-client" }
+nilcam = { path = "../../runtime/nilcam" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
