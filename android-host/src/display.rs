@@ -100,6 +100,7 @@ mod tests {
 
     #[test]
     fn test_display_presentation_pipeline() {
+        let _guard = crate::jni_bridge::test_lock();
         let mut display = AndroidHostDisplay::new();
         assert_eq!(display.get_refresh_rate(), 120);
         assert_eq!(display.get_frame_count(), 0);
@@ -117,6 +118,8 @@ mod tests {
 
     #[test]
     fn test_display_brightness_and_dimensions() {
+        let _guard = crate::jni_bridge::test_lock();
+        while jni_bridge::poll_guest_command().is_some() {}
         let mut display = AndroidHostDisplay::new();
         assert!(display.set_brightness(75).is_ok());
         assert_eq!(display.get_brightness(), 75);
@@ -128,10 +131,12 @@ mod tests {
         // Check command enqueued
         let cmd = jni_bridge::poll_guest_command();
         assert!(cmd.is_some());
+        while jni_bridge::poll_guest_command().is_some() {}
     }
 
     #[test]
     fn test_mismatched_buffer_rejected() {
+        let _guard = crate::jni_bridge::test_lock();
         let mut display = AndroidHostDisplay::new();
         let bad_pixels = vec![0u32; 10]; // Too small
         assert!(display.present_frame(&bad_pixels).is_err());

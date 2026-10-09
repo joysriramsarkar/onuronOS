@@ -133,6 +133,7 @@ mod tests {
 
     #[test]
     fn test_camera_lifecycle_and_capture() {
+        let _guard = crate::jni_bridge::test_lock();
         let mut camera = AndroidHostCamera::new();
         assert!(!camera.is_open());
 

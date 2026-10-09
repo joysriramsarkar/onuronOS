@@ -404,12 +404,17 @@ pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativePushHostEvent
 pub(crate) static TEST_BRIDGE_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[cfg(test)]
+pub(crate) fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+    TEST_BRIDGE_MUTEX.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_jni_touch_lifecycle() {
-        let _guard = TEST_BRIDGE_MUTEX.lock().unwrap();
+        let _guard = test_lock();
         unsafe {
             Java_org_onuron_mobile_NativeBridge_nativeSurfaceCreated(
                 std::ptr::null_mut(),
@@ -457,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_command_and_audio_queues() {
-        let _guard = TEST_BRIDGE_MUTEX.lock().unwrap();
+        let _guard = test_lock();
 
         // Drain any existing leftover commands to ensure strict test isolation
         while poll_guest_command().is_some() {}
@@ -474,6 +479,7 @@ mod tests {
             }
             other => panic!("Expected DialNumber, got {:?}", other),
         }
+        assert_eq!(pending_guest_command_count(), 0);
 
         // Drain any previous audio playback samples
         let _ = pull_audio_playback(100_000);
