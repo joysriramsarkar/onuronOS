@@ -18,6 +18,7 @@ members = [
   "services/dnsd",
   "services/backupd",
   "services/btd",
+  "services/telephonyd",
   "services/niltrace",
   "services/nilperf",
   "services/thermald",

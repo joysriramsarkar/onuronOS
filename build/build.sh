@@ -20,7 +20,7 @@ cargo build --release --workspace
 
 BINS=(
   nilinit nild nilkeyd nilandroidd nilstore notifyd nilimed powerd
-  crashd camerad authd nilttsd vpnd dnsd backupd btd niltrace nilperf
+  crashd camerad authd nilttsd vpnd dnsd backupd btd telephonyd niltrace nilperf
   thermald alarmd nilwdt logd clipd nilupd audiod mediad userd nilsr ntpd netd
   nilrt-launch nilinstall nilfastbootd nilverify nilrecovery halctl
   present_demo bootsplash nilbus nilpkg hello busdemo animdemo lockscreen

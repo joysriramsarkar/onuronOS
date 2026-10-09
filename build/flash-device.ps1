@@ -28,6 +28,12 @@ if ($confirm -ne "y" -and $confirm -ne "Y") {
 
 Write-Host "==> Flashing NilOS System..." -ForegroundColor Yellow
 $bootImg = Join-Path $OUT "boot.img"
+$kernelPath = Join-Path $OUT "kernel"
+$initrdPath = Join-Path $OUT "initramfs.cpio.gz"
+if (-not (Test-Path $bootImg) -and (Test-Path $kernelPath) -and (Test-Path $initrdPath)) {
+    Write-Host "==> Packaging Android boot.img using build/mkbootimg.py..." -ForegroundColor Yellow
+    python (Join-Path $TOP "build\mkbootimg.py") create --kernel $kernelPath --ramdisk $initrdPath -o $bootImg
+}
 if (Test-Path $bootImg) {
     fastboot flash boot $bootImg
 }

@@ -26,6 +26,10 @@ if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
 fi
 
 echo "==> Flashing NilOS System..."
+if [ ! -f "$OUT/boot.img" ] && [ -f "$OUT/kernel" ] && [ -f "$OUT/initramfs.cpio.gz" ]; then
+  echo "==> Packaging Android boot.img using build/mkbootimg.py..."
+  python3 "$TOP/build/mkbootimg.py" create --kernel "$OUT/kernel" --ramdisk "$OUT/initramfs.cpio.gz" -o "$OUT/boot.img"
+fi
 if [ -f "$OUT/boot.img" ]; then
   fastboot flash boot "$OUT/boot.img"
 fi

@@ -11,8 +11,8 @@
 // └────────────────┴───────────────────┴────────────────┴─────────────────┴───────────┴───────────────┘
 // Followed by `payload_len` bytes of serialized payload (JSON / Bincode / Protobuf).
 
-use std::io::{self, Read, Write};
 use serde::{Deserialize, Serialize};
+use std::io::{self, Read, Write};
 
 /// 4-byte protocol magic preamble: "ONUR"
 pub const PROTOCOL_MAGIC: [u8; 4] = *b"ONUR";
@@ -50,7 +50,11 @@ impl std::fmt::Display for IpcError {
             IpcError::InvalidMagic(m) => write!(f, "Invalid protocol magic: {:?}", m),
             IpcError::UnsupportedVersion(v) => write!(f, "Unsupported protocol version: {}", v),
             IpcError::PayloadTooLarge { length, max } => {
-                write!(f, "Frame payload too large ({} bytes > max {})", length, max)
+                write!(
+                    f,
+                    "Frame payload too large ({} bytes > max {})",
+                    length, max
+                )
             }
             IpcError::Io(e) => write!(f, "IPC I/O error: {}", e),
             IpcError::Serialization(s) => write!(f, "Serialization error: {}", s),
@@ -96,6 +100,10 @@ pub enum MessageType {
     TelephonyDial = 0x0401,
     TelephonyHangup = 0x0402,
     TelephonySendSms = 0x0403,
+    TelephonyGetState = 0x0404,
+    TelephonyStateInfo = 0x0405,
+    TelephonyCallEvent = 0x0406,
+    TelephonySmsReceived = 0x0407,
 
     // Update Service (0x0500 - 0x05FF)
     UpdateGetStatus = 0x0501,
@@ -149,6 +157,10 @@ impl From<u16> for MessageType {
             0x0401 => MessageType::TelephonyDial,
             0x0402 => MessageType::TelephonyHangup,
             0x0403 => MessageType::TelephonySendSms,
+            0x0404 => MessageType::TelephonyGetState,
+            0x0405 => MessageType::TelephonyStateInfo,
+            0x0406 => MessageType::TelephonyCallEvent,
+            0x0407 => MessageType::TelephonySmsReceived,
             0x0501 => MessageType::UpdateGetStatus,
             0x0502 => MessageType::UpdateStatusInfo,
             0x0503 => MessageType::UpdateApplyPayload,
@@ -192,6 +204,10 @@ impl From<MessageType> for u16 {
             MessageType::TelephonyDial => 0x0401,
             MessageType::TelephonyHangup => 0x0402,
             MessageType::TelephonySendSms => 0x0403,
+            MessageType::TelephonyGetState => 0x0404,
+            MessageType::TelephonyStateInfo => 0x0405,
+            MessageType::TelephonyCallEvent => 0x0406,
+            MessageType::TelephonySmsReceived => 0x0407,
             MessageType::UpdateGetStatus => 0x0501,
             MessageType::UpdateStatusInfo => 0x0502,
             MessageType::UpdateApplyPayload => 0x0503,
@@ -234,14 +250,13 @@ impl Frame {
         request_id: u64,
         value: &T,
     ) -> Result<Self, IpcError> {
-        let payload = serde_json::to_vec(value)
-            .map_err(|e| IpcError::Serialization(e.to_string()))?;
+        let payload =
+            serde_json::to_vec(value).map_err(|e| IpcError::Serialization(e.to_string()))?;
         Ok(Self::new(message_type, request_id, payload))
     }
 
     pub fn parse_json<T: for<'a> Deserialize<'a>>(&self) -> Result<T, IpcError> {
-        serde_json::from_slice(&self.payload)
-            .map_err(|e| IpcError::Serialization(e.to_string()))
+        serde_json::from_slice(&self.payload).map_err(|e| IpcError::Serialization(e.to_string()))
     }
 
     /// Read a single framed message from a synchronous reader.
@@ -333,7 +348,9 @@ pub struct PeerCredentials {
 }
 
 #[cfg(unix)]
-pub fn get_peer_credentials(stream: &std::os::unix::net::UnixStream) -> io::Result<PeerCredentials> {
+pub fn get_peer_credentials(
+    stream: &std::os::unix::net::UnixStream,
+) -> io::Result<PeerCredentials> {
     use std::os::unix::io::AsRawFd;
 
     #[cfg(target_os = "linux")]
@@ -369,7 +386,11 @@ pub fn get_peer_credentials(stream: &std::os::unix::net::UnixStream) -> io::Resu
 
     #[cfg(not(target_os = "linux"))]
     {
-        Ok(PeerCredentials { pid: 1000, uid: 1000, gid: 1000 })
+        Ok(PeerCredentials {
+            pid: 1000,
+            uid: 1000,
+            gid: 1000,
+        })
     }
 }
 
@@ -435,6 +456,50 @@ pub struct BtScanResultPayload {
     pub devices: Vec<BtDevicePayload>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TelephonyDialPayload {
+    pub number: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TelephonyHangupPayload {
+    pub call_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TelephonySendSmsPayload {
+    pub recipient: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TelephonyCallPayload {
+    pub call_id: String,
+    pub remote_number: String,
+    pub state: String,
+    pub duration_secs: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TelephonySmsPayload {
+    pub id: u64,
+    pub sender: String,
+    pub message: String,
+    pub timestamp: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TelephonyStatePayload {
+    pub sim_ready: bool,
+    pub carrier: String,
+    pub phone_number: Option<String>,
+    pub signal_bars: u8,
+    pub radio_state: String,
+    pub network_type: String,
+    pub active_calls: Vec<TelephonyCallPayload>,
+    pub unread_sms_count: usize,
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -460,7 +525,10 @@ mod tests {
         let decoded = read_frame(&mut cursor).expect("read frame");
 
         assert_eq!(decoded.version, PROTOCOL_VERSION_1);
-        assert_eq!(decoded.message_type, u16::from(MessageType::PowerGetBattery));
+        assert_eq!(
+            decoded.message_type,
+            u16::from(MessageType::PowerGetBattery)
+        );
         assert_eq!(decoded.request_id, 42);
         assert_eq!(decoded.payload, b"hello payload".to_vec());
     }
@@ -530,8 +598,32 @@ mod tests {
                 paired: true,
             }],
         };
-        let frame = Frame::with_json(MessageType::BtStateInfo, 999, &payload).expect("frame with json");
+        let frame =
+            Frame::with_json(MessageType::BtStateInfo, 999, &payload).expect("frame with json");
         let parsed: BtStatePayload = frame.parse_json().expect("parse json");
+        assert_eq!(parsed, payload);
+    }
+
+    #[test]
+    fn test_telephony_message_roundtrip() {
+        let payload = TelephonyStatePayload {
+            sim_ready: true,
+            carrier: "Onuron Telecom".to_string(),
+            phone_number: Some("+8801700000000".to_string()),
+            signal_bars: 4,
+            radio_state: "ready".to_string(),
+            network_type: "5G-NR".to_string(),
+            active_calls: vec![TelephonyCallPayload {
+                call_id: "call-1".to_string(),
+                remote_number: "+18005550199".to_string(),
+                state: "active".to_string(),
+                duration_secs: 42,
+            }],
+            unread_sms_count: 2,
+        };
+        let frame = Frame::with_json(MessageType::TelephonyStateInfo, 1001, &payload)
+            .expect("frame with json");
+        let parsed: TelephonyStatePayload = frame.parse_json().expect("parse json");
         assert_eq!(parsed, payload);
     }
 }
