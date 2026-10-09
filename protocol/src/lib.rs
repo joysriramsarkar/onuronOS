@@ -121,6 +121,7 @@ pub enum MessageType {
     AudioStatusInfo = 0x0702,
     AudioSetVolume = 0x0703,
     AudioSetMute = 0x0704,
+    AudioSetRoute = 0x0705,
 
     // IME Service (0x0800 - 0x08FF)
     ImeTransliterate = 0x0801,
@@ -133,6 +134,15 @@ pub enum MessageType {
     BtScanResult = 0x0904,
     BtSetPower = 0x0905,
     BtConnect = 0x0906,
+
+    // Camera Service (0x0A00 - 0x0AFF)
+    CameraGetInfo = 0x0A01,
+    CameraInfo = 0x0A02,
+    CameraCaptureFrame = 0x0A03,
+    CameraFrameData = 0x0A04,
+    CameraSetTorch = 0x0A05,
+    CameraStartPreview = 0x0A06,
+    CameraStopPreview = 0x0A07,
 
     // Unknown/Custom
     Custom(u16),
@@ -172,6 +182,7 @@ impl From<u16> for MessageType {
             0x0702 => MessageType::AudioStatusInfo,
             0x0703 => MessageType::AudioSetVolume,
             0x0704 => MessageType::AudioSetMute,
+            0x0705 => MessageType::AudioSetRoute,
             0x0801 => MessageType::ImeTransliterate,
             0x0802 => MessageType::ImeTransliterateResult,
             0x0901 => MessageType::BtGetState,
@@ -180,6 +191,13 @@ impl From<u16> for MessageType {
             0x0904 => MessageType::BtScanResult,
             0x0905 => MessageType::BtSetPower,
             0x0906 => MessageType::BtConnect,
+            0x0A01 => MessageType::CameraGetInfo,
+            0x0A02 => MessageType::CameraInfo,
+            0x0A03 => MessageType::CameraCaptureFrame,
+            0x0A04 => MessageType::CameraFrameData,
+            0x0A05 => MessageType::CameraSetTorch,
+            0x0A06 => MessageType::CameraStartPreview,
+            0x0A07 => MessageType::CameraStopPreview,
             other => MessageType::Custom(other),
         }
     }
@@ -219,6 +237,7 @@ impl From<MessageType> for u16 {
             MessageType::AudioStatusInfo => 0x0702,
             MessageType::AudioSetVolume => 0x0703,
             MessageType::AudioSetMute => 0x0704,
+            MessageType::AudioSetRoute => 0x0705,
             MessageType::ImeTransliterate => 0x0801,
             MessageType::ImeTransliterateResult => 0x0802,
             MessageType::BtGetState => 0x0901,
@@ -227,6 +246,13 @@ impl From<MessageType> for u16 {
             MessageType::BtScanResult => 0x0904,
             MessageType::BtSetPower => 0x0905,
             MessageType::BtConnect => 0x0906,
+            MessageType::CameraGetInfo => 0x0A01,
+            MessageType::CameraInfo => 0x0A02,
+            MessageType::CameraCaptureFrame => 0x0A03,
+            MessageType::CameraFrameData => 0x0A04,
+            MessageType::CameraSetTorch => 0x0A05,
+            MessageType::CameraStartPreview => 0x0A06,
+            MessageType::CameraStopPreview => 0x0A07,
             MessageType::Custom(c) => c,
         }
     }
@@ -411,6 +437,36 @@ pub struct AudioSetVolumePayload {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioSetMutePayload {
     pub is_muted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioSetRoutePayload {
+    pub route: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CameraInfoPayload {
+    pub camera_id: u32,
+    pub facing: String,
+    pub resolution: String,
+    pub torch_active: bool,
+    pub preview_active: bool,
+    pub supported_formats: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CameraFramePayload {
+    pub camera_id: u32,
+    pub width: u32,
+    pub height: u32,
+    pub format: String,
+    pub data_base64: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CameraSetTorchPayload {
+    pub camera_id: u32,
+    pub enable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -624,6 +680,21 @@ mod tests {
         let frame = Frame::with_json(MessageType::TelephonyStateInfo, 1001, &payload)
             .expect("frame with json");
         let parsed: TelephonyStatePayload = frame.parse_json().expect("parse json");
+        assert_eq!(parsed, payload);
+    }
+
+    #[test]
+    fn test_camera_message_roundtrip() {
+        let payload = CameraInfoPayload {
+            camera_id: 0,
+            facing: "back".to_string(),
+            resolution: "1920x1080".to_string(),
+            torch_active: false,
+            preview_active: true,
+            supported_formats: vec!["JPEG".to_string(), "RGBA8888".to_string()],
+        };
+        let frame = Frame::with_json(MessageType::CameraInfo, 2001, &payload).expect("frame with json");
+        let parsed: CameraInfoPayload = frame.parse_json().expect("parse json");
         assert_eq!(parsed, payload);
     }
 }

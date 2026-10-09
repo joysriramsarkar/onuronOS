@@ -193,7 +193,10 @@ dependencies = [
 name = "camerad"
 version = "0.1.0"
 dependencies = [
+ "nilprotocol",
  "nilsd",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1128,6 +1131,9 @@ dependencies = [
 [[package]]
 name = "nilcam"
 version = "0.1.0"
+dependencies = [
+ "nilprotocol",
+]
 
 [[package]]
 name = "nild"
