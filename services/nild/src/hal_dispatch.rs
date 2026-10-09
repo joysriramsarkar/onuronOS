@@ -2,6 +2,7 @@
 use nilhal::HalDevice;
 
 pub struct HalDispatcher {
+    #[allow(dead_code)]
     light: Option<HalDevice>,
 }
 

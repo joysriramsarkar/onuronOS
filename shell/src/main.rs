@@ -61,14 +61,17 @@ struct AppState {
     user_name: String,
     pin: String,
     pending_pin: String,
+    #[allow(dead_code)]
     pin_input: String,
     sms_threads: Vec<(String, String, String)>,     // (contact, last_msg, time)
     contacts: Vec<(String, String)>,                // (name, number)
     compose_to: String,
     compose_body: String,
     terminal_history: Vec<String>,
+    #[allow(dead_code)]
     settings_cursor: usize,
     files_path: String,
+    #[allow(dead_code)]
     pkg_cursor: usize,
     call_number: String,
     wifi_enabled: bool,
@@ -192,6 +195,22 @@ fn read_line() -> String {
     line.trim().to_string()
 }
 
+fn get_battery_display() -> String {
+    for path in &[
+        "/sys/class/power_supply/battery/capacity",
+        "/sys/class/power_supply/BAT0/capacity",
+        "/sys/class/power_supply/BAT1/capacity",
+        "/data/nilos/battery",
+    ] {
+        if let Ok(text) = fs::read_to_string(path) {
+            if let Ok(val) = text.trim().parse::<u8>() {
+                return format!("🔋 {}%", val);
+            }
+        }
+    }
+    format!("🔋 88%  {}", simulated::badge())
+}
+
 fn status_bar(state: &AppState) -> String {
     let wifi_ico = if state.wifi_enabled { "📶 Wi-Fi" } else { "✕ Wi-Fi" };
     let cell_str = if state.cellular_enabled {
@@ -205,9 +224,10 @@ fn status_bar(state: &AppState) -> String {
     } else {
         "✈️ Offline"
     };
+    let batt = get_battery_display();
     format!(
-        "{}  {} │ {} │ {} │ 🔋 88%  ⚠SIM  {}",
-        FG_BLACK_ON_WHITE, wifi_ico, cell_str, state.user_name, R
+        "{}  {} │ {} │ {} │ {}  {}",
+        FG_BLACK_ON_WHITE, wifi_ico, cell_str, state.user_name, batt, R
     )
 }
 
@@ -703,9 +723,28 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
             format!("Commands: services, mem, disk, net, ps, cat <file>, ls <dir>, uname, reboot, home  {}", simulated::badge())
         }
         "services" => {
-            let mut out = String::from(format!("Active NilOS Supervised Daemons {}:\n", simulated::badge()));
-            for (name, pid) in &[("nilinit","1"),("nild","428"),("nilkeyd","429"),("nilbus","430"),("netd","431"),("audiod","433"),("powerd","434"),("nilshell","435")] {
-                out.push_str(&format!("  • {:12} PID {:<5} RUNNING\n", name, pid));
+            let mut out = String::from("NilOS Supervised Services:\n");
+            let sockets = [
+                ("powerd", "/run/nilos/power.sock"),
+                ("inputd", "/run/nilos/input.sock"),
+                ("netd", "/run/nilos/net.sock"),
+                ("audiod", "/run/nilos/audio.sock"),
+                ("nilimed", "/run/nilos/ime.sock"),
+                ("softbus", "/run/nilos/bus.sock"),
+                ("androidd", "/run/nilos/android.sock"),
+            ];
+            let mut found = false;
+            for (name, sock) in sockets {
+                if Path::new(sock).exists() {
+                    found = true;
+                    out.push_str(&format!("  • {:<12} ACTIVE ({})\n", name, sock));
+                }
+            }
+            if !found {
+                out.push_str(&format!("Simulated Daemons {}:\n", simulated::badge()));
+                for (name, pid) in &[("nilinit","1"),("nild","428"),("nilkeyd","429"),("nilbus","430"),("netd","431"),("audiod","433"),("powerd","434"),("nilshell","435")] {
+                    out.push_str(&format!("  • {:12} PID {:<5} RUNNING\n", name, pid));
+                }
             }
             out
         }
@@ -721,9 +760,55 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
                 state.user_name
             )
         }
-        "net" => format!("Network {}:\n  eth0:  10.0.2.15/24 (QEMU NAT via -netdev user)\n  SoftBus: /run/nilos/bus.sock active\n  Wi-Fi:   disabled (no wpa_supplicant yet)", simulated::badge()),
+        "net" => {
+            let mut ifaces = Vec::new();
+            if let Ok(entries) = fs::read_dir("/sys/class/net") {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let operstate = fs::read_to_string(entry.path().join("operstate"))
+                        .unwrap_or_else(|_| "unknown".into())
+                        .trim()
+                        .to_string();
+                    ifaces.push((name, operstate));
+                }
+            }
+            if !ifaces.is_empty() {
+                let mut out = String::from("Network Interfaces (Linux Sysfs):\n");
+                for (name, st) in ifaces {
+                    out.push_str(&format!("  • {:<8} [{}]\n", name, st));
+                }
+                out
+            } else {
+                format!("Network {}:\n  eth0:  10.0.2.15/24 (QEMU NAT via -netdev user)\n  SoftBus: /run/nilos/bus.sock active\n  Wi-Fi:   disabled (no wpa_supplicant yet)", simulated::badge())
+            }
+        }
         "uname" => "NilOS 1.0.0-alpha x86_64  Linux 6.6.110-lts  Rust Userspace".to_string(),
-        "ps" => format!("PID  CMD {}\n  1   nilinit\n428   nild\n429   nilkeyd\n430   nilbus\n431   netd\n433   audiod\n434   powerd\n435   nilshell", simulated::badge()),
+        "ps" => {
+            let mut procs = Vec::new();
+            if let Ok(entries) = fs::read_dir("/proc") {
+                for entry in entries.flatten() {
+                    let file_name = entry.file_name();
+                    let name_str = file_name.to_string_lossy();
+                    if let Ok(pid) = name_str.parse::<u32>() {
+                        let comm = fs::read_to_string(format!("/proc/{}/comm", pid))
+                            .unwrap_or_else(|_| "unknown".into())
+                            .trim()
+                            .to_string();
+                        procs.push((pid, comm));
+                    }
+                }
+            }
+            if !procs.is_empty() {
+                procs.sort_by_key(|(pid, _)| *pid);
+                let mut out = String::from("PID   COMMAND\n");
+                for (pid, cmd) in procs {
+                    out.push_str(&format!("{:<5} {}\n", pid, cmd));
+                }
+                out
+            } else {
+                format!("PID  CMD {}\n  1   nilinit\n428   nild\n429   nilkeyd\n430   nilbus\n431   netd\n433   audiod\n434   powerd\n435   nilshell", simulated::badge())
+            }
+        }
         _ if cmd.starts_with("ls ") => {
             let path = cmd.trim_start_matches("ls ").trim();
             match fs::read_dir(path) {
@@ -796,7 +881,6 @@ fn main() {
     };
 
     let mut lock_error = false;
-    let mut composing_sms = false;
 
     loop {
         // Render current screen
@@ -911,7 +995,7 @@ fn main() {
                 } else {
                     match cmd.as_str() {
                         "1" | "phone"    => { screen = Screen::AppPhone; state.call_number.clear(); }
-                        "2" | "messages" => { screen = Screen::AppMessages; composing_sms = false; }
+                        "2" | "messages" => screen = Screen::AppMessages,
                         "3" | "files"    => { screen = Screen::AppFiles; state.files_path = "/data".into(); }
                         "4" | "settings" => screen = Screen::AppSettings,
                         "5" | "pkg"      => screen = Screen::AppNilPkg,
@@ -946,29 +1030,24 @@ fn main() {
             Screen::AppMessages => {
                 if cmd == "home" || cmd == "back" {
                     screen = Screen::Home;
-                    composing_sms = false;
-                } else if cmd == "new" || composing_sms {
-                    if !composing_sms {
-                        composing_sms = true;
-                        sink.print(&format!("\n  {}To (name or number): {}", FG_YELLOW, R));
-                        state.compose_to = read_line();
-                        sink.print(&format!("  {}Message: {}", FG_YELLOW, R));
-                        state.compose_body = read_line();
-                        // Save SMS
-                        let _ = fs::create_dir_all(SMS_DIR);
-                        let ts = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs();
-                        let fname = format!("{}/{}.txt", SMS_DIR, ts);
-                        let _ = fs::write(&fname, format!("{}\n{}\nJust now", state.compose_to, state.compose_body));
-                        state.sms_threads.insert(0, (state.compose_to.clone(), state.compose_body.clone(), "Just now".into()));
-                        state.compose_to.clear();
-                        state.compose_body.clear();
-                        composing_sms = false;
-                        sink.println(&format!("  {}✅ Message sent!{}", FG_GREEN, R));
-                        read_line();
-                    }
+                } else if cmd == "new" {
+                    sink.print(&format!("\n  {}To (name or number): {}", FG_YELLOW, R));
+                    state.compose_to = read_line();
+                    sink.print(&format!("  {}Message: {}", FG_YELLOW, R));
+                    state.compose_body = read_line();
+                    // Save SMS
+                    let _ = fs::create_dir_all(SMS_DIR);
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    let fname = format!("{}/{}.txt", SMS_DIR, ts);
+                    let _ = fs::write(&fname, format!("{}\n{}\nJust now", state.compose_to, state.compose_body));
+                    state.sms_threads.insert(0, (state.compose_to.clone(), state.compose_body.clone(), "Just now".into()));
+                    state.compose_to.clear();
+                    state.compose_body.clear();
+                    sink.println(&format!("  {}✅ Message sent!{}", FG_GREEN, R));
+                    read_line();
                 } else if let Ok(idx) = cmd.parse::<usize>() {
                     if idx > 0 && idx <= state.sms_threads.len() {
                         let (contact, msg, time) = &state.sms_threads[idx - 1];

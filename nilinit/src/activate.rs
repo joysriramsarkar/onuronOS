@@ -33,6 +33,7 @@ impl SocketActivationManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn check_pending(&self) -> Vec<String> {
         #[allow(unused_mut)] // only mutated in the unix branch
         let mut pending = Vec::new();
@@ -59,6 +60,7 @@ impl SocketActivationManager {
         pending
     }
 
+    #[allow(dead_code)]
     pub fn get_raw_fd(&self, service_name: &str) -> Option<i32> {
         #[cfg(unix)]
         {

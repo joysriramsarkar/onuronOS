@@ -77,6 +77,7 @@ impl Supervisor {
     }
 
     /// Test hook: replace the backoff delay so tests do not sleep.
+    #[allow(dead_code)]
     pub fn with_delay_override(mut self, delay: Duration) -> Self {
         self.delay_override = Some(delay);
         self
@@ -160,6 +161,7 @@ impl Supervisor {
     }
 
     /// Restart attempts recorded for a service so far.
+    #[allow(dead_code)]
     pub fn attempts(&self, name: &str) -> u32 {
         self.restart_attempts.get(name).copied().unwrap_or(0)
     }
