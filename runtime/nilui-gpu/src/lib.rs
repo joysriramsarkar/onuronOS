@@ -5,11 +5,13 @@ pub mod present;
 pub mod renderer;
 pub mod atlas;
 pub mod vkctx;
+pub mod touch;
 
 pub use compositor::{PixelBuffer, Rect};
 pub use drm::{DrmDevice, DrmMode, DumbBuffer};
 pub use present::{KmsPresenter, PresentationStats};
 pub use renderer::Renderer2D;
+pub use touch::{MobileScreen, SwipeGesture, TouchCompositor, TouchTarget};
 
 #[no_mangle]
 pub extern "C" fn nilgpu_init() -> *mut Renderer2D {

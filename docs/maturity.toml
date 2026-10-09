@@ -57,8 +57,8 @@ simulated = false
 [[entries]]
 name = "DRM/KMS Direct Compositor (`nilui-gpu`)"
 tier = "functional-prototype"
-details = "Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, bootsplash & presentation demo"
-evidence = ["runtime/nilui-gpu/src/drm.rs", "runtime/nilui-gpu/src/compositor.rs", "runtime/nilui-gpu/src/present.rs", "docs/drm-kms-compositor.md"]
+details = "Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, interactive touch compositor, bootsplash & presentation demo"
+evidence = ["runtime/nilui-gpu/src/drm.rs", "runtime/nilui-gpu/src/compositor.rs", "runtime/nilui-gpu/src/present.rs", "runtime/nilui-gpu/src/touch.rs", "docs/drm-kms-compositor.md"]
 simulated = false
 
 [[entries]]
@@ -184,8 +184,15 @@ ui_screens = ["nilpkg"]
 [[entries]]
 name = "Canonical Framed IPC (`nilprotocol`)"
 tier = "functional-prototype"
-details = "Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `audiod`, `nilimed`, `nilupd`, `nilkeyd`, `nilandroidd`)"
-evidence = ["protocol/src/lib.rs", "services/powerd/src/main.rs", "services/inputd/src/main.rs", "services/netd/src/main.rs", "services/audiod/src/main.rs", "services/nilimed/src/main.rs", "services/nilupd/src/lib.rs", "services/nilkeyd/src/lib.rs"]
+details = "Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `audiod`, `nilimed`, `nilupd`, `nilkeyd`, `nilandroidd`, `btd`)"
+evidence = ["protocol/src/lib.rs", "services/powerd/src/main.rs", "services/inputd/src/main.rs", "services/netd/src/main.rs", "services/audiod/src/main.rs", "services/nilimed/src/main.rs", "services/nilupd/src/lib.rs", "services/nilkeyd/src/lib.rs", "services/btd/src/main.rs"]
+simulated = false
+
+[[entries]]
+name = "Bluetooth Subsystem (`btd`)"
+tier = "functional-prototype"
+details = "Linux sysfs `/sys/class/bluetooth/` & RFKILL adapter discovery, device pairing state, scan discovery, and canonical framed IPC (`/run/nilos/bt.sock`)"
+evidence = ["services/btd/src/main.rs", "protocol/src/lib.rs"]
 simulated = false
 
 [[entries]]

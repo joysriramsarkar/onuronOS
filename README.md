@@ -25,7 +25,7 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **System Init (`nilinit`)** | 🔵 Functional prototype | PID 1 init, clean `[  OK  ]` boot logging, mounts, supervision, socket activation |
 | **Storage Hierarchy** | 🔵 Functional prototype | `/data` ext4 persistent disk on virtio-blk + tmpfs fallback; mobile layout |
 | **QEMU Boot Automation** | 🔵 Functional prototype | Persistent `nilos.img` disk + virtio-blk + automated headless boot smoke testing harness |
-| **DRM/KMS Direct Compositor (`nilui-gpu`)** | 🔵 Functional prototype | Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, bootsplash & presentation demo |
+| **DRM/KMS Direct Compositor (`nilui-gpu`)** | 🔵 Functional prototype | Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, interactive touch compositor, bootsplash & presentation demo |
 | **First-Boot Setup (OOBE)** | 🔵 Functional prototype | Name & PIN setup wizard, writes configuration to `/data/config/` |
 | **Lock Screen** | 🔵 Functional prototype | Salted + stretched (100k-round SHA-256) PIN record with constant-time verify; displayed clock/date/weather are static demo values **[SIMULATED]** |
 | **Home Launcher** | 🔵 Functional prototype | App grid, status bar, notification shade; hero clock/date and status-bar battery/signal are static demo values **[SIMULATED]** |
@@ -42,7 +42,8 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **Power Daemon (`powerd`)** | 🔵 Functional prototype | NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes |
 | **Network Daemon (`netd`)** | 🔵 Functional prototype | NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC |
 | **Package Manager (`nilpkg`)** | 🔵 Functional prototype | Signed `.nilax` package format (`nilpkg pack`), atomic unpack & install, upgrade with rollback, crash-recovery journal, cross-process locking, key revocation, and shell integration; store catalogue simulated **[SIMULATED]** |
-| **Canonical Framed IPC (`nilprotocol`)** | 🔵 Functional prototype | Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `audiod`, `nilimed`, `nilupd`, `nilkeyd`, `nilandroidd`) |
+| **Canonical Framed IPC (`nilprotocol`)** | 🔵 Functional prototype | Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `audiod`, `nilimed`, `nilupd`, `nilkeyd`, `nilandroidd`, `btd`) |
+| **Bluetooth Subsystem (`btd`)** | 🔵 Functional prototype | Linux sysfs `/sys/class/bluetooth/` & RFKILL adapter discovery, device pairing state, scan discovery, and canonical framed IPC (`/run/nilos/bt.sock`) |
 | **Hardware Watchdog (`nilwdt`)** | 🔵 Functional prototype | Feeds `/dev/watchdog` with configurable interval/timeout, subsystem health monitoring, trip-on-hang, and graceful disarm |
 | **Android Compatibility Layer** | 🟠 Stub / simulated | Android screen shows placeholder container state; guest container isolation verified (namespaces, cgroups, device whitelist); no LXC/Waydroid container is launched from the UI yet **[SIMULATED]** |
 | **Diagnostic Terminal (`nilshell`)** | 🟠 Stub / simulated | `ps`, `services` and `net` output is fabricated; `ls`/`cat`/`mem` read real kernel/filesystem data **[SIMULATED]** |

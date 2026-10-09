@@ -118,6 +118,14 @@ pub enum MessageType {
     ImeTransliterate = 0x0801,
     ImeTransliterateResult = 0x0802,
 
+    // Bluetooth Service (0x0900 - 0x09FF)
+    BtGetState = 0x0901,
+    BtStateInfo = 0x0902,
+    BtScan = 0x0903,
+    BtScanResult = 0x0904,
+    BtSetPower = 0x0905,
+    BtConnect = 0x0906,
+
     // Unknown/Custom
     Custom(u16),
 }
@@ -154,6 +162,12 @@ impl From<u16> for MessageType {
             0x0704 => MessageType::AudioSetMute,
             0x0801 => MessageType::ImeTransliterate,
             0x0802 => MessageType::ImeTransliterateResult,
+            0x0901 => MessageType::BtGetState,
+            0x0902 => MessageType::BtStateInfo,
+            0x0903 => MessageType::BtScan,
+            0x0904 => MessageType::BtScanResult,
+            0x0905 => MessageType::BtSetPower,
+            0x0906 => MessageType::BtConnect,
             other => MessageType::Custom(other),
         }
     }
@@ -191,6 +205,12 @@ impl From<MessageType> for u16 {
             MessageType::AudioSetMute => 0x0704,
             MessageType::ImeTransliterate => 0x0801,
             MessageType::ImeTransliterateResult => 0x0802,
+            MessageType::BtGetState => 0x0901,
+            MessageType::BtStateInfo => 0x0902,
+            MessageType::BtScan => 0x0903,
+            MessageType::BtScanResult => 0x0904,
+            MessageType::BtSetPower => 0x0905,
+            MessageType::BtConnect => 0x0906,
             MessageType::Custom(c) => c,
         }
     }
@@ -382,6 +402,39 @@ pub struct ImeTransliterateResultPayload {
     pub transliterated: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BtDevicePayload {
+    pub address: String,
+    pub name: String,
+    pub rssi: i16,
+    pub connected: bool,
+    pub paired: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BtStatePayload {
+    pub enabled: bool,
+    pub adapter_name: String,
+    pub address: String,
+    pub discovering: bool,
+    pub connected_devices: Vec<BtDevicePayload>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BtSetPowerPayload {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BtConnectPayload {
+    pub address: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BtScanResultPayload {
+    pub devices: Vec<BtDevicePayload>,
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -460,5 +513,25 @@ mod tests {
             }
             other => panic!("Expected PayloadTooLarge, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_bluetooth_message_roundtrip() {
+        let payload = BtStatePayload {
+            enabled: true,
+            adapter_name: "hci0".to_string(),
+            address: "00:11:22:33:44:55".to_string(),
+            discovering: false,
+            connected_devices: vec![BtDevicePayload {
+                address: "AA:BB:CC:DD:EE:FF".to_string(),
+                name: "NilBuds Pro".to_string(),
+                rssi: -55,
+                connected: true,
+                paired: true,
+            }],
+        };
+        let frame = Frame::with_json(MessageType::BtStateInfo, 999, &payload).expect("frame with json");
+        let parsed: BtStatePayload = frame.parse_json().expect("parse json");
+        assert_eq!(parsed, payload);
     }
 }
