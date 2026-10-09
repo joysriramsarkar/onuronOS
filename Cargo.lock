@@ -1321,7 +1321,12 @@ dependencies = [
 name = "nilup"
 version = "0.1.0"
 dependencies = [
+ "ed25519-dalek",
+ "nilpkg",
+ "nilupd",
  "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
