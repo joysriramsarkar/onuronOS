@@ -1,5 +1,6 @@
 // android-host/src/lib.rs — Onuron Mobile Runtime Android Host Subsystem
 // Official Android host integration for Samsung Galaxy S25 (Snapdragon 8 Elite) and Android devices.
+#![allow(clippy::missing_safety_doc, clippy::needless_range_loop, clippy::new_without_default)]
 
 pub mod bridge;
 pub mod display;

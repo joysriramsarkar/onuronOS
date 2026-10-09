@@ -89,10 +89,80 @@ public class NativeBridge {
         }
     }
 
+    public static String pollGuestCommand() {
+        if (isNativeLoaded) {
+            try {
+                return nativePollGuestCommand();
+            } catch (Throwable t) {
+                Log.e(TAG, "nativePollGuestCommand failed", t);
+            }
+        }
+        return null;
+    }
+
+    public static void pushCameraFrame(byte[] buffer) {
+        if (isNativeLoaded && buffer != null) {
+            try {
+                nativePushCameraFrame(buffer, buffer.length);
+            } catch (Throwable t) {
+                Log.e(TAG, "nativePushCameraFrame failed", t);
+            }
+        }
+    }
+
+    public static int pullAudioSamples(short[] outBuffer) {
+        if (isNativeLoaded && outBuffer != null) {
+            try {
+                return nativePullAudioSamples(outBuffer, outBuffer.length);
+            } catch (Throwable t) {
+                Log.e(TAG, "nativePullAudioSamples failed", t);
+            }
+        }
+        return 0;
+    }
+
+    public static void pushAudioSamples(short[] inBuffer) {
+        if (isNativeLoaded && inBuffer != null) {
+            try {
+                nativePushAudioSamples(inBuffer, inBuffer.length);
+            } catch (Throwable t) {
+                Log.e(TAG, "nativePushAudioSamples failed", t);
+            }
+        }
+    }
+
+    public static int getLatestFrame(int[] outPixels) {
+        if (isNativeLoaded && outPixels != null) {
+            try {
+                return nativeGetLatestFrame(outPixels, outPixels.length);
+            } catch (Throwable t) {
+                Log.e(TAG, "nativeGetLatestFrame failed", t);
+            }
+        }
+        return 0;
+    }
+
+    public static boolean pushHostEventJson(String json) {
+        if (isNativeLoaded && json != null) {
+            try {
+                return nativePushHostEventJson(json);
+            } catch (Throwable t) {
+                Log.e(TAG, "nativePushHostEventJson failed", t);
+            }
+        }
+        return false;
+    }
+
     private static native void nativeSurfaceCreated(Surface surface);
     private static native void nativeSurfaceChanged(Surface surface, int width, int height);
     private static native void nativeSurfaceDestroyed();
     private static native void nativeHostTouchEvent(int action, int pointerId, float x, float y, float pressure);
     private static native void nativeHostKeyEvent(int action, int keycode, char character);
     private static native void nativeStartBridgeServer(String filesDirPath);
+    private static native String nativePollGuestCommand();
+    private static native void nativePushCameraFrame(byte[] buffer, int len);
+    private static native int nativePullAudioSamples(short[] outBuffer, int maxLen);
+    private static native void nativePushAudioSamples(short[] inBuffer, int len);
+    private static native int nativeGetLatestFrame(int[] outPixels, int maxLen);
+    private static native boolean nativePushHostEventJson(String json);
 }
