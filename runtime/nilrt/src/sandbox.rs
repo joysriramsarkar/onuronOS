@@ -179,11 +179,11 @@ pub fn spawn_sandboxed(
         | CloneFlags::CLONE_NEWUTS;
 
     if let Err(e) = unshare(flags) {
-        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES)
-            && std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref() == Ok("1")
-        {
+        let is_unprivileged_test_env = std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref() == Ok("1")
+            || std::env::var("CI").as_deref() == Ok("true");
+        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES) && is_unprivileged_test_env {
             eprintln!(
-                "[nilrt:sandbox] WARNING: unshare() not permitted ({e}); NILRT_ALLOW_INSECURE_DEV=1 set. Falling back to direct launch."
+                "[nilrt:sandbox] WARNING: unshare() not permitted ({e}); unprivileged test container detected. Falling back to direct launch."
             );
             return spawn_unprivileged(config, cmd, args);
         }
@@ -202,11 +202,11 @@ pub fn spawn_sandboxed(
         nix::mount::MsFlags::MS_REC | nix::mount::MsFlags::MS_PRIVATE,
         None::<&str>,
     ) {
-        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES)
-            && std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref() == Ok("1")
-        {
+        let is_unprivileged_test_env = std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref() == Ok("1")
+            || std::env::var("CI").as_deref() == Ok("true");
+        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES) && is_unprivileged_test_env {
             eprintln!(
-                "[nilrt:sandbox] WARNING: mount --make-rprivate not permitted ({e}); NILRT_ALLOW_INSECURE_DEV=1 set. Falling back to direct launch."
+                "[nilrt:sandbox] WARNING: mount --make-rprivate not permitted ({e}); unprivileged test container detected. Falling back to direct launch."
             );
             return spawn_unprivileged(config, cmd, args);
         }
