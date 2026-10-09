@@ -1,5 +1,5 @@
 // apps/launcher/src/main.rs — NilOS Home Grid Launcher
-use nilui::{App, Element, Ev};
+use nilui::{App, Element};
 
 #[derive(Default)]
 struct State;

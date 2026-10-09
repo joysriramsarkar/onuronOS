@@ -1,5 +1,5 @@
 // apps/lockscreen/src/main.rs — NilOS Swipe-to-Unlock Lockscreen
-use nilui::{App, Element, Ev};
+use nilui::{App, Element};
 
 #[derive(Default)]
 struct State;

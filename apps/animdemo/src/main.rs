@@ -1,5 +1,5 @@
 // apps/animdemo/src/main.rs — 120Hz Animation Physics Demo
-use nilui::{App, Element, Ev};
+use nilui::{App, Element};
 
 #[derive(Default)]
 struct State;

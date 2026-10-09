@@ -1,5 +1,5 @@
 // apps/bridgedemo/src/main.rs — Android Intent Bridge Demo
-use nilui::{App, Element, Ev};
+use nilui::{App, Element};
 
 #[derive(Default)]
 struct State;

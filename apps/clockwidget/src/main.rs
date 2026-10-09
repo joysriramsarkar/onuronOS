@@ -1,5 +1,5 @@
 // apps/clockwidget/src/main.rs — Desktop Clock Widget
-use nilui::{App, Element, Ev};
+use nilui::{App, Element};
 
 #[derive(Default)]
 struct State;

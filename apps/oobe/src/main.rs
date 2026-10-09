@@ -1,5 +1,5 @@
 // apps/oobe/src/main.rs — NilOS First Boot Wizard
-use nilui::{App, Element, Ev};
+use nilui::{App, Element};
 
 #[derive(Default)]
 struct State;

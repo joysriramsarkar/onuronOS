@@ -1,5 +1,5 @@
 // apps/busdemo/src/main.rs — SoftBus Cross-Device Demo
-use nilui::{App, Element, Ev};
+use nilui::{App, Element};
 
 #[derive(Default)]
 struct State;

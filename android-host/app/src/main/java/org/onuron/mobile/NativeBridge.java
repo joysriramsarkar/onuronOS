@@ -18,8 +18,14 @@ public class NativeBridge {
             isNativeLoaded = true;
             Log.i(TAG, "libnilhal.so loaded successfully");
         } catch (Throwable t) {
-            Log.w(TAG, "libnilhal.so not bundled; running in pure hosted mobile mode: " + t.getMessage());
-            isNativeLoaded = false;
+            try {
+                System.loadLibrary("android_host");
+                isNativeLoaded = true;
+                Log.i(TAG, "libandroid_host.so loaded successfully");
+            } catch (Throwable t2) {
+                Log.w(TAG, "Native library not bundled; running in pure hosted mobile mode: " + t2.getMessage());
+                isNativeLoaded = false;
+            }
         }
     }
 

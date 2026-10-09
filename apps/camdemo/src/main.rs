@@ -1,5 +1,5 @@
 // apps/camdemo/src/main.rs — Camera Preview Demo
-use nilui::{App, Element, Ev};
+use nilui::{App, Element};
 
 #[derive(Default)]
 struct State;

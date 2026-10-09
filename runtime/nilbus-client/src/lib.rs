@@ -14,6 +14,7 @@ use std::os::unix::net::UnixStream;
 #[cfg(unix)]
 use std::time::Duration;
 
+#[cfg_attr(not(unix), allow(dead_code))]
 const BUS_SOCK: &str = "/run/nilos/bus.sock";
 
 /// A discovered peer returned by `get_nearby_peers()`.
@@ -122,10 +123,10 @@ impl SoftBusClient {
     }
 
     /// Ping a peer to check if it is currently reachable.
-    pub fn ping(peer_id: &str) -> bool {
+    pub fn ping(_peer_id: &str) -> bool {
         #[cfg(unix)]
         {
-            let cmd = format!("PING {peer_id}\n");
+            let cmd = format!("PING {_peer_id}\n");
             if let Ok(mut stream) = UnixStream::connect(BUS_SOCK) {
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
                 if stream.write_all(cmd.as_bytes()).is_ok() {
@@ -143,6 +144,7 @@ impl SoftBusClient {
 }
 
 // ── Minimal hex encoder (avoids pulling in `hex` crate in this lib) ──────────
+#[cfg_attr(not(unix), allow(dead_code))]
 fn hex_encode(bytes: &[u8]) -> String {
     const HEX: &[u8] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
