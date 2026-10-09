@@ -33,23 +33,21 @@ impl SocketActivationManager {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn check_pending(&self) -> Vec<String> {
-        #[allow(unused_mut)] // only mutated in the unix branch
+        #[allow(unused_mut)]
         let mut pending = Vec::new();
         #[cfg(unix)]
         {
+            use std::os::unix::io::AsRawFd;
             for (name, listener) in &self.listeners {
-                match listener.accept() {
-                    Ok(_) => {
-                        pending.push(name.clone());
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        // No pending connection
-                    }
-                    Err(e) => {
-                        eprintln!("[nilinit:activate] Error checking socket for {}: {}", name, e);
-                    }
+                let mut pfd = libc::pollfd {
+                    fd: listener.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                let ret = unsafe { libc::poll(&mut pfd, 1, 0) };
+                if ret > 0 && (pfd.revents & libc::POLLIN) != 0 {
+                    pending.push(name.clone());
                 }
             }
         }
@@ -61,6 +59,10 @@ impl SocketActivationManager {
     }
 
     #[allow(dead_code)]
+    pub fn is_registered(&self, service_name: &str) -> bool {
+        self.listeners.contains_key(service_name)
+    }
+
     pub fn get_raw_fd(&self, service_name: &str) -> Option<i32> {
         #[cfg(unix)]
         {

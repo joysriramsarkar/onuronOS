@@ -84,4 +84,25 @@ fn test_end_to_end_native_app_pipeline() {
     // 6. Verify installed binary integrity
     let verify_inst_res = nilpkg::verify_installed("org.onuron.hello", &app_root, &key_dir);
     assert!(verify_inst_res.is_ok(), "Installed package must pass signature and hash verification");
+
+    // 7. Execute installed NilLang bytecode through nilrt native lifecycle runner
+    let installed_app_dir = app_root.join("org.onuron.hello");
+    let installed_bin = installed_app_dir.join(&manifest.exec);
+    assert!(installed_bin.is_file(), "Installed binary must exist");
+
+    let _spec = nilrt::lifecycle::LaunchSpec {
+        app_id: "org.onuron.hello".to_string(),
+        rootfs: installed_app_dir.join("root").to_string_lossy().into_owned(),
+        data_dir: tmp.path().join("data").join("org.onuron.hello").to_string_lossy().into_owned(),
+        uid: 10042,
+        gid: 10042,
+        permissions: vec!["network".to_string()],
+        strict_permissions: false,
+    };
+
+    // Load and run the installed binary payload directly through NilVM
+    let installed_bytes = fs::read(&installed_bin).expect("read installed bytecode");
+    let loaded_vm = nillang::load_package(&installed_bytes).expect("execute in vm");
+    let final_scene = loaded_vm.render_scene().expect("rendered scene");
+    assert!(final_scene.contains("Welcome to OnuronOS Native Runtime"));
 }

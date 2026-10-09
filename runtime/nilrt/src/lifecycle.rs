@@ -98,6 +98,7 @@ pub fn launch(spec: &LaunchSpec, cmd: &str, args: &[String]) -> std::io::Result<
         permissions: spec.permissions.clone(),
         strict_permissions: spec.strict_permissions,
         hide_sysfs: true,
+        selinux_context: None,
     };
     spawn_sandboxed(&config, cmd, args)
 }

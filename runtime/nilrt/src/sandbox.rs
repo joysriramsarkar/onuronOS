@@ -73,6 +73,8 @@ pub struct SandboxConfig {
     /// the app cannot read host hardware topology. When false, a read-only
     /// sysfs is mounted instead.
     pub hide_sysfs: bool,
+    /// SELinux security context string to apply before exec (e.g. nilos_app_t)
+    pub selinux_context: Option<String>,
 }
 
 impl SandboxConfig {
@@ -92,6 +94,7 @@ impl SandboxConfig {
             permissions: Vec::new(),
             strict_permissions: false,
             hide_sysfs: true,
+            selinux_context: None,
         }
     }
 }
@@ -173,10 +176,18 @@ pub fn spawn_sandboxed(
     // In unprivileged test / CI container environments, namespace operations
     // return EPERM / EACCES due to lack of CAP_SYS_ADMIN. Fall back to direct
     // execution so development integration tests can run.
-    let flags = CloneFlags::CLONE_NEWPID
+    let mut flags = CloneFlags::CLONE_NEWPID
         | CloneFlags::CLONE_NEWNS
         | CloneFlags::CLONE_NEWIPC
         | CloneFlags::CLONE_NEWUTS;
+
+    // Kernel-level Network Isolation:
+    // If the app is NOT granted network permissions, isolate it in a private
+    // network namespace (CLONE_NEWNET) where outside access is physically blocked.
+    let has_network = config.permissions.iter().any(|p| p == "network" || p == "net.internet");
+    if !has_network {
+        flags |= CloneFlags::CLONE_NEWNET;
+    }
 
     if let Err(e) = unshare(flags) {
         let is_unprivileged_test_env = std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref() == Ok("1")
@@ -318,6 +329,12 @@ fn run_in_sandbox(config: &SandboxConfig) -> std::io::Result<()> {
     }
 
     drop_privileges(config.gid, config.uid)?;
+
+    if let Some(ctx) = &config.selinux_context {
+        if let Err(e) = crate::selinux::setexeccon(ctx) {
+            eprintln!("[nilrt:sandbox] Warning: could not set SELinux context {ctx}: {e}");
+        }
+    }
     Ok(())
 }
 

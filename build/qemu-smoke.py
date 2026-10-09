@@ -47,8 +47,12 @@ def check_boot_log(log_text):
         return ("PANIC", "Kernel panic observed in console log")
     if "VFS: Unable to mount root" in log_text:
         return ("PANIC", "Root filesystem mount failure observed")
+    if "Onuron OS boot failed" in log_text:
+        return ("PANIC", "Onuron OS PID 1 boot failed: core services not operational")
     if "Onuron OS boot completed" in log_text:
-        return ("SUCCESS", "Onuron OS PID 1 boot completed successfully")
+        if "core services verified healthy" in log_text:
+            return ("SUCCESS", "Onuron OS PID 1 boot completed with all core services verified healthy")
+        return ("PANIC", "Onuron OS boot completed without core services verified healthy")
     return ("IN_PROGRESS", "")
 
 

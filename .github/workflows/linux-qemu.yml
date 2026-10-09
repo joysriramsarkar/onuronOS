@@ -33,6 +33,7 @@ jobs:
           build/test_reproducible.py
           build/test_persistent_data.py
           build/test_gen_maturity.py
+          build/test_selinux_audit.py
       - name: Workspace lint
         run: cargo clippy --workspace --all-targets -- -W clippy::all
       - name: Build Linux musl binaries

@@ -303,11 +303,11 @@ fn main() {
     }
     log_ok("Socket activation manager initialized");
 
-    // Supervision is driven by the extracted Supervisor so it can be tested
-    // with real child processes.
+    // Only start services that are not purely on-demand socket activated
     let services: Vec<ServiceSpec> = config
         .services
         .iter()
+        .filter(|s| s.socket_activation.is_none())
         .map(|s| ServiceSpec {
             name: s.name.clone(),
             exec: s.exec.clone(),
@@ -317,26 +317,62 @@ fn main() {
     let mut supervisor = Supervisor::new(services);
     supervisor.start_all();
 
-    log_ok(&format!(
-        "Onuron OS boot completed in {:.2} ms ({} services active)",
-        boot_start.elapsed().as_secs_f64() * 1000.0,
-        supervisor.live_count()
-    ));
+    // Give services a brief moment to settle (50ms) to detect immediate launch crashes
+    thread::sleep(Duration::from_millis(50));
 
-    // Boot reached completion: the failed-boot counter can be cleared. If
-    // nilinit had crashed before this point the counter would have been left
-    // incremented, eventually routing the device into recovery.
-    if let Err(e) = recovery::write_boot_count(
-        recovery::BOOT_COUNT_PATH,
-        recovery::successful_boot_counter(),
-    ) {
-        log_warn(&format!("Could not clear boot counter: {}", e));
+    // Core services that MUST be running for Onuron OS to be considered operational
+    let core_services = ["nild", "nilkeyd", "nilbus", "netd", "audiod", "powerd", "nilshell"];
+    let boot_failed = match supervisor.check_core_health(&core_services) {
+        Ok(()) => false,
+        Err(failed) => {
+            for core in failed {
+                kmsg(&format!("\x1b[1;31m[ FAIL ]\x1b[0m Core service '{}' failed to start or crashed!", core));
+            }
+            true
+        }
+    };
+
+    if boot_failed {
+        kmsg("\x1b[1;31m[ FATAL ]\x1b[0m Onuron OS boot failed: core services not operational");
+    } else {
+        log_ok(&format!("Core services verified healthy ({}/{} active)", core_services.len(), core_services.len()));
+        log_ok(&format!(
+            "Onuron OS boot completed in {:.2} ms ({} services active, core services verified healthy)",
+            boot_start.elapsed().as_secs_f64() * 1000.0,
+            supervisor.live_count()
+        ));
+
+        // Boot reached completion: clear failed-boot counter
+        if let Err(e) = recovery::write_boot_count(
+            recovery::BOOT_COUNT_PATH,
+            recovery::successful_boot_counter(),
+        ) {
+            log_warn(&format!("Could not clear boot counter: {}", e));
+        }
     }
 
     // Supervision Loop
     loop {
         if !supervisor.tick() {
             break;
+        }
+
+        // On-demand socket activation poll
+        let pending = activator.check_pending();
+        for name in pending {
+            if !supervisor.is_running(&name) {
+                if let Some(spec) = config.services.iter().find(|s| s.name == name) {
+                    log_info(&format!("Socket activation triggered for {}", name));
+                    supervisor.spawn_with_fd(
+                        &ServiceSpec {
+                            name: spec.name.clone(),
+                            exec: spec.exec.clone(),
+                            restart: spec.restart.clone(),
+                        },
+                        activator.get_raw_fd(&name),
+                    );
+                }
+            }
         }
 
         // Check for pending shutdown / reboot requests

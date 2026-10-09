@@ -37,11 +37,22 @@ class QemuSmokeTests(unittest.TestCase):
 [    0.000000] Linux version 6.6.110-0-lts
 [    0.113000] Freeing unused kernel memory: 2048K
 [  OK  ] Early virtual filesystems mounted (/proc, /sys, /dev, /run, /tmp)
-[  OK  ] Onuron OS boot completed in 113.20 ms (8 services active)
+[  OK  ] Core services verified healthy (7/7 active)
+[  OK  ] Onuron OS boot completed in 113.20 ms (7 services active, core services verified healthy)
 """
         status, details = qemu_smoke.check_boot_log(log)
         self.assertEqual(status, "SUCCESS")
-        self.assertIn("boot completed", details)
+        self.assertIn("core services verified healthy", details)
+
+    def test_check_boot_log_core_failure(self):
+        log = """
+[    0.000000] Linux version 6.6.110-0-lts
+[ FAIL ] Core service 'nild' failed to start or crashed!
+[ FATAL ] Onuron OS boot failed: core services not operational
+"""
+        status, details = qemu_smoke.check_boot_log(log)
+        self.assertEqual(status, "PANIC")
+        self.assertIn("core services not operational", details)
 
     def test_check_boot_log_kernel_panic(self):
         log = """

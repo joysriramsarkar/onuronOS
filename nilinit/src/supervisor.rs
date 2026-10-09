@@ -83,6 +83,25 @@ impl Supervisor {
         self
     }
 
+    pub fn is_running(&self, name: &str) -> bool {
+        self.running.contains_key(name)
+    }
+
+    /// Checks whether the specified core services are currently running.
+    pub fn check_core_health<'a>(&self, core_services: &'a [&'a str]) -> Result<(), Vec<&'a str>> {
+        let mut failed = Vec::new();
+        for &name in core_services {
+            if !self.running.contains_key(name) {
+                failed.push(name);
+            }
+        }
+        if failed.is_empty() {
+            Ok(())
+        } else {
+            Err(failed)
+        }
+    }
+
     /// Start every service that is not socket-activated.
     pub fn start_all(&mut self) {
         let specs: Vec<ServiceSpec> = self.services.clone();
@@ -91,17 +110,42 @@ impl Supervisor {
         }
     }
 
-    fn spawn(&mut self, spec: &ServiceSpec) {
+    pub fn spawn(&mut self, spec: &ServiceSpec) {
+        self.spawn_with_fd(spec, None);
+    }
+
+    pub fn spawn_with_fd(&mut self, spec: &ServiceSpec, _socket_fd: Option<i32>) {
         match parse_exec(&spec.exec) {
-            Some((bin, args)) => match Command::new(&bin).args(&args).spawn() {
-                Ok(child) => {
-                    self.started_at.insert(spec.name.clone(), Instant::now());
-                    self.running.insert(spec.name.clone(), child);
+            Some((bin, args)) => {
+                let mut cmd = Command::new(&bin);
+                cmd.args(&args);
+
+                #[cfg(unix)]
+                if let Some(fd) = _socket_fd {
+                    use std::os::unix::process::CommandExt;
+                    cmd.env("LISTEN_FDS", "1");
+                    cmd.env("LISTEN_FDNAMES", &spec.name);
+                    unsafe {
+                        cmd.pre_exec(move || {
+                            if libc::dup2(fd, 3) < 0 {
+                                return Err(std::io::Error::last_os_error());
+                            }
+                            libc::fcntl(3, libc::F_SETFD, 0); // clear FD_CLOEXEC
+                            Ok(())
+                        });
+                    }
                 }
-                Err(e) => {
-                    eprintln!("[nilinit] Service '{}' not available: {}", spec.name, e);
+
+                match cmd.spawn() {
+                    Ok(child) => {
+                        self.started_at.insert(spec.name.clone(), Instant::now());
+                        self.running.insert(spec.name.clone(), child);
+                    }
+                    Err(e) => {
+                        eprintln!("[nilinit] Service '{}' not available: {}", spec.name, e);
+                    }
                 }
-            },
+            }
             None => {
                 eprintln!("[nilinit] Service '{}' has an invalid exec line: {}", spec.name, spec.exec);
             }
@@ -435,5 +479,22 @@ mod tests {
             assert!(policy.delay_ms(attempt) <= policy.max_delay_ms);
             let _ = parse_exec("/usr/bin/soakd --tick");
         }
+    }
+
+    #[test]
+    fn test_core_health_check() {
+        let spec = sleeping_service();
+        let mut supervisor = Supervisor::new(vec![spec.clone()]);
+        supervisor.start_all();
+        assert!(supervisor.is_running("sleeper"));
+        assert!(supervisor.check_core_health(&["sleeper"]).is_ok());
+
+        let res = supervisor.check_core_health(&["sleeper", "missing_daemon"]);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err(), vec!["missing_daemon"]);
+
+        supervisor.shutdown();
+        assert!(!supervisor.is_running("sleeper"));
+        assert!(supervisor.check_core_health(&["sleeper"]).is_err());
     }
 }

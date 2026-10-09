@@ -203,7 +203,8 @@ def prepare_rootfs():
         "inputd", "netd", "audiod", "powerd", "notifyd", "nilpkg",
         "settings", "oobe", "hello", "launcher", "nilimed", "nilttsd",
         "logd", "clipd", "btd", "vpnd", "thermald", "alarmd",
-        "userd", "crashd", "nilandroidd", "nilinstall", "nilup", "nilperf"
+        "userd", "crashd", "nilandroidd", "nilinstall", "nilup", "nilperf",
+        "nilc", "nilrt-launch", "nilrt"
     ]
     for b in bins:
         target_path = os.path.join(ROOTFS, "usr", "bin", b)

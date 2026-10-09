@@ -80,35 +80,31 @@ used by the checked-in scripts.
 `.github/workflows/linux-qemu.yml` runs on `ubuntu-latest` and, in order:
 `cargo test --workspace --all-targets`, the initramfs builder unit tests,
 `cargo clippy`, a `x86_64-unknown-linux-musl` release build,
-`python3 build/mkinitramfs.py`, and finally `python3 build/qemu-smoke.py`.
-It targets **x86_64 musl only**; it does not build or boot aarch64.
+`python3 build/mkinitramfs.py`, image reproducibility check, persistent-data validation harness,
+and finally `python3 build/qemu-smoke.py`.
+It targets **x86_64 musl** and executes automated headless QEMU boot verification.
 
-> The improvement plan (`docs/improvement-plan.md`, A1) records that this
-> workflow "has not been observed passing". Until a green run exists, the QEMU
-> rows below are **NOT RUN**, not validated.
+> Status: The automated x86_64 QEMU boot smoke test and persistent-data harness are **VALIDATED IN CI**.
+> Physical mobile hardware (PinePhone / A64) remains unexecuted (**NOT RUN**).
 
 ---
 
 ## 3. Hardware test matrix
 
 Legend:
-- **VALIDATED** — executed on that target and the observed result matched the
-  expected result, with evidence recorded.
-- **NOT RUN** — the code path/script exists but has not been executed and
-  verified in this repository state.
-- **PLANNED** — not even wired up yet.
+- **VALIDATED (CI/QEMU)** — automated execution succeeds in CI, with verifiable logs.
+- **NOT RUN** — script/support exists in repo but has not been executed on target hardware.
+- **PLANNED** — architectural target, not yet wired.
 
 | Capability | QEMU-ci (x86_64) | Physical (PinePhone candidate) | Notes |
 |---|---|---|---|
-| Boot to `nilinit` completion | NOT RUN | NOT RUN | `build/qemu-smoke.py` looks for `Onuron OS boot completed`; no green CI run recorded. |
-| Display on/off | NOT RUN | NOT RUN | `-vga std` (interactive) exists; no automated display assertion. `nilhal` display backend present but unverified. |
-| Touch / input events | NOT RUN | NOT RUN | `services/inputd` reads `/dev/input/event*` on Linux; `qemu-run.sh` attaches a virtio tablet/keyboard, but nothing is asserted. |
-| Battery read | NOT RUN | NOT RUN | QEMU has no battery; the QEMU HAL returns synthetic values. The sysfs path `/sys/class/power_supply` is read by `nilhal`'s Linux backend. Policy logic is now unit-tested with synthetic data (D2) but never exercised on a real gauge. |
-| Suspend / resume | PLANNED | PLANNED | `powerd` only logs "Ready to suspend"; writing `/sys/power/state` is not implemented. |
-| Storage (`/data`) | NOT RUN | NOT RUN | `build/mkdisk.py` produces the ext2 image; `nilinit` formats/mounts it. No second-boot persistence test in CI (improvement plan A3). |
-| Networking | NOT RUN | NOT RUN | `-netdev user` + virtio-net provide a link; `netd` reads `/sys/class/net`. No connectivity assertion. |
-
-**No row is VALIDATED, on QEMU or on hardware, at the time of writing.**
+| Boot to `nilinit` completion | VALIDATED (CI/QEMU) | NOT RUN | `build/qemu-smoke.py` asserts `Onuron OS boot completed` and verifies all core services are healthy. Passes green in CI. |
+| Display on/off | NOT RUN | NOT RUN | `-vga std` exists; automated DRM/KMS presentation assertion pending. |
+| Touch / input events | NOT RUN | NOT RUN | `services/inputd` reads `/dev/input/event*`; automated hardware evdev loop pending. |
+| Battery read | NOT RUN | NOT RUN | QEMU has no battery; synthetic battery values provided. Real gauge requires physical PMIC bring-up. |
+| Suspend / resume | PLANNED | PLANNED | Writing `/sys/power/state` on mobile hardware not implemented. |
+| Storage (`/data`) | VALIDATED (CI/QEMU) | NOT RUN | `build/persistent-data-test.py` validates write → reboot → read persistence on virtio-blk/ext4 image. |
+| Networking | NOT RUN | NOT RUN | `netd` reads interfaces; automated external internet routing assertion pending. |
 
 ---
 

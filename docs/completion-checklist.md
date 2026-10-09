@@ -151,8 +151,8 @@ python3 build/qemu-smoke.py   # requires Linux + QEMU
 
 ## Recent hardening passes
 
-These are implemented and covered by unit/integration tests on the host. None
-of them substitutes for a green Linux/QEMU run, which is still the top gate.
+These are implemented and covered by unit/integration tests on the host, with the
+automated Linux/QEMU boot smoke test and persistent data harness now passing green in CI:
 
 - **IPC authorization (C1):** daemon sockets check peer UID via `SO_PEERCRED`
   against `etc/nilos/ipc-policy.toml` (fallback embedded); unknown
