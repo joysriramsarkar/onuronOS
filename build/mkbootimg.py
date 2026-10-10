@@ -388,11 +388,37 @@ def parse_boot_img(data: bytes) -> Dict[str, Any]:
     }
 
 
+DEVICE_PROFILES = {
+    "fajita": {
+        "board": "fajita",
+        "header_version": 2,
+        "pagesize": 4096,
+        "base": 0x00000000,
+        "cmdline": "console=ttyMSM0,115200,n8 androidboot.hardware=qcom root=/dev/ram0 rw init=/init",
+    },
+    "enchilada": {
+        "board": "enchilada",
+        "header_version": 2,
+        "pagesize": 4096,
+        "base": 0x00000000,
+        "cmdline": "console=ttyMSM0,115200,n8 androidboot.hardware=qcom root=/dev/ram0 rw init=/init",
+    },
+    "generic-arm64": {
+        "board": "onuron-arm64",
+        "header_version": 2,
+        "pagesize": 2048,
+        "base": DEFAULT_BASE,
+        "cmdline": "console=ttyMSM0,115200 root=/dev/ram0 rw init=/init",
+    },
+}
+
+
 def main():
     parser = argparse.ArgumentParser(description="OnuronOS Android Boot Image Utility")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     create_p = subparsers.add_parser("create", help="Create a boot.img")
+    create_p.add_argument("--profile", choices=list(DEVICE_PROFILES.keys()), help="Target device hardware profile (e.g. fajita, enchilada, generic-arm64)")
     create_p.add_argument("--kernel", required=True, help="Path to kernel zImage/Image.gz")
     create_p.add_argument("--ramdisk", required=True, help="Path to ramdisk/initramfs cpio.gz")
     create_p.add_argument("--dtb", help="Path to device tree blob (.dtb)")
@@ -415,6 +441,18 @@ def main():
     args = parser.parse_args()
 
     if args.command == "create":
+        if args.profile:
+            prof = DEVICE_PROFILES[args.profile]
+            if args.board == "onuron-arm64":
+                args.board = prof["board"]
+            if args.pagesize == DEFAULT_PAGE_SIZE:
+                args.pagesize = prof["pagesize"]
+            if args.base == DEFAULT_BASE:
+                args.base = prof["base"]
+            if args.cmdline == "console=ttyMSM0,115200 root=/dev/ram0 rw init=/init":
+                args.cmdline = prof["cmdline"]
+            if args.header_version == 2:
+                args.header_version = prof["header_version"]
         with open(args.kernel, "rb") as f:
             k_bytes = f.read()
         with open(args.ramdisk, "rb") as f:

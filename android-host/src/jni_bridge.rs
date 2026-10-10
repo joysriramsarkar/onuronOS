@@ -288,6 +288,14 @@ pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeHostKeyEvent(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeGetProtocolVersion(
+    _env: *mut c_void,
+    _class: *mut c_void,
+) -> i32 {
+    1
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeStartBridgeServer(
     _env: *mut c_void,
     _class: *mut c_void,
@@ -296,6 +304,7 @@ pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeStartBridgeSe
     BRIDGE_RUNNING.store(true, Ordering::SeqCst);
     println!("[native_bridge] Bridge server initialized and listening for IPC");
 }
+
 
 #[no_mangle]
 pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativePollGuestCommand(

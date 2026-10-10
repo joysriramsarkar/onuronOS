@@ -16,7 +16,20 @@ rm -rf "$OUT"
 mkdir -p "$SYS"/{bin,usr/bin,usr/lib,etc/nilos/apps,data/app,data/user,proc,sys,dev,run/nilos,mnt,vendor/lib/nilhal}
 
 echo "==> [1/6] Compiling Userspace (Rust statically linked)"
-cargo build --release --workspace
+TARGET_DIR="target/release"
+if [ "$DEVICE" = "arm64-generic" ] || [ "$DEVICE" = "aarch64-generic" ] || [ "$DEVICE" = "aarch64-qemu" ]; then
+  cargo build --release --workspace --target aarch64-unknown-linux-musl
+  TARGET_DIR="target/aarch64-unknown-linux-musl/release"
+elif [ "$DEVICE" = "x86_64-generic" ]; then
+  if rustup target list 2>/dev/null | grep -q "x86_64-unknown-linux-musl (installed)"; then
+    cargo build --release --workspace --target x86_64-unknown-linux-musl
+    TARGET_DIR="target/x86_64-unknown-linux-musl/release"
+  else
+    cargo build --release --workspace
+  fi
+else
+  cargo build --release --workspace
+fi
 
 BINS=(
   nilinit nild nilkeyd nilandroidd nilstore notifyd nilimed powerd
@@ -28,8 +41,8 @@ BINS=(
 )
 
 for b in "${BINS[@]}"; do
-  if [ -f "target/release/$b" ]; then
-    install -m755 "target/release/$b" "$SYS/usr/bin/"
+  if [ -f "$TARGET_DIR/$b" ]; then
+    install -m755 "$TARGET_DIR/$b" "$SYS/usr/bin/"
   fi
 done
 

@@ -1,8 +1,8 @@
 # 📘 Onuron OS (অনুরণ ওএস)
 
-> **A lightweight, secure, Linux-based mobile operating system powered by the Alap (আলাপ) cross-platform framework, with a 100% Rust userspace, native NilLang (.nil) app ecosystem (.nilax), and containerized Android compatibility.**
+> **A lightweight, secure, Linux-based mobile operating system powered by the Alap (আলাপ) cross-platform framework, with a 100% Rust native userspace, native NilLang (.nil) app ecosystem (.nilax), and containerized Android compatibility.**
 
-Onuron OS combines the reliability of the Linux LTS kernel, the memory safety and efficiency of a 100% Rust userspace, a declarative UI shell, and an isolated containerized Android compatibility layer—built with a bloat-free, zero-telemetry philosophy.
+Onuron OS combines the reliability of the Linux LTS kernel, the memory safety and efficiency of a 100% Rust native userspace (PID 1 `nilinit`, NilHAL, system daemons, `nilrt` runtime, and declarative UI shell; Android host lab integration uses a thin Java/JNI bridge), and an isolated containerized Android compatibility layer—built with a bloat-free, zero-telemetry philosophy.
 
 Official architectural ecosystem:
 > **"Onuron OS — powered by NilLang + Alap"**

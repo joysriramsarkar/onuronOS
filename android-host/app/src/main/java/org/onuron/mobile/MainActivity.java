@@ -397,13 +397,27 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        NativeBridge.pushHostEventJson("{\"type\":\"HostPause\"}");
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        NativeBridge.pushHostEventJson("{\"type\":\"HostResume\"}");
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         try {
             unregisterReceiver(batteryReceiver);
         } catch (Exception ignored) {
         }
+        NativeBridge.onSurfaceDestroyed();
     }
+
 
     // ─── Interactive Onuron OS Mobile View ─────────────────────────────────────────
 
@@ -1292,11 +1306,21 @@ public class MainActivity extends Activity {
         // ─── Touch Event Dispatcher ─────────────────────────────────────────────────
 
         @Override
-        public boolean onTouchEvent(MotionEvent event) {
-            if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                float x = event.getX();
-                float y = event.getY();
+        protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+            super.onSizeChanged(w, h, oldw, oldh);
+            NativeBridge.onSurfaceChanged(null, w, h);
+        }
 
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            int action = event.getActionMasked();
+            int pointerId = event.getPointerId(event.getActionIndex());
+            float x = event.getX();
+            float y = event.getY();
+            float pressure = event.getPressure();
+            NativeBridge.onHostTouchEvent(action, pointerId, x, y, pressure);
+
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
                 for (TouchArea area : touchAreas) {
                     if (area.bounds.contains(x, y)) {
                         handleAction(area.id);
@@ -1308,6 +1332,7 @@ public class MainActivity extends Activity {
             }
             return true;
         }
+
 
         private void handleAction(String id) {
             switch (id) {

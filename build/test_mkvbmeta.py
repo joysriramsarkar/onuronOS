@@ -1,8 +1,16 @@
 """Unit tests for cryptographic Verified Boot VBMeta tool (Ed25519)."""
+import importlib.util
 import os
+import sys
 import tempfile
 import unittest
-from build.mkvbmeta import create_vbmeta, verify_vbmeta
+
+SCRIPT = os.path.join(os.path.dirname(__file__), "mkvbmeta.py")
+SPEC = importlib.util.spec_from_file_location("mkvbmeta", SCRIPT)
+mkvbmeta = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(mkvbmeta)
+create_vbmeta = mkvbmeta.create_vbmeta
+verify_vbmeta = mkvbmeta.verify_vbmeta
 
 
 class VBMetaTests(unittest.TestCase):

@@ -143,6 +143,40 @@ class TestMkBootImg(unittest.TestCase):
         with self.assertRaises(ValueError):
             mkbootimg.parse_boot_img(b"NOT_BOOT_IMAGE_HEADER_DATA")
 
+    def test_cli_fajita_profile(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            k_path = os.path.join(tmpdir, "Image.gz")
+            rd_path = os.path.join(tmpdir, "initramfs.cpio.gz")
+            out_img = os.path.join(tmpdir, "fajita_boot.img")
+
+            with open(k_path, "wb") as f:
+                f.write(b"SAMPLE_FAJITA_KERNEL" * 32)
+            with open(rd_path, "wb") as f:
+                f.write(b"SAMPLE_FAJITA_RAMDISK" * 64)
+
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    SCRIPT,
+                    "create",
+                    "--profile", "fajita",
+                    "--kernel", k_path,
+                    "--ramdisk", rd_path,
+                    "-o", out_img,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("[OK] Boot image generated", res.stdout)
+            self.assertTrue(os.path.exists(out_img))
+
+            with open(out_img, "rb") as f:
+                parsed = mkbootimg.parse_boot_img(f.read())
+            self.assertEqual(parsed["board_name"], "fajita")
+            self.assertEqual(parsed["page_size"], 4096)
+            self.assertIn("androidboot.hardware=qcom", parsed["cmdline"])
+
 
 if __name__ == "__main__":
     unittest.main()

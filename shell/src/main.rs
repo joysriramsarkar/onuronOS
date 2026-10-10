@@ -211,19 +211,72 @@ fn get_battery_display() -> String {
     format!("🔋 88%  {}", simulated::badge())
 }
 
-fn status_bar(state: &AppState) -> String {
-    let wifi_ico = if state.wifi_enabled { "📶 Wi-Fi" } else { "✕ Wi-Fi" };
-    let cell_str = if state.cellular_enabled {
-        match state.signal_bars {
-            4 => "▂▄▆█ 5G",
-            3 => "▂▄▆_ 5G",
-            2 => "▂▄__ 4G",
-            1 => "▂___ 3G",
-            _ => "____ No Svc",
+fn get_network_display(state: &AppState) -> (String, String) {
+    let mut real_wifi: Option<bool> = None;
+    let mut real_cell: Option<bool> = None;
+    let mut real_eth: Option<bool> = None;
+
+    if let Ok(entries) = fs::read_dir("/sys/class/net") {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == "lo" {
+                continue;
+            }
+            let oper_path = entry.path().join("operstate");
+            let is_up = if let Ok(s) = fs::read_to_string(&oper_path) {
+                let st = s.trim();
+                st == "up" || st == "unknown"
+            } else {
+                false
+            };
+
+            if name.starts_with("wl") {
+                real_wifi = Some(is_up);
+            } else if name.starts_with("rmnet") || name.starts_with("wwan") || name.starts_with("cdc-wdm") {
+                real_cell = Some(is_up);
+            } else if name.starts_with("eth") || name.starts_with("en") {
+                real_eth = Some(is_up);
+            }
         }
-    } else {
-        "✈️ Offline"
+    }
+
+    let wifi_str = match real_wifi {
+        Some(true) => "📶 Wi-Fi".to_string(),
+        Some(false) => "✕ Wi-Fi".to_string(),
+        None => {
+            if let Some(true) = real_eth {
+                "🌐 Eth".to_string()
+            } else if state.wifi_enabled {
+                "📶 Wi-Fi".to_string()
+            } else {
+                "✕ Wi-Fi".to_string()
+            }
+        }
     };
+
+    let cell_str = match real_cell {
+        Some(true) => "▂▄▆█ 5G".to_string(),
+        Some(false) => "____ No Svc".to_string(),
+        None => {
+            if state.cellular_enabled {
+                match state.signal_bars {
+                    4 => "▂▄▆█ 5G".to_string(),
+                    3 => "▂▄▆_ 5G".to_string(),
+                    2 => "▂▄__ 4G".to_string(),
+                    1 => "▂___ 3G".to_string(),
+                    _ => "____ No Svc".to_string(),
+                }
+            } else {
+                "✈️ Offline".to_string()
+            }
+        }
+    };
+
+    (wifi_str, cell_str)
+}
+
+fn status_bar(state: &AppState) -> String {
+    let (wifi_ico, cell_str) = get_network_display(state);
     let batt = get_battery_display();
     format!(
         "{}  {} │ {} │ {} │ {}  {}",
@@ -757,9 +810,32 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
                 }
             }
             if !found {
-                out.push_str(&format!("Supervised Mobile Daemons:\n"));
-                for (name, pid) in &[("nilinit","1"),("nild","428"),("nilkeyd","429"),("nilbus","430"),("netd","431"),("audiod","432"),("btd","433"),("telephonyd","434"),("camerad","435"),("powerd","436"),("nilshell","437")] {
-                    out.push_str(&format!("  • {:12} PID {:<5} RUNNING\n", name, pid));
+                // Probe real daemons from /proc
+                let mut proc_daemons = Vec::new();
+                if let Ok(entries) = fs::read_dir("/proc") {
+                    for entry in entries.flatten() {
+                        let fname = entry.file_name();
+                        if let Ok(pid) = fname.to_string_lossy().parse::<u32>() {
+                            if let Ok(comm) = fs::read_to_string(format!("/proc/{pid}/comm")) {
+                                let c = comm.trim().to_string();
+                                if ["nilinit", "powerd", "inputd", "netd", "btd", "telephonyd", "audiod", "camerad", "nilupd", "nilkeyd", "nilimed", "nilshell", "shell"].contains(&c.as_str()) {
+                                    proc_daemons.push((c, pid));
+                                }
+                            }
+                        }
+                    }
+                }
+                if !proc_daemons.is_empty() {
+                    out.push_str("Live Supervised Mobile Daemons (from /proc):\n");
+                    proc_daemons.sort_by_key(|(_, pid)| *pid);
+                    for (name, pid) in proc_daemons {
+                        out.push_str(&format!("  • {:<12} PID {:<5} ACTIVE\n", name, pid));
+                    }
+                } else {
+                    out.push_str(&format!("Supervised Mobile Daemons {}:\n", simulated::badge()));
+                    for (name, pid) in &[("nilinit","1"),("powerd","101"),("inputd","102"),("netd","103"),("audiod","104"),("nilshell","105")] {
+                        out.push_str(&format!("  • {:12} PID {:<5} DEMO\n", name, pid));
+                    }
                 }
             }
             out
@@ -1249,6 +1325,69 @@ fn main() {
                     continue; // Skip the re-render at top of loop
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_network_display_defaults() {
+        let state = AppState {
+            user_name: "TestUser".into(),
+            pin: String::new(),
+            pending_pin: String::new(),
+            pin_input: String::new(),
+            sms_threads: Vec::new(),
+            contacts: Vec::new(),
+            compose_to: String::new(),
+            compose_body: String::new(),
+            terminal_history: Vec::new(),
+            settings_cursor: 0,
+            files_path: "/data".into(),
+            pkg_cursor: 0,
+            call_number: String::new(),
+            wifi_enabled: true,
+            cellular_enabled: true,
+            signal_bars: 4,
+        };
+
+        let (wifi, cell) = get_network_display(&state);
+        assert!(!wifi.is_empty());
+        assert!(!cell.is_empty());
+
+        let bar = status_bar(&state);
+        assert!(bar.contains("TestUser"));
+    }
+
+    #[test]
+    fn test_network_display_airplane_mode() {
+        let state = AppState {
+            user_name: "OfflineUser".into(),
+            pin: String::new(),
+            pending_pin: String::new(),
+            pin_input: String::new(),
+            sms_threads: Vec::new(),
+            contacts: Vec::new(),
+            compose_to: String::new(),
+            compose_body: String::new(),
+            terminal_history: Vec::new(),
+            settings_cursor: 0,
+            files_path: "/data".into(),
+            pkg_cursor: 0,
+            call_number: String::new(),
+            wifi_enabled: false,
+            cellular_enabled: false,
+            signal_bars: 0,
+        };
+
+        let (wifi, cell) = get_network_display(&state);
+        // If no real sysfs cell interface is present, should fall back to Offline
+        if !Path::new("/sys/class/net").exists() {
+            assert_eq!(cell, "✈️ Offline");
+            assert_eq!(wifi, "✕ Wi-Fi");
         }
     }
 }

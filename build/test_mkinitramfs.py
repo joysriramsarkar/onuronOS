@@ -85,6 +85,42 @@ class InitramfsTests(unittest.TestCase):
             self.assertEqual(entries["mybinary"][0] & 0o777, 0o644)
             self.assertEqual(entries["usr/bin/app"][0] & 0o777, 0o755)
 
+    def test_ensure_kernel_rejects_corrupted_digest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad_kernel = os.path.join(tmp, "vmlinuz-lts")
+            with open(bad_kernel, "wb") as f:
+                f.write(b"CORRUPTED_KERNEL_DATA" * 50000)
+            with self.assertRaisesRegex(RuntimeError, "integrity verification failed"):
+                mkinitramfs.ensure_kernel(skip_download=True, arch="x86_64", out_dir=tmp)
+
+    def test_unknown_arch_rejected(self):
+        with self.assertRaises(ValueError):
+            mkinitramfs.ensure_kernel(arch="mips64")
+        with self.assertRaises(ValueError):
+            mkinitramfs.prepare_rootfs(arch="mips64")
+
+    def test_elf_machine_detection_and_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            x86_elf = os.path.join(tmp, "x86_bin")
+            with open(x86_elf, "wb") as f:
+                f.write(b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 10 + b"\x3e\x00")
+            arm_elf = os.path.join(tmp, "arm_bin")
+            with open(arm_elf, "wb") as f:
+                f.write(b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 10 + b"\xb7\x00")
+
+            self.assertEqual(mkinitramfs.get_elf_machine(x86_elf), "x86_64")
+            self.assertEqual(mkinitramfs.get_elf_machine(arm_elf), "aarch64")
+
+            self.assertEqual(mkinitramfs.validate_elf_architecture(x86_elf, "x86_64"), "x86_64")
+            self.assertEqual(mkinitramfs.validate_elf_architecture(arm_elf, "aarch64"), "aarch64")
+
+            with self.assertRaisesRegex(RuntimeError, "ELF architecture mismatch"):
+                mkinitramfs.validate_elf_architecture(x86_elf, "aarch64")
+
+            with self.assertRaisesRegex(RuntimeError, "ELF architecture mismatch"):
+                mkinitramfs.validate_elf_architecture(arm_elf, "x86_64")
+
 
 if __name__ == "__main__":
     unittest.main()
+

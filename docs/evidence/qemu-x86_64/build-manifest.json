@@ -1,0 +1,17 @@
+{
+  "target": "qemu-x86_64",
+  "architecture": "x86_64",
+  "userspace_triple": "x86_64-unknown-linux-musl",
+  "kernel_arch": "x86_64",
+  "kernel": {
+    "file": "vmlinuz-lts",
+    "sha256": "aaa1c6732e5de0af5e497ca70ba654609bc3597b8eda103936368a61561f3cad",
+    "source": "Alpine Linux 3.19 netboot"
+  },
+  "initramfs": {
+    "file": "nilos-initramfs.cpio.gz",
+    "format": "SVR4 newc cpio.gz (mtime=0 reproducible)"
+  },
+  "verified_boot": "prototype-descriptor",
+  "ci_status": "green"
+}

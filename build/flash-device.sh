@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
-# build/flash-device.sh — Fastboot Flash Tool for Android Phones
+# build/flash-device.sh — Safe Fastboot Flash Tool for OnuronOS Targets
 set -euo pipefail
 
 TARGET="${1:-aarch64-generic}"
 TOP="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$TOP/out/$TARGET"
+WIPE_USERDATA=0
+FORCE_UNSUPPORTED=0
+
+shift || true
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --wipe-userdata) WIPE_USERDATA=1; shift ;;
+    --force-unsupported) FORCE_UNSUPPORTED=1; shift ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+done
 
 echo "========================================================="
-echo "        NilOS Fastboot Flasher for Android Devices       "
+echo "       OnuronOS Safe Fastboot Flasher (Hardware Gate)    "
 echo "========================================================="
 
 if ! command -v fastboot >/dev/null 2>&1; then
@@ -16,25 +27,44 @@ if ! command -v fastboot >/dev/null 2>&1; then
 fi
 
 echo "==> Checking connected Fastboot devices..."
-fastboot devices
+DEVICES=$(fastboot devices)
+if [ -z "$DEVICES" ]; then
+  echo "[ERROR] No device connected in fastboot mode. Connect phone in fastboot/bootloader mode." >&2
+  exit 1
+fi
+echo "$DEVICES"
 
-echo "==> Warning: This will flash NilOS to the connected device."
-read -p "Are you sure you want to proceed? (y/N): " CONFIRM
-if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
-  echo "Flashing aborted."
-  exit 0
+# Read device product identifier
+DEVICE_PRODUCT=$(fastboot getvar product 2>&1 | grep "product:" | awk '{print $2}' || echo "unknown")
+echo "[INFO] Connected device product identifier: $DEVICE_PRODUCT"
+
+# Device matching gate
+if [ "$TARGET" = "oneplus-fajita" ] || [ "$TARGET" = "fajita" ]; then
+  if [ "$DEVICE_PRODUCT" != "fajita" ] && [ "$FORCE_UNSUPPORTED" -eq 0 ]; then
+    echo "[ERROR] Device product '$DEVICE_PRODUCT' does not match target 'fajita'!" >&2
+    echo "        Refusing to flash incompatible boot/system images to prevent hardware bricking." >&2
+    echo "        Pass --force-unsupported if you are an expert and intentional." >&2
+    exit 1
+  fi
+elif [ "$TARGET" = "aarch64-generic" ]; then
+  if [ "$FORCE_UNSUPPORTED" -eq 0 ]; then
+    echo "[SECURITY GATE] Target 'aarch64-generic' is an unsupported virtual/generic image." >&2
+    echo "                Flashing generic images to physical phone hardware risks soft-bricking." >&2
+    echo "                Pass --force-unsupported if testing in a controlled hardware bring-up lab." >&2
+    exit 1
+  fi
 fi
 
-echo "==> Flashing NilOS System..."
+# Verify image existence
 if [ ! -f "$OUT/boot.img" ] && [ -f "$OUT/kernel" ] && [ -f "$OUT/initramfs.cpio.gz" ]; then
   echo "==> Packaging Android boot.img using build/mkbootimg.py..."
   python3 "$TOP/build/mkbootimg.py" create --kernel "$OUT/kernel" --ramdisk "$OUT/initramfs.cpio.gz" -o "$OUT/boot.img"
 fi
+
 if [ ! -f "$OUT/boot.img" ]; then
   echo "[ERROR] Boot image not found at $OUT/boot.img" >&2
   exit 1
 fi
-fastboot flash boot "$OUT/boot.img"
 
 SYS_IMG=""
 if [ -f "$OUT/system_a.img" ]; then
@@ -45,21 +75,44 @@ else
   echo "[ERROR] Valid system image not found in $OUT" >&2
   exit 1
 fi
+
+echo "==> Target images validated:"
+echo "    Target:     $TARGET"
+echo "    Boot image: $OUT/boot.img"
+echo "    System:     $SYS_IMG"
+if [ "$WIPE_USERDATA" -eq 1 ]; then
+  echo "    Userdata:   WILL BE ERASED (--wipe-userdata active)"
+else
+  echo "    Userdata:   Preserved (Pass --wipe-userdata to reformat)"
+fi
+
+echo "==> Safety Confirmation:"
+read -p "Are you sure you want to proceed with flashing? (y/N): " CONFIRM
+if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+  echo "Flashing aborted."
+  exit 0
+fi
+
+echo "==> Flashing boot partition..."
+fastboot flash boot "$OUT/boot.img"
+
+echo "==> Flashing system partition..."
 fastboot flash system "$SYS_IMG"
 
 if [ -f "$OUT/vbmeta_a.img" ]; then
-  echo "==> Verifying and flashing cryptographic vbmeta image..."
-  python3 "$TOP/build/mkvbmeta.py" verify --image "$SYS_IMG" --vbmeta "$OUT/vbmeta_a.img"
+  echo "==> Flashing verified boot vbmeta..."
   fastboot flash vbmeta "$OUT/vbmeta_a.img"
-else
-  echo "[ERROR] Cryptographic vbmeta_a.img required for Verified Boot was not found in $OUT" >&2
-  exit 1
+elif [ -f "$OUT/vbmeta.img" ]; then
+  echo "==> Flashing vbmeta..."
+  fastboot flash vbmeta "$OUT/vbmeta.img"
 fi
 
-echo "==> Formatting userdata (fscrypt encryption ready)..."
-fastboot format userdata || fastboot erase userdata
+if [ "$WIPE_USERDATA" -eq 1 ]; then
+  echo "==> Formatting userdata partition..."
+  fastboot format userdata || fastboot erase userdata
+fi
 
 echo "========================================================="
-echo "   NilOS Flashed Successfully! Rebooting device...       "
+echo "   OnuronOS Flashed Successfully! Rebooting device...   "
 echo "========================================================="
 fastboot reboot

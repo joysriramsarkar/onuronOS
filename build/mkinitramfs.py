@@ -11,6 +11,8 @@ import gzip
 import hashlib
 import io
 import shutil
+import struct
+import subprocess
 import urllib.request
 import argparse
 import json
@@ -22,7 +24,7 @@ ARCH_CONFIGS = {
         "out_dir": os.path.join(TOP, "out", "x86_64-generic"),
         "kernel_name": "vmlinuz-lts",
         "kernel_url": "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/netboot/vmlinuz-lts",
-        "kernel_sha256": "4b6f6323ab44265435e1fe7ae5349f298cb37ba570f77bf64e9c704e6669931b",
+        "kernel_sha256": "aaa1c6732e5de0af5e497ca70ba654609bc3597b8eda103936368a61561f3cad",
         "target_triple": "x86_64-unknown-linux-musl",
         "initrd_name": "nilos-initramfs.cpio.gz",
     },
@@ -30,7 +32,7 @@ ARCH_CONFIGS = {
         "out_dir": os.path.join(TOP, "out", "aarch64-qemu"),
         "kernel_name": "vmlinuz-lts",
         "kernel_url": "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/netboot/vmlinuz-lts",
-        "kernel_sha256": "3cb15bf6bc44ea491f2b604084f707f4ebbe99cfdbef6324d4554b423aa63969",
+        "kernel_sha256": "014887a8047739213ce21090349c71f75c7edc0133efa03c840a2db8a354f9e1",
         "target_triple": "aarch64-unknown-linux-musl",
         "initrd_name": "initramfs.cpio.gz",
     },
@@ -55,35 +57,95 @@ def compute_file_sha256(filepath):
     return h.hexdigest()
 
 
+def get_elf_machine(filepath):
+    """Return ELF machine string ('x86_64', 'aarch64', 'arm') or None if not an ELF file."""
+    if not os.path.isfile(filepath):
+        return None
+    try:
+        with open(filepath, "rb") as f:
+            header = f.read(20)
+            if len(header) < 20 or header[:4] != b"\x7fELF":
+                return None
+            endian = "<" if header[5] == 1 else ">"
+            e_machine = struct.unpack(f"{endian}H", header[18:20])[0]
+            if e_machine == 0x3E:
+                return "x86_64"
+            elif e_machine == 0xB7:
+                return "aarch64"
+            elif e_machine == 0x28:
+                return "arm"
+            return f"unknown({hex(e_machine)})"
+    except Exception:
+        return None
+
+
+def validate_elf_architecture(filepath, expected_arch):
+    """Validate that an ELF binary matches expected architecture. Raises RuntimeError on mismatch."""
+    elf_arch = get_elf_machine(filepath)
+    if elf_arch is None:
+        return None
+    norm_expected = "aarch64" if expected_arch in ("aarch64", "arm64") else "x86_64"
+    if elf_arch != norm_expected:
+        raise RuntimeError(
+            f"ELF architecture mismatch for {filepath}: "
+            f"expected {norm_expected}, got {elf_arch}"
+        )
+    return elf_arch
+
+
 def ensure_kernel(skip_download=False, arch="x86_64", out_dir=None):
-    cfg = ARCH_CONFIGS.get(arch, ARCH_CONFIGS["x86_64"])
+    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else ("x86_64" if arch in ("x86_64", "amd64") else None)
+    if not norm_arch or norm_arch not in ARCH_CONFIGS:
+        raise ValueError(f"Unknown or unsupported architecture for kernel: {arch}")
+    cfg = ARCH_CONFIGS[norm_arch]
     target_out = out_dir or cfg["out_dir"]
     os.makedirs(target_out, exist_ok=True)
     kernel_path = os.path.join(target_out, cfg["kernel_name"])
+    pinned_sha = cfg.get("kernel_sha256")
 
     if os.path.exists(kernel_path) and os.path.getsize(kernel_path) > 1000000:
         digest = compute_file_sha256(kernel_path)
-        print(f"[OK] Kernel present: {kernel_path} ({os.path.getsize(kernel_path)} bytes, sha256: {digest[:16]}...)")
-        if cfg.get("kernel_sha256") and digest.lower() == cfg["kernel_sha256"].lower():
+        if pinned_sha:
+            if digest.lower() != pinned_sha.lower():
+                raise RuntimeError(
+                    f"Kernel integrity verification failed for {kernel_path}!\n"
+                    f"  Expected SHA-256: {pinned_sha}\n"
+                    f"  Actual SHA-256:   {digest}\n"
+                    f"Refusing to boot with unverified or corrupted kernel."
+                )
+            print(f"[OK] Kernel present: {kernel_path} ({os.path.getsize(kernel_path)} bytes, sha256: {digest[:16]}...)")
             print("[OK] Kernel SHA-256 integrity verified against pinned release.")
+        else:
+            print(f"[OK] Kernel present: {kernel_path} ({os.path.getsize(kernel_path)} bytes, sha256: {digest[:16]}...)")
         return kernel_path
 
     if skip_download:
-        raise RuntimeError(f"Kernel missing at {kernel_path}; provide a pre-fetched kernel")
+        raise RuntimeError(f"Kernel missing at {kernel_path}; provide a pre-fetched kernel with matching checksum")
 
     k_url = cfg["kernel_url"]
-    print(f"==> Downloading Linux LTS kernel ({arch}) for QEMU from:\n    {k_url}")
+    print(f"==> Downloading Linux LTS kernel ({norm_arch}) for QEMU from:\n    {k_url}")
     try:
         urllib.request.urlretrieve(k_url, kernel_path)
-        digest = compute_file_sha256(kernel_path)
-        print(f"[OK] Downloaded kernel: {kernel_path} ({os.path.getsize(kernel_path)} bytes, sha256: {digest[:16]}...)")
-        if cfg.get("kernel_sha256") and digest.lower() == cfg["kernel_sha256"].lower():
-            print("[OK] Kernel SHA-256 integrity verified.")
-        return kernel_path
     except Exception as e:
-        print(f"[WARN] Failed to download kernel automatically: {e}")
-        print(f"       Please place {cfg['kernel_name']} into {target_out}/")
-        return kernel_path
+        raise RuntimeError(f"Failed to download kernel automatically from {k_url}: {e}")
+
+    digest = compute_file_sha256(kernel_path)
+    print(f"[OK] Downloaded kernel: {kernel_path} ({os.path.getsize(kernel_path)} bytes, sha256: {digest[:16]}...)")
+    if pinned_sha:
+        if digest.lower() != pinned_sha.lower():
+            try:
+                os.remove(kernel_path)
+            except OSError:
+                pass
+            raise RuntimeError(
+                f"Downloaded kernel SHA-256 verification failed for {kernel_path}!\n"
+                f"  Expected: {pinned_sha}\n"
+                f"  Got:      {digest}\n"
+                f"Corrupted download removed."
+            )
+        print("[OK] Kernel SHA-256 integrity verified.")
+    return kernel_path
+
 
 
 class CpioWriter:
@@ -227,12 +289,12 @@ def check_reproducible(root_dir):
     return (first_hash == second_hash, first_hash, second_hash)
 
 
-def prepare_rootfs(arch="x86_64", rootfs_dir=None):
+def prepare_rootfs(arch="x86_64", rootfs_dir=None, allow_host_fallback=False):
     target_rootfs = rootfs_dir or ROOTFS
     os.makedirs(target_rootfs, exist_ok=True)
     dirs = [
         "bin", "sbin", "usr/bin", "usr/lib", "etc/nilos",
-        "proc", "sys", "dev", "run/nilos", "tmp", "mnt", "data"
+        "proc", "sys", "dev", "run/nilos", "run/onuron", "tmp", "mnt", "data"
     ]
     for d in dirs:
         os.makedirs(os.path.join(target_rootfs, d), exist_ok=True)
@@ -243,7 +305,10 @@ def prepare_rootfs(arch="x86_64", rootfs_dir=None):
         shutil.copytree(etc_src, os.path.join(target_rootfs, "etc", "nilos"), dirs_exist_ok=True)
 
     # Target-specific release directories
-    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else "x86_64"
+    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else ("x86_64" if arch in ("x86_64", "amd64") else None)
+    if not norm_arch or norm_arch not in ARCH_CONFIGS:
+        raise ValueError(f"Unknown or unsupported architecture: {arch}")
+
     triple = ARCH_CONFIGS[norm_arch]["target_triple"]
     release_dir = os.path.join(TOP, "target", triple, "release")
     fallback_release = os.path.join(TOP, "target", "release")
@@ -256,25 +321,42 @@ def prepare_rootfs(arch="x86_64", rootfs_dir=None):
         "userd", "crashd", "nilandroidd", "nilinstall", "nilup", "nilperf",
         "nilc", "nilrt-launch", "nilrt"
     ]
-    installed_bins = []
+    installed_bins = {}
+
+    # Cross-architecture check: if target is aarch64, fallback to host target/release is prohibited unless explicitly allowed
+    allow_fallback = (norm_arch == "x86_64") or allow_host_fallback
+
     for b in bins:
         target_path = os.path.join(target_rootfs, "usr", "bin", b)
         src_musl = os.path.join(release_dir, b)
         src_fb = os.path.join(fallback_release, b)
 
+        chosen_src = None
         if os.path.exists(src_musl):
-            shutil.copy2(src_musl, target_path)
-            shutil.copy2(src_musl, os.path.join(target_rootfs, "bin", b))
-            installed_bins.append(b)
-            print(f"[+] Installed musl ({norm_arch}) binary: {b}")
-        elif os.path.exists(src_fb):
-            shutil.copy2(src_fb, target_path)
-            shutil.copy2(src_fb, os.path.join(target_rootfs, "bin", b))
-            installed_bins.append(b)
-            print(f"[+] Installed native binary: {b}")
+            chosen_src = src_musl
+        elif allow_fallback and os.path.exists(src_fb):
+            chosen_src = src_fb
+
+        if chosen_src:
+            # Validate ELF machine type if it's an ELF file
+            elf_type = validate_elf_architecture(chosen_src, norm_arch)
+            shutil.copy2(chosen_src, target_path)
+            shutil.copy2(chosen_src, os.path.join(target_rootfs, "bin", b))
+            b_hash = compute_file_sha256(chosen_src)
+            installed_bins[b] = {
+                "path": f"usr/bin/{b}",
+                "sha256": b_hash,
+                "elf_machine": elf_type or "script/native",
+                "source": "musl" if chosen_src == src_musl else "host-fallback",
+            }
+            src_label = f"musl ({norm_arch})" if chosen_src == src_musl else "host-fallback"
+            print(f"[+] Installed {src_label} binary: {b}")
 
     if not os.path.isfile(os.path.join(target_rootfs, "usr", "bin", "nilinit")):
-        raise RuntimeError(f"nilinit binary is missing for {norm_arch}; build nilinit before creating a bootable initramfs")
+        raise RuntimeError(
+            f"nilinit binary is missing for {norm_arch} in {release_dir}!\n"
+            f"Run 'cargo build --release --target {triple}' before packaging initramfs."
+        )
 
     # Link /init and /sbin/init to nilinit
     nilinit_bin = os.path.join(target_rootfs, "usr", "bin", "nilinit")
@@ -285,7 +367,7 @@ def prepare_rootfs(arch="x86_64", rootfs_dir=None):
     return installed_bins
 
 
-def write_manifest_and_checksums(out_dir, arch, kernel_file, initrd_file, installed_bins):
+def write_manifest_and_checksums(out_dir, arch, kernel_file, initrd_file, installed_bins, non_release=False):
     """Write reproducible manifest.json and checksums.txt into out directory."""
     k_hash = compute_file_sha256(kernel_file) if kernel_file and os.path.exists(kernel_file) else None
     i_hash = compute_file_sha256(initrd_file) if initrd_file and os.path.exists(initrd_file) else None
@@ -297,8 +379,21 @@ def write_manifest_and_checksums(out_dir, arch, kernel_file, initrd_file, instal
         if i_hash:
             f.write(f"{i_hash}  {os.path.basename(initrd_file)}\n")
 
+    git_rev = "unknown"
+    try:
+        git_rev = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=TOP, text=True).strip()
+    except Exception:
+        pass
+
+    triple = ARCH_CONFIGS.get(arch, {}).get("target_triple", f"{arch}-unknown-linux-musl")
+
     manifest = {
-        "target": arch,
+        "target": f"qemu-{arch}",
+        "architecture": arch,
+        "userspace_triple": triple,
+        "kernel_arch": arch,
+        "build_revision": git_rev,
+        "non_release": non_release,
         "kernel": {
             "file": os.path.basename(kernel_file) if kernel_file else None,
             "sha256": k_hash,
@@ -309,7 +404,9 @@ def write_manifest_and_checksums(out_dir, arch, kernel_file, initrd_file, instal
             "sha256": i_hash,
             "size_bytes": os.path.getsize(initrd_file) if initrd_file and os.path.exists(initrd_file) else 0,
         },
-        "installed_daemons": installed_bins,
+        "installed_daemons": list(installed_bins.keys()) if isinstance(installed_bins, dict) else installed_bins,
+        "binaries": installed_bins if isinstance(installed_bins, dict) else {},
+        "verified": True,
     }
     manifest_path = os.path.join(out_dir, "manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -326,6 +423,8 @@ def main(argv=None):
                         help="fail instead of downloading a missing kernel")
     parser.add_argument("--check-reproducible", action="store_true",
                         help="build the initramfs twice and verify identical SHA-256")
+    parser.add_argument("--allow-host-binaries-for-tests", action="store_true",
+                        help="allow host binaries fallback for cross-targets (marks manifest non_release=true)")
     parser.add_argument("--rootfs", default=None,
                         help="rootfs directory to package (default: the generated one); "
                              "with --check-reproducible this can be any pre-populated tree")
@@ -344,7 +443,7 @@ def main(argv=None):
     if args.check_reproducible:
         if args.rootfs is None:
             ensure_kernel(skip_download=args.skip_kernel_download, arch=norm_arch, out_dir=out_dir)
-            prepare_rootfs(arch=norm_arch, rootfs_dir=target_rootfs)
+            prepare_rootfs(arch=norm_arch, rootfs_dir=target_rootfs, allow_host_fallback=args.allow_host_binaries_for_tests)
         if not os.path.isdir(target_rootfs):
             raise RuntimeError(f"rootfs directory not found: {target_rootfs}")
         ok, first_hash, second_hash = check_reproducible(target_rootfs)
@@ -356,10 +455,11 @@ def main(argv=None):
         return 0
 
     kernel_path = ensure_kernel(skip_download=args.skip_kernel_download, arch=norm_arch, out_dir=out_dir)
-    installed_bins = prepare_rootfs(arch=norm_arch, rootfs_dir=target_rootfs)
+    installed_bins = prepare_rootfs(arch=norm_arch, rootfs_dir=target_rootfs, allow_host_fallback=args.allow_host_binaries_for_tests)
     create_initramfs(target_rootfs, initrd_path)
-    write_manifest_and_checksums(out_dir, norm_arch, kernel_path, initrd_path, installed_bins)
+    write_manifest_and_checksums(out_dir, norm_arch, kernel_path, initrd_path, installed_bins, non_release=args.allow_host_binaries_for_tests)
     return 0
+
 
 
 if __name__ == "__main__":

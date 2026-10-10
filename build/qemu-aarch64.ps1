@@ -4,6 +4,7 @@ param (
     [switch]$NoRebuild,
     [switch]$NoDisk,
     [switch]$NoNet,
+    [string]$LogFile = "",
     [string]$Cpu = "cortex-a57",
     [int]$MemoryMb = 1024,
     [int]$Smp = 2
@@ -33,9 +34,11 @@ if (-not (Test-Path $qemu)) {
 Write-Host "[OK] Using QEMU: $qemu" -ForegroundColor Green
 
 # 2. Build or download ARM64 kernel & initramfs
-if (-not $NoRebuild -and ((-not (Test-Path $KERNEL)) -or (-not (Test-Path $INITRD)))) {
-    Write-Host "==> Preparing ARM64 kernel and initramfs..." -ForegroundColor Yellow
-    python (Join-Path $TOP "build\mkinitramfs.py") --arch aarch64
+if (-not $NoRebuild) {
+    if ((-not (Test-Path $KERNEL)) -or (-not (Test-Path $INITRD))) {
+        Write-Host "==> Preparing ARM64 kernel and initramfs..." -ForegroundColor Yellow
+        python (Join-Path $TOP "build\mkinitramfs.py") --arch aarch64
+    }
 }
 
 if (-not (Test-Path $KERNEL)) {
@@ -47,14 +50,12 @@ if (-not (Test-Path $INITRD)) {
     exit 1
 }
 
-# 3. Create persistent disk
+# 3. Create persistent disk with proper filesystem format
 if (-not $NoDisk) {
     if (-not (Test-Path $DISK)) {
-        Write-Host "==> Creating 512MB data disk image at $DISK..." -ForegroundColor Yellow
+        Write-Host "==> Creating 512MB formatted data disk image at $DISK..." -ForegroundColor Yellow
         if (-not (Test-Path $OUT)) { New-Item -ItemType Directory -Path $OUT -Force | Out-Null }
-        $f = [System.IO.File]::Create($DISK)
-        $f.SetLength(512MB)
-        $f.Close()
+        python (Join-Path $TOP "build\mkdisk.py") --output $DISK --size-mb 512
     }
     Write-Host "[OK] Data disk: $DISK" -ForegroundColor Green
 }
@@ -96,4 +97,9 @@ if (-not $Gui) {
     $qemuArgs += @("-device", "virtio-gpu-pci", "-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci", "-serial", "stdio")
 }
 
-& $qemu $qemuArgs
+if ($LogFile -ne "") {
+    Write-Host "==> Logging console output to: $LogFile" -ForegroundColor Cyan
+    & $qemu $qemuArgs 2>&1 | Tee-Object -FilePath $LogFile
+} else {
+    & $qemu $qemuArgs
+}

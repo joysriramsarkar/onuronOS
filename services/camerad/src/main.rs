@@ -24,6 +24,49 @@ pub struct CameraDevice {
     pub torch_active: bool,
     pub preview_active: bool,
     pub supported_formats: Vec<String>,
+    pub sensor_name: String,
+    pub device_node: String,
+}
+
+/// Discover Linux V4L2 sensors from a sysfs directory (e.g. `/sys/class/video4linux`).
+pub fn discover_v4l2_sensors(v4l_dir: &Path) -> Vec<CameraDevice> {
+    let mut devices = Vec::new();
+    if v4l_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(v4l_dir) {
+            let mut entries_vec: Vec<_> = entries.flatten().collect();
+            entries_vec.sort_by_key(|e| e.file_name());
+
+            let mut idx = 0;
+            for entry in entries_vec {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("video") {
+                    let name_file = entry.path().join("name");
+                    let sensor_name = fs::read_to_string(&name_file)
+                        .unwrap_or_else(|_| "Generic V4L2 Device".to_string())
+                        .trim()
+                        .to_string();
+                    let dev_node = format!("/dev/{}", name);
+
+                    let is_front = sensor_name.to_lowercase().contains("front")
+                        || sensor_name.to_lowercase().contains("selfie")
+                        || idx > 0;
+
+                    devices.push(CameraDevice {
+                        id: idx,
+                        facing: if is_front { "front".to_string() } else { "back".to_string() },
+                        resolution: if is_front { "1920x1080".to_string() } else { "4032x3024".to_string() },
+                        torch_active: false,
+                        preview_active: false,
+                        supported_formats: vec!["JPEG".to_string(), "RGBA8888".to_string(), "NV12".to_string()],
+                        sensor_name,
+                        device_node: dev_node,
+                    });
+                    idx += 1;
+                }
+            }
+        }
+    }
+    devices
 }
 
 #[derive(Debug, Clone)]
@@ -52,27 +95,7 @@ impl CameraManager {
     /// Scan Linux `/dev/video*` and `/sys/class/video4linux/` for camera devices.
     pub fn detect_hardware_cameras() -> (bool, Vec<CameraDevice>) {
         let v4l_dir = Path::new("/sys/class/video4linux");
-        let mut devices = Vec::new();
-
-        if v4l_dir.is_dir() {
-            if let Ok(entries) = fs::read_dir(v4l_dir) {
-                let mut idx = 0;
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if name.starts_with("video") {
-                        devices.push(CameraDevice {
-                            id: idx,
-                            facing: if idx == 0 { "back".to_string() } else { "front".to_string() },
-                            resolution: "1920x1080".to_string(),
-                            torch_active: false,
-                            preview_active: false,
-                            supported_formats: vec!["JPEG".to_string(), "RGBA8888".to_string(), "NV12".to_string()],
-                        });
-                        idx += 1;
-                    }
-                }
-            }
-        }
+        let devices = discover_v4l2_sensors(v4l_dir);
 
         if !devices.is_empty() {
             return (true, devices);
@@ -87,6 +110,8 @@ impl CameraManager {
                 torch_active: false,
                 preview_active: false,
                 supported_formats: vec!["JPEG".to_string(), "RGBA8888".to_string()],
+                sensor_name: "Sony IMX586 (Primary Back)".to_string(),
+                device_node: "/dev/video0".to_string(),
             },
             CameraDevice {
                 id: 1,
@@ -95,6 +120,8 @@ impl CameraManager {
                 torch_active: false,
                 preview_active: false,
                 supported_formats: vec!["JPEG".to_string(), "RGBA8888".to_string()],
+                sensor_name: "Samsung S5K3T1 (Front Selfie)".to_string(),
+                device_node: "/dev/video1".to_string(),
             },
         ];
         (false, fallback_devs)
@@ -351,4 +378,29 @@ mod tests {
         let info = resp.parse_json::<CameraInfoPayload>().unwrap();
         assert_eq!(info.camera_id, 0);
     }
+
+    #[test]
+    fn test_discover_v4l2_sensors() {
+        let tmp = std::env::temp_dir().join("camerad_test_v4l2");
+        let v0 = tmp.join("video0");
+        let v1 = tmp.join("video1");
+        let _ = fs::create_dir_all(&v0);
+        let _ = fs::create_dir_all(&v1);
+
+        let _ = fs::write(v0.join("name"), "Qualcomm Spectra ISP Back\n");
+        let _ = fs::write(v1.join("name"), "Qualcomm Spectra Front Selfie\n");
+
+        let devs = discover_v4l2_sensors(&tmp);
+        assert_eq!(devs.len(), 2);
+        assert_eq!(devs[0].facing, "back");
+        assert_eq!(devs[0].sensor_name, "Qualcomm Spectra ISP Back");
+        assert_eq!(devs[0].device_node, "/dev/video0");
+
+        assert_eq!(devs[1].facing, "front");
+        assert_eq!(devs[1].sensor_name, "Qualcomm Spectra Front Selfie");
+        assert_eq!(devs[1].device_node, "/dev/video1");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
 }
+

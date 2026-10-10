@@ -38,18 +38,18 @@ if not cargo:
     sys.exit(1)
 
 try:
-    target_arg = []
     if NORM_ARCH == "aarch64":
-        # Check if aarch64 target is installed
-        target_check = subprocess.run([cargo, "build", "--release", "--workspace", "--target", "aarch64-unknown-linux-musl"],
-                                      cwd=TOP, capture_output=True, text=True)
-        if target_check.returncode == 0:
-            print("[OK] Compiled for aarch64-unknown-linux-musl")
-        else:
-            print("[WARN] aarch64-unknown-linux-musl target not installed; compiling default release workspace")
-            subprocess.run([cargo, "build", "--release", "--workspace"], cwd=TOP, check=True)
+        print("==> Compiling for aarch64-unknown-linux-musl...")
+        subprocess.run([cargo, "build", "--release", "--workspace", "--target", "aarch64-unknown-linux-musl"],
+                       cwd=TOP, check=True)
+        print("[OK] Compiled for aarch64-unknown-linux-musl")
     else:
-        subprocess.run([cargo, "build", "--release", "--workspace"], cwd=TOP, check=True)
+        # For x86_64 target
+        target_triple = "x86_64-unknown-linux-musl"
+        res = subprocess.run([cargo, "build", "--release", "--workspace", "--target", target_triple], cwd=TOP)
+        if res.returncode != 0:
+            print(f"[INFO] Compiling default release workspace for {TARGET}...")
+            subprocess.run([cargo, "build", "--release", "--workspace"], cwd=TOP, check=True)
     print("[OK] Rust crates compiled successfully.")
 except subprocess.CalledProcessError as e:
     print(f"[ERROR] Cargo workspace compilation failed with exit code {e.returncode}")

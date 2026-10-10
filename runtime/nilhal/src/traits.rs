@@ -9,6 +9,12 @@ pub enum HalError {
     UnsupportedOperation(String),
     BridgeError(String),
     IoError(String),
+    Timeout(String),
+    InvalidArgument(String),
+    BackendUnavailable(String),
+    ProtocolError(String),
+    NotReady(String),
+    Cancelled(String),
 }
 
 impl std::fmt::Display for HalError {
@@ -20,6 +26,12 @@ impl std::fmt::Display for HalError {
             HalError::UnsupportedOperation(s) => write!(f, "Unsupported operation: {}", s),
             HalError::BridgeError(s) => write!(f, "Host bridge error: {}", s),
             HalError::IoError(s) => write!(f, "I/O error: {}", s),
+            HalError::Timeout(s) => write!(f, "Timeout: {}", s),
+            HalError::InvalidArgument(s) => write!(f, "Invalid argument: {}", s),
+            HalError::BackendUnavailable(s) => write!(f, "Backend unavailable: {}", s),
+            HalError::ProtocolError(s) => write!(f, "Protocol error: {}", s),
+            HalError::NotReady(s) => write!(f, "Not ready: {}", s),
+            HalError::Cancelled(s) => write!(f, "Cancelled: {}", s),
         }
     }
 }

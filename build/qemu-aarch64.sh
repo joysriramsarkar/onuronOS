@@ -15,19 +15,25 @@ NO_NET=0
 MEM="1024"
 SMP="2"
 CPU="cortex-a57"
+LOG_FILE=""
 
-for arg in "$@"; do
-    case "$arg" in
-        --gui)          HEADLESS=0 ;;
-        --headless)     HEADLESS=1 ;;
-        --no-rebuild)   NO_REBUILD=0 ;;
-        --no-disk)      NO_DISK=1 ;;
-        --no-net)       NO_NET=1 ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --gui)          HEADLESS=0; shift ;;
+        --headless)     HEADLESS=1; shift ;;
+        --no-rebuild)   NO_REBUILD=1; shift ;;
+        --no-disk)      NO_DISK=1; shift ;;
+        --no-net)       NO_NET=1; shift ;;
+        --log)          LOG_FILE="$2"; shift 2 ;;
+        --log=*)        LOG_FILE="${1#*=}"; shift ;;
+        --cpu)          CPU="$2"; shift 2 ;;
+        --mem)          MEM="$2"; shift 2 ;;
+        --smp)          SMP="$2"; shift 2 ;;
         -h|--help)
-            echo "Usage: $0 [--gui] [--headless] [--no-rebuild] [--no-disk] [--no-net]"
+            echo "Usage: $0 [--gui] [--headless] [--no-rebuild] [--no-disk] [--no-net] [--log <file>] [--cpu <cpu>] [--mem <mb>] [--smp <cores>]"
             exit 0
             ;;
-        *) echo "Error: unknown option: $arg" >&2; exit 2 ;;
+        *) echo "Error: unknown option: $1" >&2; exit 2 ;;
     esac
 done
 
@@ -44,19 +50,20 @@ fi
 echo "[OK] QEMU binary: $(command -v qemu-system-aarch64)"
 
 # 2. Build or verify aarch64 initramfs and kernel
-if [ "$NO_REBUILD" -eq 0 ] && ([ ! -f "$KERNEL" ] || [ ! -f "$INITRD" ]); then
-    echo "==> Preparing ARM64 kernel & initramfs..."
-    python3 "$TOP/build/mkinitramfs.py" --arch aarch64
+if [ "$NO_REBUILD" -eq 0 ]; then
+    if [ ! -f "$KERNEL" ] || [ ! -f "$INITRD" ]; then
+        echo "==> Preparing ARM64 kernel & initramfs..."
+        python3 "$TOP/build/mkinitramfs.py" --arch aarch64
+    fi
 fi
 
 [ -f "$KERNEL" ] || { echo "Error: ARM64 kernel missing at $KERNEL" >&2; exit 1; }
 [ -f "$INITRD" ] || { echo "Error: ARM64 initramfs missing at $INITRD" >&2; exit 1; }
 
-# 3. Create persistent disk if requested
+# 3. Create persistent disk with real filesystem format if requested
 if [ "$NO_DISK" -eq 0 ] && [ ! -f "$DISK" ]; then
-    echo "==> Creating 512MB data disk image at $DISK..."
-    mkdir -p "$OUT"
-    truncate -s 512M "$DISK"
+    echo "==> Formatting 512MB ext4 data partition at $DISK using mkdisk.py..."
+    python3 "$TOP/build/mkdisk.py" --output "$DISK" --size-mb 512
 fi
 
 echo "==> Launching OnuronOS aarch64 virt machine..."
@@ -105,4 +112,9 @@ else
     )
 fi
 
-exec qemu-system-aarch64 "${QEMU_ARGS[@]}"
+if [ -n "$LOG_FILE" ]; then
+    echo "==> Logging console output to: $LOG_FILE"
+    exec qemu-system-aarch64 "${QEMU_ARGS[@]}" 2>&1 | tee "$LOG_FILE"
+else
+    exec qemu-system-aarch64 "${QEMU_ARGS[@]}"
+fi

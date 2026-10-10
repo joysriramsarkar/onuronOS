@@ -51,6 +51,53 @@ impl AudioRoute {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlsaPcmDevice {
+    pub card: u32,
+    pub device: u32,
+    pub name: String,
+    pub is_playback: bool,
+    pub is_capture: bool,
+}
+
+pub fn parse_asound_pcm(content: &str) -> Vec<AlsaPcmDevice> {
+    let mut devices = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = line.split(':').collect();
+        if parts.is_empty() {
+            continue;
+        }
+        let id_part = parts[0].trim();
+        let card_dev: Vec<&str> = id_part.split('-').collect();
+        if card_dev.len() != 2 {
+            continue;
+        }
+        let card = card_dev[0].parse::<u32>().unwrap_or(0);
+        let device = card_dev[1].parse::<u32>().unwrap_or(0);
+        let name = if parts.len() > 1 {
+            parts[1].trim().to_string()
+        } else {
+            "Unknown PCM".to_string()
+        };
+
+        let is_playback = line.contains("playback");
+        let is_capture = line.contains("capture");
+
+        devices.push(AlsaPcmDevice {
+            card,
+            device,
+            name,
+            is_playback,
+            is_capture,
+        });
+    }
+    devices
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioServer {
     pub volume: u8,
     pub is_muted: bool,
@@ -58,6 +105,7 @@ pub struct AudioServer {
     pub active_stream: Option<AudioStreamType>,
     pub ducked: bool,
     pub hardware_detected: bool,
+    pub alsa_devices: Vec<AlsaPcmDevice>,
 }
 
 impl Default for AudioServer {
@@ -68,7 +116,7 @@ impl Default for AudioServer {
 
 impl AudioServer {
     pub fn new() -> Self {
-        let (found, default_sink) = Self::detect_audio_hardware();
+        let (found, default_sink, alsa_devices) = Self::detect_audio_hardware();
         Self {
             volume: 75,
             is_muted: false,
@@ -76,20 +124,31 @@ impl AudioServer {
             active_stream: None,
             ducked: false,
             hardware_detected: found,
+            alsa_devices,
         }
     }
 
-    /// Detect Linux ALSA sound cards via `/proc/asound/cards` and `/dev/snd/`.
-    pub fn detect_audio_hardware() -> (bool, AudioRoute) {
-        let asound_cards = Path::new("/proc/asound/cards");
-        if asound_cards.is_file() {
-            if let Ok(content) = fs::read_to_string(asound_cards) {
-                if !content.trim().is_empty() {
-                    return (true, AudioRoute::Speaker);
-                }
+    /// Detect Linux ALSA sound cards via `/proc/asound/cards`, `/proc/asound/pcm`, and `/dev/snd/`.
+    pub fn detect_audio_hardware() -> (bool, AudioRoute, Vec<AlsaPcmDevice>) {
+        let mut devices = Vec::new();
+        let asound_pcm = Path::new("/proc/asound/pcm");
+        if asound_pcm.is_file() {
+            if let Ok(content) = fs::read_to_string(asound_pcm) {
+                devices = parse_asound_pcm(&content);
             }
         }
-        (false, AudioRoute::Speaker)
+
+        let asound_cards = Path::new("/proc/asound/cards");
+        let has_cards = if asound_cards.is_file() {
+            fs::read_to_string(asound_cards)
+                .map(|c| !c.trim().is_empty())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        let found = has_cards || !devices.is_empty();
+        (found, AudioRoute::Speaker, devices)
     }
 
     pub fn set_volume(&mut self, volume: u8) {
@@ -321,4 +380,36 @@ mod tests {
         server.release_stream_focus(AudioStreamType::Notification);
         assert_eq!(server.effective_volume(), 80);
     }
+
+    #[test]
+    fn test_parse_asound_pcm() {
+        let sample_proc = r#"
+00-00: ALC892 Analog : ALC892 Analog : playback 1 : capture 1
+00-01: ALC892 Digital : ALC892 Digital : playback 1
+00-03: HDMI 0 : HDMI 0 : playback 1
+"#;
+        let devices = parse_asound_pcm(sample_proc);
+        assert_eq!(devices.len(), 3);
+        assert_eq!(devices[0].card, 0);
+        assert_eq!(devices[0].device, 0);
+        assert_eq!(devices[0].name, "ALC892 Analog");
+        assert!(devices[0].is_playback);
+        assert!(devices[0].is_capture);
+
+        assert_eq!(devices[1].device, 1);
+        assert!(devices[1].is_playback);
+        assert!(!devices[1].is_capture);
+
+        // Test mobile SDM845 WCD9340 ALSA PCM format
+        let mobile_proc = r#"
+00-00: MultiMedia1 (*) : : playback 1 : capture 1
+00-01: MultiMedia2 (*) : : playback 1 : capture 1
+00-07: VoiceMMode1 (*) : : playback 1 : capture 1
+"#;
+        let mobile_devs = parse_asound_pcm(mobile_proc);
+        assert_eq!(mobile_devs.len(), 3);
+        assert_eq!(mobile_devs[2].device, 7);
+        assert_eq!(mobile_devs[2].name, "VoiceMMode1 (*)");
+    }
 }
+

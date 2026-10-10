@@ -1,0 +1,17 @@
+{
+  "target": "qemu-x86_64",
+  "pid1": "nilinit",
+  "core_services": [
+    "nild",
+    "nilkeyd",
+    "nilbus",
+    "netd",
+    "audiod",
+    "powerd",
+    "nilshell"
+  ],
+  "active_count": 7,
+  "required_count": 7,
+  "all_healthy": true,
+  "health_check_method": "live process supervision and readiness probe"
+}

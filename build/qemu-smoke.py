@@ -14,25 +14,64 @@ import time
 
 TOP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(TOP, "out", "x86_64-generic")
-DEFAULT_KERNEL = os.path.join(OUT, "vmlinuz-lts")
-DEFAULT_INITRD = os.path.join(OUT, "nilos-initramfs.cpio.gz")
+ARCH_DEFAULTS = {
+    "x86_64": {
+        "qemu_bin": "qemu-system-x86_64",
+        "kernel": os.path.join(TOP, "out", "x86_64-generic", "vmlinuz-lts"),
+        "initrd": os.path.join(TOP, "out", "x86_64-generic", "nilos-initramfs.cpio.gz"),
+        "disk": os.path.join(TOP, "out", "x86_64-generic", "nilos.img"),
+    },
+    "aarch64": {
+        "qemu_bin": "qemu-system-aarch64",
+        "kernel": os.path.join(TOP, "out", "aarch64-qemu", "vmlinuz-lts"),
+        "initrd": os.path.join(TOP, "out", "aarch64-qemu", "initramfs.cpio.gz"),
+        "disk": os.path.join(TOP, "out", "aarch64-qemu", "data.img"),
+    },
+}
+
+DEFAULT_KERNEL = ARCH_DEFAULTS["x86_64"]["kernel"]
+DEFAULT_INITRD = ARCH_DEFAULTS["x86_64"]["initrd"]
 
 
-def build_qemu_cmd(qemu_bin, kernel_path, initrd_path, memory_mb=1024, smp=2):
-    """Builds the argument list for headless QEMU execution."""
-    return [
-        qemu_bin,
-        "-m", str(memory_mb),
-        "-smp", str(smp),
-        "-kernel", kernel_path,
-        "-initrd", initrd_path,
-        "-append", "console=ttyS0 init=/init panic=-1",
-        "-display", "none",
-        "-monitor", "none",
-        "-serial", "stdio",
-        "-no-reboot",
-        "-no-shutdown",
-    ]
+def build_qemu_cmd(qemu_bin, kernel_path, initrd_path, memory_mb=1024, smp=2, arch="x86_64", data_disk=None):
+    """Builds the argument list for headless QEMU execution across architectures."""
+    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else "x86_64"
+    if norm_arch == "aarch64":
+        cmd = [
+            qemu_bin,
+            "-M", "virt",
+            "-cpu", "cortex-a57",
+            "-m", str(memory_mb),
+            "-smp", str(smp),
+            "-kernel", kernel_path,
+            "-initrd", initrd_path,
+            "-append", "console=ttyAMA0 earlycon root=/dev/ram0 rdinit=/init panic=-1 rw",
+            "-display", "none",
+            "-monitor", "none",
+            "-serial", "stdio",
+            "-no-reboot",
+            "-no-shutdown",
+        ]
+    else:
+        cmd = [
+            qemu_bin,
+            "-m", str(memory_mb),
+            "-smp", str(smp),
+            "-kernel", kernel_path,
+            "-initrd", initrd_path,
+            "-append", "console=ttyS0 init=/init panic=-1",
+            "-display", "none",
+            "-monitor", "none",
+            "-serial", "stdio",
+            "-no-reboot",
+            "-no-shutdown",
+        ]
+    if data_disk and os.path.exists(data_disk):
+        cmd += [
+            "-drive", f"file={data_disk},format=raw,if=none,id=vda_disk,cache=writeback",
+            "-device", "virtio-blk-pci,drive=vda_disk,id=vda"
+        ]
+    return cmd
 
 
 def check_boot_log(log_text):
@@ -56,16 +95,23 @@ def check_boot_log(log_text):
     return ("IN_PROGRESS", "")
 
 
-def run_smoke_test(kernel, initrd, timeout_secs=90, allow_skip=False):
-    qemu_bin = shutil.which("qemu-system-x86_64")
+def run_smoke_test(kernel=None, initrd=None, timeout_secs=90, allow_skip=False, arch="x86_64", data_disk=None):
+    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else "x86_64"
+    defaults = ARCH_DEFAULTS.get(norm_arch, ARCH_DEFAULTS["x86_64"])
+    k_path = kernel or defaults["kernel"]
+    i_path = initrd or defaults["initrd"]
+    d_path = data_disk or (defaults["disk"] if os.path.exists(defaults["disk"]) else None)
+
+    qemu_bin_name = defaults["qemu_bin"]
+    qemu_bin = shutil.which(qemu_bin_name)
     if not qemu_bin:
-        msg = "qemu-system-x86_64 not found in PATH"
+        msg = f"{qemu_bin_name} not found in PATH"
         if allow_skip:
             print(f"[SKIP] {msg}")
             return True
         raise RuntimeError(msg)
 
-    for path in (kernel, initrd):
+    for path in (k_path, i_path):
         if not os.path.isfile(path):
             msg = f"Required image missing: {path}"
             if allow_skip:
@@ -73,12 +119,14 @@ def run_smoke_test(kernel, initrd, timeout_secs=90, allow_skip=False):
                 return True
             raise RuntimeError(msg)
 
-    print(f"[qemu-smoke] Launching QEMU headless smoke test (timeout: {timeout_secs}s)...")
-    print(f"             Kernel: {kernel}")
-    print(f"             Initrd: {initrd}")
+    print(f"[qemu-smoke] Launching QEMU headless smoke test ({norm_arch}, timeout: {timeout_secs}s)...")
+    print(f"             Kernel: {k_path}")
+    print(f"             Initrd: {i_path}")
+    if d_path:
+        print(f"             Disk:   {d_path}")
 
     with tempfile.TemporaryFile(mode="w+b") as output:
-        cmd = build_qemu_cmd(qemu_bin, kernel, initrd)
+        cmd = build_qemu_cmd(qemu_bin, k_path, i_path, arch=norm_arch, data_disk=d_path)
         proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT)
         deadline = time.monotonic() + timeout_secs
 
@@ -93,7 +141,7 @@ def run_smoke_test(kernel, initrd, timeout_secs=90, allow_skip=False):
                 if status == "PANIC":
                     raise RuntimeError(f"Kernel boot failure: {details}")
                 if status == "SUCCESS":
-                    print(f"\x1b[1;32m[qemu-smoke] [ PASS ] {details}\x1b[0m")
+                    print(f"\x1b[1;32m[qemu-smoke] [ PASS ] ({norm_arch}) {details}\x1b[0m")
                     return True
 
             output.seek(0)
@@ -111,13 +159,16 @@ def run_smoke_test(kernel, initrd, timeout_secs=90, allow_skip=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Headless QEMU boot smoke test harness")
-    parser.add_argument("--kernel", default=DEFAULT_KERNEL, help="Path to vmlinuz-lts")
-    parser.add_argument("--initrd", default=DEFAULT_INITRD, help="Path to nilos-initramfs.cpio.gz")
+    parser.add_argument("--arch", choices=["x86_64", "aarch64", "arm64"], default="x86_64",
+                        help="Target architecture (x86_64 or aarch64, default: x86_64)")
+    parser.add_argument("--kernel", default=None, help="Path to vmlinuz-lts")
+    parser.add_argument("--initrd", default=None, help="Path to initramfs")
+    parser.add_argument("--data-disk", default=None, help="Optional persistent data disk path")
     parser.add_argument("--timeout", type=int, default=90, help="Boot deadline in seconds")
     parser.add_argument("--allow-skip", action="store_true", help="Exit 0 if QEMU or images are missing")
     args = parser.parse_args()
 
-    run_smoke_test(args.kernel, args.initrd, args.timeout, args.allow_skip)
+    run_smoke_test(args.kernel, args.initrd, args.timeout, args.allow_skip, arch=args.arch, data_disk=args.data_disk)
 
 
 if __name__ == "__main__":
@@ -126,3 +177,4 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)
+

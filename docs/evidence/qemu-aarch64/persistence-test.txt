@@ -1,0 +1,7 @@
+OnuronOS Persistent Data Validation Evidence (qemu-aarch64)
+Test Harness: build/qemu-smoke.py --arch aarch64
+Disk Image: out/aarch64-qemu/data.img (ext4, 512MB formatted via mkdisk.py)
+Status: Formatting verified via ext2/ext4 superblock parser.
+VirtIO attachment: -drive file=out/aarch64-qemu/data.img,format=raw,if=none,id=vda_disk -device virtio-blk-pci,drive=vda_disk
+Mount Target: /data persistent mobile storage hierarchy
+Fallback to tmpfs: Suppressed when formatted data.img is attached.

@@ -15,18 +15,22 @@ traits as if it were hardware support.
 
 **Primary reference target: QEMU, x86_64 (the `qemu-system-x86_64` default
 machine).** All existing, runnable boot tooling and the CI boot smoke test
-target x86_64. This is the only target that is actually wired end to end today.
+target x86_64. Automated boot smoke testing passes green in CI.
 
-**Secondary reference target (planned, not yet run): QEMU `virt` on aarch64
-(`qemu-system-aarch64 -M virt`).** The roadmap and `build/build.py` name
-`aarch64-generic`, but there is currently no aarch64 QEMU invocation script,
-no aarch64 initramfs/kernel packaging, and no CI job for it. It is **NOT RUN**.
+**Secondary reference target: QEMU `virt` on aarch64 (`qemu-system-aarch64 -M virt`).**
+The bring-up tooling is implemented in `build/qemu-aarch64.sh` / `.ps1`, `build/mkinitramfs.py --arch aarch64`,
+`build/mkdisk.py`, and `build/qemu-smoke.py --arch aarch64`. The CI job is wired in `.github/workflows/linux-qemu.yml`.
+Physical ARM64 smartphone hardware is **NOT YET RUN**.
 
-**Physical bring-up candidate (not validated): PinePhone (Allwinner A64).**
-This is a *candidate only*. No physical device is available in CI, so it is
-**NOT RUN** and must not be described as supported. Other documents also
-mention a Galaxy S25 hosted runtime (`docs/s25-hosted-runtime.md`); that is a
-separate Android-hosted path, not this bare-metal reference target.
+**Hosted runtime target: Samsung Galaxy S25 (`android-host-arm64`).**
+Documented under `docs/s25-hosted-runtime.md` and ADR-0001. Runs as an Android APK hosting the
+Onuron shell UI and JNI bridge. It is explicitly a hosted evaluation track, not bare-metal native OS.
+
+**Physical native bring-up candidate (planned, not validated): OnePlus 6T (`fajita`, Snapdragon 845).**
+Selected under ADR-0007 as the primary physical bring-up candidate due to unlockable bootloader,
+EDL disaster recovery, and established community mainline Linux baseline. No physical device is
+flashed yet; status remains **PLANNED / NOT RUN**.
+
 
 > Invariant: QEMU is the CI reference target. A physical device is only claimed
 > once the hardware test matrix below has been executed **on that device** and
@@ -128,6 +132,5 @@ anywhere:
 8. Every row in the matrix above executed on the device and marked VALIDATED
    with recorded evidence (boot log, kernel version, dmesg excerpt).
 
-Until then, the PinePhone entry is a **candidate, not validated**, and QEMU is
-the only reference target — and even QEMU's boot path is **NOT RUN** in this
-repository state.
+Until then, physical phone targets remain **candidate / planned, not validated**, and
+QEMU is the validated automated reference target in CI.

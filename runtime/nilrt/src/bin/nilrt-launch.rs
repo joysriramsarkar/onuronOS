@@ -67,9 +67,12 @@ fn granted_permissions(
 /// Deterministically map an app ID to an isolated per-app UID/GID in the range [10000..29999].
 /// Checks against persisted/active UIDs in a registry to prevent hash collisions.
 pub fn allocate_app_uid_with_registry(app_id: &str, registry_path: Option<&Path>) -> u32 {
-    if let Ok(override_uid) = env::var("NIL_APP_UID") {
-        if let Ok(uid) = override_uid.parse::<u32>() {
-            return uid;
+    // Only permit developer UID override in test/debug mode to prevent privilege boundary bypass in production
+    if cfg!(debug_assertions) || env::var("NIL_TEST_MODE").map(|v| v == "1").unwrap_or(false) {
+        if let Ok(override_uid) = env::var("NIL_APP_UID") {
+            if let Ok(uid) = override_uid.parse::<u32>() {
+                return uid;
+            }
         }
     }
 
@@ -106,7 +109,10 @@ pub fn allocate_app_uid_with_registry(app_id: &str, registry_path: Option<&Path>
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(json) = serde_json::to_string_pretty(&uids_map) {
-            let _ = std::fs::write(path, json);
+            let tmp_path = path.with_extension(format!("tmp.{}", std::process::id()));
+            if std::fs::write(&tmp_path, json).is_ok() {
+                let _ = std::fs::rename(&tmp_path, path);
+            }
         }
     }
 
@@ -239,7 +245,7 @@ fn main() {
 
     let result = if let Some(target) = installed_binary {
         let is_nib = target.extension().and_then(|s| s.to_str()) == Some("nib")
-            || std::fs::read(&target).map(|bytes| bytes.starts_with(b"NIB1")).unwrap_or(false);
+            || std::fs::read(&target).map(|bytes| bytes.starts_with(b"NILB") || bytes.starts_with(b"NIB1") || bytes.starts_with(br#"{"magic""#)).unwrap_or(false);
 
         if is_nib {
             println!("[nilrt-launch] Executing compiled NilLang bytecode via nilc runtime engine");

@@ -9,11 +9,12 @@
 > extraction), a supervised init with a recovery path, a namespace sandbox with
 > a permission model, peer-credential IPC authorization, fscrypt-based
 > encryption at rest, signed A/B system updates, a deterministic initramfs
-> build, and a working UI shell. Its `cargo test --workspace` suite is green on
-> the Windows dev host, but **no Linux/QEMU run has been recorded** and no row
-> of the hardware matrix is validated. It is **not** a complete operating
-> system. This plan orders the remaining work by risk and dependency so that
-> each phase produces a verifiable improvement rather than a claim.
+> build, and a working UI shell. The x86_64 Linux musl CI suite and automated
+> QEMU boot smoke test are **VALIDATED GREEN IN CI**, and the ARM64 QEMU matrix
+> job is configured. Physical phone targets remain **PLANNED / NOT RUN** without
+> hardware evidence. This plan orders the remaining work by risk and dependency so
+> that each phase produces a verifiable improvement rather than a claim.
+
 
 ---
 

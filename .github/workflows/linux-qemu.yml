@@ -47,3 +47,39 @@ jobs:
       - name: QEMU boot smoke test
         timeout-minutes: 3
         run: python3 build/qemu-smoke.py
+
+  aarch64-qemu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu qemu-system-arm python3 e2fsprogs
+      - name: Configure cross-linker
+        run: |
+          mkdir -p .cargo
+          cat << 'EOF' >> .cargo/config.toml
+          [target.aarch64-unknown-linux-musl]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+      - name: Build ARM64 musl binaries
+        run: cargo build --release --workspace --target aarch64-unknown-linux-musl
+      - name: Package ARM64 initramfs & verify kernel checksum
+        run: python3 build/mkinitramfs.py --arch aarch64
+      - name: Format persistent ext4 data disk
+        run: python3 build/mkdisk.py --output out/aarch64-qemu/data.img --size-mb 512
+      - name: QEMU ARM64 boot smoke test
+        timeout-minutes: 3
+        run: python3 build/qemu-smoke.py --arch aarch64
+      - name: Upload ARM64 build manifest artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aarch64-qemu-manifest
+          path: |
+            out/aarch64-qemu/manifest.json
+            out/aarch64-qemu/checksums.txt
+

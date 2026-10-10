@@ -29,7 +29,20 @@ public class NativeBridge {
         }
     }
 
+    public static int getProtocolVersion() {
+        if (isNativeLoaded) {
+            try {
+                return nativeGetProtocolVersion();
+            } catch (Throwable t) {
+                Log.w(TAG, "nativeGetProtocolVersion failed", t);
+                return 1;
+            }
+        }
+        return 0;
+    }
+
     public static void onSurfaceCreated(Surface surface) {
+
         if (isNativeLoaded) {
             try {
                 nativeSurfaceCreated(surface);
@@ -153,6 +166,7 @@ public class NativeBridge {
         return false;
     }
 
+    private static native int nativeGetProtocolVersion();
     private static native void nativeSurfaceCreated(Surface surface);
     private static native void nativeSurfaceChanged(Surface surface, int width, int height);
     private static native void nativeSurfaceDestroyed();
@@ -166,3 +180,4 @@ public class NativeBridge {
     private static native int nativeGetLatestFrame(int[] outPixels, int maxLen);
     private static native boolean nativePushHostEventJson(String json);
 }
+

@@ -1,5 +1,7 @@
 # Onuron OS on Samsung Galaxy S25: The Hosted Runtime Architecture
 
+> **Architectural Classification (Track B)**: Per [ADR-0001](adr/0001-native-os-vs-android-host.md) and [ADR-0007](adr/0007-first-native-reference-phone.md), the Samsung Galaxy S25 is **strictly Track B (Hosted Android Runtime via APK/NDK)**. It is **not** a bare-metal flash target (Track C reference target is OnePlus 6/6T `fajita` running mainline Linux LTS). Locked bootloaders, Samsung Knox, and proprietary firmware prevent native Linux LTS booting on retail S25 devices.
+>
 > **Strategic Principle**: Operating System independence is achieved through unified abstractions. We do not need a PinePhone to build real hardware integrations. The Samsung Galaxy S25 (Snapdragon 8 Elite) serves as our production-grade **Hardware Laboratory and Mobile Runtime**, while QEMU maintains pure bare-metal OS integrity.
 
 ---

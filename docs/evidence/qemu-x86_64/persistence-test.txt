@@ -1,0 +1,11 @@
+OnuronOS Persistent Data Validation Evidence (qemu-x86_64)
+Test Harness: build/persistent-data-test.py
+Filesystem: ext4 (mke2fs -t ext4 -L nilos-data)
+Tested Keys:
+  - config/oobe_done: true
+  - config/device.toml: Onuron Test Device
+  - config/pin.json: 100k-round SHA-256 salted PIN hash
+  - contacts/contacts.json: verified
+  - sms/threads.json: verified
+Result: PASS — byte-identical across disk image build and debugfs read-back.
+Mount verification in nilinit: Persistent storage mounted: /dev/vda -> /data

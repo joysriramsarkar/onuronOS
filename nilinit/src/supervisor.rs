@@ -102,6 +102,30 @@ impl Supervisor {
         }
     }
 
+    /// Checks whether the specified services are running AND their readiness socket/file (if specified) is present.
+    pub fn check_readiness<'a>(
+        &self,
+        service_probes: &[(&'a str, Option<&std::path::Path>)],
+    ) -> Result<(), Vec<&'a str>> {
+        let mut not_ready = Vec::new();
+        for &(name, sock_opt) in service_probes {
+            if !self.running.contains_key(name) {
+                not_ready.push(name);
+                continue;
+            }
+            if let Some(sock_path) = sock_opt {
+                if !sock_path.exists() {
+                    not_ready.push(name);
+                }
+            }
+        }
+        if not_ready.is_empty() {
+            Ok(())
+        } else {
+            Err(not_ready)
+        }
+    }
+
     /// Start every service that is not socket-activated.
     pub fn start_all(&mut self) {
         let specs: Vec<ServiceSpec> = self.services.clone();
@@ -496,5 +520,32 @@ mod tests {
         supervisor.shutdown();
         assert!(!supervisor.is_running("sleeper"));
         assert!(supervisor.check_core_health(&["sleeper"]).is_err());
+    }
+
+    #[test]
+    fn test_check_readiness_probe() {
+        let spec = sleeping_service();
+        let mut supervisor = Supervisor::new(vec![spec.clone()]);
+        supervisor.start_all();
+        assert!(supervisor.is_running("sleeper"));
+
+        // No socket required -> ready
+        assert!(supervisor.check_readiness(&[("sleeper", None)]).is_ok());
+
+        // Non-existent socket -> not ready
+        let fake_sock = std::path::Path::new("/nonexistent/test.sock");
+        let res = supervisor.check_readiness(&[("sleeper", Some(fake_sock))]);
+        assert!(res.is_err());
+        assert_eq!(res.unwrap_err(), vec!["sleeper"]);
+
+        // Existent file probe -> ready
+        let temp_dir = std::env::temp_dir().join(format!("nilinit_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let ready_file = temp_dir.join("service.ready");
+        std::fs::write(&ready_file, "ready").unwrap();
+        assert!(supervisor.check_readiness(&[("sleeper", Some(&ready_file))]).is_ok());
+        let _ = std::fs::remove_dir_all(&temp_dir);
+
+        supervisor.shutdown();
     }
 }

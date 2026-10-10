@@ -32,6 +32,27 @@ class QemuSmokeTests(unittest.TestCase):
         self.assertIn("-serial", cmd)
         self.assertIn("stdio", cmd)
 
+    def test_build_qemu_cmd_aarch64_structure(self):
+        cmd = qemu_smoke.build_qemu_cmd(
+            qemu_bin="qemu-system-aarch64",
+            kernel_path="/boot/vmlinuz-arm",
+            initrd_path="/boot/initrd-arm.cpio.gz",
+            memory_mb=1024,
+            smp=2,
+            arch="aarch64",
+        )
+        self.assertEqual(cmd[0], "qemu-system-aarch64")
+        self.assertIn("-M", cmd)
+        self.assertIn("virt", cmd)
+        self.assertIn("-cpu", cmd)
+        self.assertIn("cortex-a57", cmd)
+        self.assertIn("-kernel", cmd)
+        self.assertIn("/boot/vmlinuz-arm", cmd)
+        self.assertIn("-initrd", cmd)
+        self.assertIn("/boot/initrd-arm.cpio.gz", cmd)
+        self.assertIn("console=ttyAMA0 earlycon root=/dev/ram0 rdinit=/init panic=-1 rw", cmd)
+
+
     def test_check_boot_log_success(self):
         log = """
 [    0.000000] Linux version 6.6.110-0-lts

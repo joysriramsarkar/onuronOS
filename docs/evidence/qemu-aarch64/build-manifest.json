@@ -1,0 +1,20 @@
+{
+  "target": "qemu-aarch64",
+  "architecture": "aarch64",
+  "userspace_triple": "aarch64-unknown-linux-musl",
+  "kernel_arch": "aarch64",
+  "kernel": {
+    "file": "vmlinuz-lts",
+    "sha256": "014887a8047739213ce21090349c71f75c7edc0133efa03c840a2db8a354f9e1",
+    "source": "Alpine Linux 3.19 aarch64 netboot"
+  },
+  "initramfs": {
+    "file": "initramfs.cpio.gz",
+    "format": "SVR4 newc cpio.gz (mtime=0 reproducible)"
+  },
+  "qemu_machine": "virt",
+  "cpu_profile": "cortex-a57",
+  "storage": "VirtIO-blk-pci (data.img ext4 512MB)",
+  "verified_boot": "prototype-descriptor",
+  "ci_status": "configured"
+}

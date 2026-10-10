@@ -225,6 +225,56 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
+/// Process standard 3GPP Hayes AT commands (TS 27.007) against the telephony subsystem.
+pub fn process_at_command(manager: &mut TelephonyManager, command: &str) -> String {
+    let cmd = command.trim();
+    if cmd.eq_ignore_ascii_case("AT") {
+        return "OK\r\n".to_string();
+    }
+    if cmd.eq_ignore_ascii_case("AT+CPIN?") {
+        return if manager.sim_ready {
+            "+CPIN: READY\r\n\r\nOK\r\n".to_string()
+        } else {
+            "+CPIN: SIM PIN\r\n\r\nOK\r\n".to_string()
+        };
+    }
+    if cmd.eq_ignore_ascii_case("AT+CREG?") {
+        return "+CREG: 0,1\r\n\r\nOK\r\n".to_string();
+    }
+    if cmd.eq_ignore_ascii_case("AT+CSQ") {
+        let rssi = (manager.signal_bars as u32 * 31 / 4).min(31);
+        return format!("+CSQ: {},99\r\n\r\nOK\r\n", rssi);
+    }
+    if cmd.eq_ignore_ascii_case("AT+COPS?") {
+        return format!("+COPS: 0,0,\"{}\",7\r\n\r\nOK\r\n", manager.carrier);
+    }
+    if cmd.starts_with("ATD") && cmd.ends_with(';') {
+        let num = cmd[3..cmd.len() - 1].trim();
+        match manager.dial(num) {
+            Ok(_) => "OK\r\n".to_string(),
+            Err(e) => format!("+CME ERROR: {}\r\n", e),
+        }
+    } else if cmd.eq_ignore_ascii_case("ATH") {
+        if let Some(call) = manager.active_calls.first().cloned() {
+            let _ = manager.hangup(&call.call_id);
+        }
+        "OK\r\n".to_string()
+    } else if cmd.starts_with("AT+CMGS=") {
+        let parts: Vec<&str> = cmd.splitn(2, '=').collect();
+        if parts.len() == 2 {
+            let recip = parts[1].trim().trim_matches('"');
+            match manager.send_sms(recip, "AT Command SMS") {
+                Ok(sms) => format!("+CMGS: {}\r\n\r\nOK\r\n", sms.id),
+                Err(e) => format!("+CMS ERROR: {}\r\n", e),
+            }
+        } else {
+            "ERROR\r\n".to_string()
+        }
+    } else {
+        "ERROR\r\n".to_string()
+    }
+}
+
 /// Handle a single incoming client IPC frame.
 pub fn handle_client_frame(manager: &mut TelephonyManager, frame: &Frame) -> Frame {
     let msg_type = MessageType::from(frame.message_type);
@@ -434,4 +484,43 @@ mod tests {
         assert!(state.sim_ready);
         assert_eq!(state.signal_bars, 4);
     }
+
+    #[test]
+    fn test_process_at_command() {
+        let mut mgr = TelephonyManager::new();
+
+        // AT ping
+        assert_eq!(process_at_command(&mut mgr, "AT"), "OK\r\n");
+
+        // AT+CPIN?
+        assert_eq!(process_at_command(&mut mgr, "AT+CPIN?"), "+CPIN: READY\r\n\r\nOK\r\n");
+
+        // AT+CREG?
+        assert_eq!(process_at_command(&mut mgr, "AT+CREG?"), "+CREG: 0,1\r\n\r\nOK\r\n");
+
+        // AT+CSQ
+        let csq = process_at_command(&mut mgr, "AT+CSQ");
+        assert!(csq.starts_with("+CSQ:"));
+        assert!(csq.ends_with("OK\r\n"));
+
+        // AT+COPS?
+        let cops = process_at_command(&mut mgr, "AT+COPS?");
+        assert!(cops.contains("+COPS: 0,0,"));
+
+        // ATD dial
+        let dial_resp = process_at_command(&mut mgr, "ATD+18005550199;");
+        assert_eq!(dial_resp, "OK\r\n");
+        assert_eq!(mgr.active_calls.len(), 1);
+
+        // ATH hangup
+        let hangup_resp = process_at_command(&mut mgr, "ATH");
+        assert_eq!(hangup_resp, "OK\r\n");
+        assert_eq!(mgr.active_calls.len(), 0);
+
+        // AT+CMGS SMS
+        let sms_resp = process_at_command(&mut mgr, "AT+CMGS=\"+18005550199\"");
+        assert!(sms_resp.starts_with("+CMGS:"));
+        assert!(sms_resp.ends_with("OK\r\n"));
+    }
 }
+
