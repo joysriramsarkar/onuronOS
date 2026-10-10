@@ -7,6 +7,8 @@
 // - Preservation of machine-readable IDs, protocol values, and file paths
 // - Accessibility semantic roles and labels
 
+#![allow(dead_code)]
+
 /// Supported UI locales.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Locale {

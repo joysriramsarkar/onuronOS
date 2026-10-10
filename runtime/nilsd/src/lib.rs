@@ -70,8 +70,24 @@ pub fn notify_ready(service_name: &str, sock_path: Option<&str>) -> std::io::Res
         }
     }
 
-    let ready_dir = std::path::Path::new("/run/onuron/ready");
-    let _ = std::fs::create_dir_all(ready_dir);
+    let ready_dir = if let Ok(dir) = env::var("ONURON_READY_DIR") {
+        std::path::PathBuf::from(dir)
+    } else {
+        let default_run = std::path::Path::new("/run/onuron/ready");
+        if std::fs::create_dir_all(default_run).is_ok() {
+            default_run.to_path_buf()
+        } else if let Ok(xdg) = env::var("XDG_RUNTIME_DIR") {
+            let xdg_path = std::path::PathBuf::from(xdg).join("onuron/ready");
+            let _ = std::fs::create_dir_all(&xdg_path);
+            xdg_path
+        } else {
+            let tmp_path = std::path::PathBuf::from("/tmp/onuron/ready");
+            let _ = std::fs::create_dir_all(&tmp_path);
+            tmp_path
+        }
+    };
+
+    let _ = std::fs::create_dir_all(&ready_dir);
     let ready_file = ready_dir.join(service_name);
     let pid = std::process::id();
     let sock = sock_path.unwrap_or("");
@@ -80,7 +96,7 @@ pub fn notify_ready(service_name: &str, sock_path: Option<&str>) -> std::io::Res
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let content = format!("pid={}\nsocket={}\ntimestamp_secs={}\n", pid, sock, timestamp);
-    std::fs::write(ready_file, content)?;
+    let _ = std::fs::write(ready_file, content);
     Ok(())
 }
 
