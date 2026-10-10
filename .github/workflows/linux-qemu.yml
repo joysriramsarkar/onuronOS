@@ -38,6 +38,9 @@ jobs:
       - name: QEMU boot smoke test
         timeout-minutes: 3
         run: python3 build/qemu-smoke.py
+      - name: QEMU end-to-end reboot persistence test
+        timeout-minutes: 3
+        run: python3 build/qemu-persistence-test.py
 
   aarch64-qemu:
     runs-on: ubuntu-latest
@@ -59,18 +62,22 @@ jobs:
       - name: Build ARM64 musl binaries
         run: cargo build --release --workspace --target aarch64-unknown-linux-musl
       - name: Package ARM64 initramfs & verify kernel checksum
-        run: python3 build/mkinitramfs.py --arch aarch64
+        run: python3 build/mkinitramfs.py --target qemu-aarch64
       - name: Format persistent ext4 data disk
-        run: python3 build/mkdisk.py --output out/aarch64-qemu/data.img --size-mb 512
+        run: python3 build/mkdisk.py --target qemu-aarch64 --size-mb 512
       - name: QEMU ARM64 boot smoke test
         timeout-minutes: 3
-        run: python3 build/qemu-smoke.py --arch aarch64
+        run: python3 build/qemu-smoke.py --target qemu-aarch64
+      - name: QEMU ARM64 end-to-end reboot persistence test
+        timeout-minutes: 3
+        run: python3 build/qemu-persistence-test.py --target qemu-aarch64
       - name: Upload ARM64 build manifest artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: aarch64-qemu-manifest
           path: |
-            out/aarch64-qemu/manifest.json
-            out/aarch64-qemu/checksums.txt
+            out/qemu-aarch64/manifest.json
+            out/qemu-aarch64/checksums.txt
+
 

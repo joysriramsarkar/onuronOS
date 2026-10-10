@@ -1,13 +1,17 @@
 # build/flash-device.ps1 — Windows PowerShell Fastboot Flasher for OnuronOS Targets
 param (
-    [string]$Target = "aarch64-generic",
+    [string]$Target = "oneplus-fajita",
     [switch]$WipeUserdata,
     [switch]$ForceUnsupported,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [string]$Slot = ""
 )
 
 $TOP = Split-Path -Parent $PSScriptRoot
-$OUT = Join-Path $TOP "out\$Target"
+$ResolvedTarget = & python "$TOP\build\target_registry.py" resolve $Target 2>$null
+if (-not $ResolvedTarget) { $ResolvedTarget = $Target }
+$ResolvedOut = & python "$TOP\build\target_registry.py" output-dir $ResolvedTarget 2>$null
+if ($ResolvedOut) { $OUT = $ResolvedOut } else { $OUT = Join-Path $TOP "out\$ResolvedTarget" }
 
 Write-Host "=========================================================" -ForegroundColor Cyan
 Write-Host "       OnuronOS Safe Fastboot Flasher (Hardware Gate)    " -ForegroundColor Cyan
@@ -121,8 +125,8 @@ $bootImg = Join-Path $OUT "boot.img"
 $kernelPath = Join-Path $OUT "kernel"
 $initrdPath = Join-Path $OUT "initramfs.cpio.gz"
 if (-not (Test-Path $bootImg) -and (Test-Path $kernelPath) -and (Test-Path $initrdPath)) {
-    Write-Host "==> Packaging Android boot.img using build/mkbootimg.py..." -ForegroundColor Yellow
-    python (Join-Path $TOP "build\mkbootimg.py") create --kernel $kernelPath --ramdisk $initrdPath -o $bootImg
+    Write-Host "==> Packaging Android boot.img using build/mkbootimg.py with profile '$canonicalTarget'..." -ForegroundColor Yellow
+    python (Join-Path $TOP "build\mkbootimg.py") create --profile $canonicalTarget --kernel $kernelPath --ramdisk $initrdPath -o $bootImg
 }
 if (-not (Test-Path $bootImg)) {
     Write-Host "[ERROR] Boot image not found at $bootImg" -ForegroundColor Red
@@ -159,8 +163,57 @@ if (Test-Path $vbmetaImg) {
     $vbmetaHash = (Get-FileHash -Path $vbmetaImg -Algorithm SHA256).Hash.ToLower()
 }
 
+# Compare image digests with trusted checksums manifest if present
+$checksumsFile = Join-Path $OUT "checksums.txt"
+if (Test-Path $checksumsFile) {
+    Write-Host "==> Validating image hashes against trusted checksums ($checksumsFile)..." -ForegroundColor Yellow
+    $checksumLines = Get-Content $checksumsFile
+    function Verify-Checksum([string]$filePath, [string]$actualHash) {
+        $fileName = Split-Path $filePath -Leaf
+        foreach ($line in $checksumLines) {
+            if ($line -match "^\s*([0-9a-fA-F]{64})\s+\*?$([regex]::Escape($fileName))\s*$") {
+                $expected = $Matches[1].ToLower()
+                if ($actualHash -ne $expected) {
+                    Write-Host "[ERROR] Image digest mismatch for $fileName!" -ForegroundColor Red
+                    Write-Host "        Expected: $expected" -ForegroundColor Red
+                    Write-Host "        Actual:   $actualHash" -ForegroundColor Red
+                    exit 1
+                }
+                Write-Host "    [OK] Hash verified: $fileName -> $actualHash" -ForegroundColor Green
+                break
+            }
+        }
+    }
+    Verify-Checksum $bootImg $bootHash
+    Verify-Checksum $systemImg $sysHash
+    if (Test-Path $vbmetaImg) {
+        Verify-Checksum $vbmetaImg $vbmetaHash
+    }
+}
+
+# Resolve target A/B slot partition naming
+$targetSlot = if ($Slot) { $Slot } else { $deviceSlot }
+if ($canonicalTarget -eq "oneplus-fajita" -or $targetSlot) {
+    if ($targetSlot -eq "a" -or $targetSlot -eq "b") {
+        $bootPart = "boot_$targetSlot"
+        $sysPart = "system_$targetSlot"
+        $vbmetaPart = "vbmeta_$targetSlot"
+    } else {
+        $bootPart = "boot"
+        $sysPart = "system"
+        $vbmetaPart = "vbmeta"
+    }
+} else {
+    $bootPart = "boot"
+    $sysPart = "system"
+    $vbmetaPart = "vbmeta"
+}
+
 Write-Host "==> Target images validated (Preflight Integrity):" -ForegroundColor Green
 Write-Host "    Target:     $Target (canonical: $canonicalTarget)"
+if ($targetSlot) {
+    Write-Host "    Slot:       $targetSlot (partitions: $bootPart, $sysPart, $vbmetaPart)"
+}
 Write-Host "    Boot image: $bootImg (SHA-256: $bootHash)"
 Write-Host "    System:     $systemImg (SHA-256: $sysHash)"
 if (Test-Path $vbmetaImg) {
@@ -175,10 +228,10 @@ if ($WipeUserdata) {
 }
 
 Write-Host "==> Planned Fastboot Command Sequence:" -ForegroundColor Cyan
-Write-Host "    1. fastboot flash boot `"$bootImg`""
-Write-Host "    2. fastboot flash system `"$systemImg`""
+Write-Host "    1. fastboot flash $bootPart `"$bootImg`""
+Write-Host "    2. fastboot flash $sysPart `"$systemImg`""
 if (Test-Path $vbmetaImg) {
-    Write-Host "    3. fastboot flash vbmeta `"$vbmetaImg`""
+    Write-Host "    3. fastboot flash $vbmetaPart `"$vbmetaImg`""
 }
 if ($WipeUserdata) {
     Write-Host "    4. fastboot format userdata"
@@ -198,18 +251,18 @@ if ($confirm -ne "y" -and $confirm -ne "Y") {
     exit 0
 }
 
-Write-Host "==> Flashing boot partition..." -ForegroundColor Yellow
-fastboot flash boot $bootImg
-if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] Failed to flash boot partition" -ForegroundColor Red; exit 1 }
+Write-Host "==> Flashing boot partition ($bootPart)..." -ForegroundColor Yellow
+fastboot flash $bootPart $bootImg
+if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] Failed to flash $bootPart partition" -ForegroundColor Red; exit 1 }
 
-Write-Host "==> Flashing system partition..." -ForegroundColor Yellow
-fastboot flash system $systemImg
-if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] Failed to flash system partition" -ForegroundColor Red; exit 1 }
+Write-Host "==> Flashing system partition ($sysPart)..." -ForegroundColor Yellow
+fastboot flash $sysPart $systemImg
+if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] Failed to flash $sysPart partition" -ForegroundColor Red; exit 1 }
 
 if (Test-Path $vbmetaImg) {
-    Write-Host "==> Flashing verified boot vbmeta..." -ForegroundColor Yellow
-    fastboot flash vbmeta $vbmetaImg
-    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] Failed to flash vbmeta partition" -ForegroundColor Red; exit 1 }
+    Write-Host "==> Flashing verified boot vbmeta ($vbmetaPart)..." -ForegroundColor Yellow
+    fastboot flash $vbmetaPart $vbmetaImg
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ERROR] Failed to flash $vbmetaPart partition" -ForegroundColor Red; exit 1 }
 }
 
 if ($WipeUserdata) {

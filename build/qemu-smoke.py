@@ -12,23 +12,51 @@ import sys
 import tempfile
 import time
 
+try:
+    import target_registry
+except ImportError:
+    try:
+        from . import target_registry
+    except (ImportError, ValueError):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import target_registry
+
 TOP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(TOP, "out", "x86_64-generic")
+
+
+def _resolve_smoke_defaults(target_name):
+    canonical = target_registry.resolve_target(target_name, warn=False)
+    out_dir = target_registry.get_target_output_dir(canonical)
+    norm_arch = "aarch64" if canonical == "qemu-aarch64" else "x86_64"
+    qemu_bin = "qemu-system-aarch64" if norm_arch == "aarch64" else "qemu-system-x86_64"
+    initrd_name = "initramfs.cpio.gz" if norm_arch == "aarch64" else "nilos-initramfs.cpio.gz"
+    disk_name = "data.img" if norm_arch == "aarch64" else "nilos.img"
+
+    c_kernel = os.path.join(out_dir, "vmlinuz-lts")
+    c_initrd = os.path.join(out_dir, initrd_name)
+    c_disk = os.path.join(out_dir, disk_name)
+
+    legacy_dir = os.path.join(TOP, "out", "aarch64-qemu" if norm_arch == "aarch64" else "x86_64-generic")
+    kernel = c_kernel if os.path.exists(c_kernel) else os.path.join(legacy_dir, "vmlinuz-lts")
+    initrd = c_initrd if os.path.exists(c_initrd) else os.path.join(legacy_dir, initrd_name)
+    disk = c_disk if os.path.exists(c_disk) else os.path.join(legacy_dir, disk_name)
+
+    return {
+        "canonical_target": canonical,
+        "out_dir": out_dir,
+        "qemu_bin": qemu_bin,
+        "kernel": kernel,
+        "initrd": initrd,
+        "disk": disk,
+    }
+
+
 ARCH_DEFAULTS = {
-    "x86_64": {
-        "qemu_bin": "qemu-system-x86_64",
-        "kernel": os.path.join(TOP, "out", "x86_64-generic", "vmlinuz-lts"),
-        "initrd": os.path.join(TOP, "out", "x86_64-generic", "nilos-initramfs.cpio.gz"),
-        "disk": os.path.join(TOP, "out", "x86_64-generic", "nilos.img"),
-    },
-    "aarch64": {
-        "qemu_bin": "qemu-system-aarch64",
-        "kernel": os.path.join(TOP, "out", "aarch64-qemu", "vmlinuz-lts"),
-        "initrd": os.path.join(TOP, "out", "aarch64-qemu", "initramfs.cpio.gz"),
-        "disk": os.path.join(TOP, "out", "aarch64-qemu", "data.img"),
-    },
+    "x86_64": _resolve_smoke_defaults("qemu-x86_64"),
+    "aarch64": _resolve_smoke_defaults("qemu-aarch64"),
 }
 
+OUT = ARCH_DEFAULTS["x86_64"]["out_dir"]
 DEFAULT_KERNEL = ARCH_DEFAULTS["x86_64"]["kernel"]
 DEFAULT_INITRD = ARCH_DEFAULTS["x86_64"]["initrd"]
 
@@ -88,6 +116,8 @@ def check_boot_log(log_text):
         return ("PANIC", "Root filesystem mount failure observed")
     if "Onuron OS boot failed" in log_text:
         return ("PANIC", "Onuron OS PID 1 boot failed: core services not operational")
+    if "Onuron OS boot degraded" in log_text:
+        return ("PANIC", "Onuron OS PID 1 boot degraded: core service readiness incomplete")
     if "Onuron OS boot completed" in log_text:
         if "core services verified healthy" in log_text:
             return ("SUCCESS", "Onuron OS PID 1 boot completed with all core services verified healthy")
@@ -95,8 +125,10 @@ def check_boot_log(log_text):
     return ("IN_PROGRESS", "")
 
 
-def run_smoke_test(kernel=None, initrd=None, timeout_secs=90, allow_skip=False, arch="x86_64", data_disk=None):
-    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else "x86_64"
+def run_smoke_test(kernel=None, initrd=None, timeout_secs=90, allow_skip=False, arch="x86_64", data_disk=None, target=None):
+    target_name = target or arch
+    canonical = target_registry.resolve_target(target_name, warn=False)
+    norm_arch = "aarch64" if canonical == "qemu-aarch64" else "x86_64"
     defaults = ARCH_DEFAULTS.get(norm_arch, ARCH_DEFAULTS["x86_64"])
     k_path = kernel or defaults["kernel"]
     i_path = initrd or defaults["initrd"]
@@ -159,6 +191,7 @@ def run_smoke_test(kernel=None, initrd=None, timeout_secs=90, allow_skip=False, 
 
 def main():
     parser = argparse.ArgumentParser(description="Headless QEMU boot smoke test harness")
+    parser.add_argument("--target", default=None, help="Target profile name or alias (e.g. qemu-x86_64, qemu-aarch64)")
     parser.add_argument("--arch", choices=["x86_64", "aarch64", "arm64"], default="x86_64",
                         help="Target architecture (x86_64 or aarch64, default: x86_64)")
     parser.add_argument("--kernel", default=None, help="Path to vmlinuz-lts")
@@ -168,7 +201,7 @@ def main():
     parser.add_argument("--allow-skip", action="store_true", help="Exit 0 if QEMU or images are missing")
     args = parser.parse_args()
 
-    run_smoke_test(args.kernel, args.initrd, args.timeout, args.allow_skip, arch=args.arch, data_disk=args.data_disk)
+    run_smoke_test(args.kernel, args.initrd, args.timeout, args.allow_skip, arch=args.arch, data_disk=args.data_disk, target=args.target)
 
 
 if __name__ == "__main__":

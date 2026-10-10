@@ -157,6 +157,12 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
+    elif sys.argv[1] == "output-dir" and len(sys.argv) > 2:
+        try:
+            print(get_target_output_dir(sys.argv[2]))
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
     elif sys.argv[1] == "is-flashing-allowed" and len(sys.argv) > 2:
         try:
             allowed = is_flashing_allowed(sys.argv[2])
@@ -166,4 +172,4 @@ if __name__ == "__main__":
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(2)
     else:
-        print("Usage: target_registry.py [list | resolve <name> | info <name> | is-flashing-allowed <name>]")
+        print("Usage: target_registry.py [list | resolve <name> | output-dir <name> | info <name> | is-flashing-allowed <name>]")

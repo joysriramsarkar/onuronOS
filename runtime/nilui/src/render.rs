@@ -252,12 +252,51 @@ fn get_8x8_glyph(c: char) -> [u8; 8] {
     }
 }
 
-/// Recursively layouts and paints a declarative `Element` tree onto a `RenderBackend`.
-pub fn render_element_to_backend(
+/// Rectangular area in display coordinates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayoutRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl LayoutRect {
+    pub fn contains(&self, px: i32, py: i32) -> bool {
+        px >= self.x
+            && px < (self.x + self.width as i32)
+            && py >= self.y
+            && py < (self.y + self.height as i32)
+    }
+}
+
+/// Interactive touch target recorded during declarative layout and rendering.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TouchTarget {
+    pub id: String,
+    pub label: String,
+    pub on_click_id: u32,
+    pub rect: LayoutRect,
+}
+
+impl TouchTarget {
+    pub fn contains(&self, px: i32, py: i32) -> bool {
+        self.rect.contains(px, py)
+    }
+}
+
+/// Hit-tests a coordinate against a slice of `TouchTarget`s (last-drawn / top-most first).
+pub fn hit_test(targets: &[TouchTarget], px: i32, py: i32) -> Option<&TouchTarget> {
+    targets.iter().rev().find(|t| t.contains(px, py))
+}
+
+/// Recursively layouts, paints, and collects interactive `TouchTarget`s from an `Element` tree.
+pub fn render_element_and_collect_targets(
     backend: &mut dyn RenderBackend,
     element: &crate::Element,
     x: i32,
     y: i32,
+    targets: &mut Vec<TouchTarget>,
 ) -> (i32, i32) {
     match element {
         crate::Element::Text { content } => {
@@ -265,10 +304,25 @@ pub fn render_element_to_backend(
             let w = (content.len() as i32) * 17;
             (x + w, y + 20)
         }
-        crate::Element::Button { label, .. } => {
+        crate::Element::Button { label, on_click_id } => {
             let btn_w = ((label.len() as u32) * 17) + 24;
-            backend.draw_rect(x, y, btn_w, 36, 0xFF1E3A8A); // Onuron deep blue
+            let btn_h = 36u32;
+            backend.draw_rect(x, y, btn_w, btn_h, 0xFF1E3A8A); // Onuron deep blue
             backend.draw_text(x + 12, y + 10, label, 0xFFFFFFFF, 2);
+
+            let clean_id = format!("btn_{}", label.to_lowercase().replace(' ', "_"));
+            targets.push(TouchTarget {
+                id: clean_id,
+                label: label.clone(),
+                on_click_id: *on_click_id,
+                rect: LayoutRect {
+                    x,
+                    y,
+                    width: btn_w,
+                    height: btn_h,
+                },
+            });
+
             (x + btn_w as i32, y + 40)
         }
         crate::Element::Input { placeholder, text } => {
@@ -285,7 +339,7 @@ pub fn render_element_to_backend(
             let mut cur_y = y;
             let mut max_x = x;
             for child in children {
-                let (cx, cy) = render_element_to_backend(backend, child, x, cur_y);
+                let (cx, cy) = render_element_and_collect_targets(backend, child, x, cur_y, targets);
                 max_x = max_x.max(cx);
                 cur_y = cy + 8; // Spacing
             }
@@ -295,7 +349,7 @@ pub fn render_element_to_backend(
             let mut cur_x = x;
             let mut max_y = y;
             for child in children {
-                let (cx, cy) = render_element_to_backend(backend, child, cur_x, y);
+                let (cx, cy) = render_element_and_collect_targets(backend, child, cur_x, y, targets);
                 cur_x = cx + 12; // Spacing
                 max_y = max_y.max(cy);
             }
@@ -305,13 +359,36 @@ pub fn render_element_to_backend(
             let mut max_x = x;
             let mut max_y = y;
             for child in children {
-                let (cx, cy) = render_element_to_backend(backend, child, x, y);
+                let (cx, cy) = render_element_and_collect_targets(backend, child, x, y, targets);
                 max_x = max_x.max(cx);
                 max_y = max_y.max(cy);
             }
             (max_x, max_y)
         }
     }
+}
+
+/// Recursively layouts and paints a declarative `Element` tree onto a `RenderBackend`.
+pub fn render_element_to_backend(
+    backend: &mut dyn RenderBackend,
+    element: &crate::Element,
+    x: i32,
+    y: i32,
+) -> (i32, i32) {
+    let mut sink = Vec::new();
+    render_element_and_collect_targets(backend, element, x, y, &mut sink)
+}
+
+/// Helper to render an `alap::Component` graph directly onto the backend and collect `TouchTarget`s.
+pub fn render_component_and_collect_targets(
+    backend: &mut dyn RenderBackend,
+    component: &alap::Component,
+    x: i32,
+    y: i32,
+    targets: &mut Vec<TouchTarget>,
+) -> (i32, i32) {
+    let elem = crate::Element::from(component);
+    render_element_and_collect_targets(backend, &elem, x, y, targets)
 }
 
 /// Helper to render an `alap::Component` graph directly onto the backend.
@@ -321,8 +398,8 @@ pub fn render_component_to_backend(
     x: i32,
     y: i32,
 ) -> (i32, i32) {
-    let elem = crate::Element::from(component);
-    render_element_to_backend(backend, &elem, x, y)
+    let mut sink = Vec::new();
+    render_component_and_collect_targets(backend, component, x, y, &mut sink)
 }
 
 /// Factory to obtain the active render backend automatically

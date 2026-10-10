@@ -53,6 +53,7 @@ async fn main() {
         endpoint.clone(),
         &device_id,
     ));
+    let _ = nilsd::notify_ready("nilbus", Some(CONTROL_SOCK));
 
     let ctrl_task = {
         let ctrl = ctrl.clone();
@@ -81,6 +82,7 @@ async fn main() {
 #[cfg(not(unix))]
 #[tokio::main]
 async fn main() {
+    let _ = nilsd::notify_ready("nilbus", None);
     println!("[nilbus] SoftBus daemon is a Linux-only binary.");
     println!("[nilbus] Run this inside QEMU or on a Linux target.");
 }

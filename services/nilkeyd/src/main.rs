@@ -476,6 +476,7 @@ fn run_daemon() -> i32 {
     {
         let _ = std::fs::remove_file(SOCKET_PATH);
         if let Ok(listener) = UnixListener::bind(SOCKET_PATH) {
+            let _ = nilsd::notify_ready("nilkeyd", Some(SOCKET_PATH));
             let policy = nilsd::auth::load_default_policy();
             for stream in listener.incoming() {
                 if let Ok(mut s) = stream {
@@ -507,6 +508,7 @@ fn run_daemon() -> i32 {
     }
     #[cfg(not(unix))]
     {
+        let _ = nilsd::notify_ready("nilkeyd", None);
         println!("[nilkeyd] Simulated fscrypt v2 hardware key store ready.");
     }
 

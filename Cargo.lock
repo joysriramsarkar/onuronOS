@@ -1119,6 +1119,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "mdns-sd",
+ "nilprotocol",
  "nilsd",
  "quinn",
  "rcgen",
@@ -1283,6 +1284,7 @@ name = "nilshell"
 version = "0.1.0"
 dependencies = [
  "nilpkg",
+ "nilsd",
  "rand 0.8.8",
  "serde",
  "serde_json",

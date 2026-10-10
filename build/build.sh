@@ -86,17 +86,17 @@ if [ -d "$TOP/etc/udev/rules.d" ]; then
 fi
 
 echo "==> [5/6] Generating Disk Images (A/B Partitions, fscrypt enabled)"
-if [ -f "$TOP/build/mkimage-x86.sh" ] && [ "$DEVICE" = "x86_64-generic" ]; then
+if [ -f "$TOP/build/mkimage-x86.sh" ] && [ "$DEVICE" = "qemu-x86_64" ]; then
   bash "$TOP/build/mkimage-x86.sh" "$OUT"
 fi
 
 echo "==> [6/6] Building Initramfs, Checksums & Verified Boot Signatures"
 ARCH_PARAM="x86_64"
-if [ "$DEVICE" = "arm64-generic" ] || [ "$DEVICE" = "aarch64-generic" ] || [ "$DEVICE" = "aarch64-qemu" ]; then
+if [ "$DEVICE" = "qemu-aarch64" ]; then
   ARCH_PARAM="aarch64"
 fi
 
-python3 "$TOP/build/mkinitramfs.py" --arch "$ARCH_PARAM"
+python3 "$TOP/build/mkinitramfs.py" --target "$DEVICE"
 
 if [ -f "$TOP/build/mkvbmeta.sh" ] && [ -f "$OUT/system_a.img" ]; then
   bash "$TOP/build/mkvbmeta.sh" "$OUT/system_a.img" "$OUT/vbmeta_a.img"

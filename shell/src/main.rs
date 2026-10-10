@@ -1432,6 +1432,7 @@ fn draw_notifications(sink: &mut Sink, state: &AppState) {
 
 // ─── Main Loop ────────────────────────────────────────────────────────────────
 fn main() {
+    let _ = nilsd::notify_ready("nilshell", None);
     let mut sink = Sink::new();
     let mut state = AppState::load();
     let mut settings_in_section: Option<usize> = None;

@@ -255,6 +255,34 @@ sys.exit(0)
         self.assertIn("Missing verified boot descriptor", res.stdout + res.stderr)
         self._assert_no_destructive_commands()
 
+    def test_ab_slot_partition_resolution(self):
+        """Resolves target A/B slot partitions (boot_b, system_b, vbmeta_b) when slot is b."""
+        self._setup_mock_fastboot(product="fajita", slot="b")
+        self._create_dummy_images(include_vbmeta=True)
+
+        res = self._run_flasher("oneplus-fajita", ["-DryRun"] if sys.platform == "win32" else ["--dry-run"])
+        self.assertEqual(res.returncode, 0)
+        output = res.stdout + res.stderr
+        self.assertIn("boot_b", output)
+        self.assertIn("system_b", output)
+        self.assertIn("vbmeta_b", output)
+        self._assert_no_destructive_commands()
+
+    def test_checksum_mismatch_fails_closed(self):
+        """Aborts immediately when image hash fails verification against checksums.txt."""
+        self._setup_mock_fastboot(product="fajita", slot="a")
+        self._create_dummy_images(include_vbmeta=True)
+        checksum_path = os.path.join(self.out_fajita, "checksums.txt")
+        self.created_images.append(checksum_path)
+        with open(checksum_path, "w", encoding="utf-8") as f:
+            f.write("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  boot.img\n")
+
+        res = self._run_flasher("oneplus-fajita", ["-DryRun"] if sys.platform == "win32" else ["--dry-run"])
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("Image digest mismatch", res.stdout + res.stderr)
+        self._assert_no_destructive_commands()
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -2,12 +2,14 @@
 # build/flash-device.sh — Safe Fastboot Flash Tool for OnuronOS Targets
 set -euo pipefail
 
-TARGET="${1:-aarch64-generic}"
+RAW_TARGET="${1:-oneplus-fajita}"
 TOP="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$TOP/out/$TARGET"
+TARGET="$(python3 "$TOP/build/target_registry.py" resolve "$RAW_TARGET" 2>/dev/null || echo "$RAW_TARGET")"
+OUT="$(python3 "$TOP/build/target_registry.py" output-dir "$TARGET" 2>/dev/null || echo "$TOP/out/$TARGET")"
 WIPE_USERDATA=0
 FORCE_UNSUPPORTED=0
 DRY_RUN=0
+SLOT_OVERRIDE=""
 
 shift || true
 while [[ $# -gt 0 ]]; do
@@ -15,6 +17,7 @@ while [[ $# -gt 0 ]]; do
     --wipe-userdata) WIPE_USERDATA=1; shift ;;
     --force-unsupported) FORCE_UNSUPPORTED=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --slot) SLOT_OVERRIDE="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -115,8 +118,8 @@ fi
 
 # Verify image existence
 if [ ! -f "$OUT/boot.img" ] && [ -f "$OUT/kernel" ] && [ -f "$OUT/initramfs.cpio.gz" ]; then
-  echo "==> Packaging Android boot.img using build/mkbootimg.py..."
-  python3 "$TOP/build/mkbootimg.py" create --kernel "$OUT/kernel" --ramdisk "$OUT/initramfs.cpio.gz" -o "$OUT/boot.img"
+  echo "==> Packaging Android boot.img using build/mkbootimg.py with profile '$CANONICAL_TARGET'..."
+  python3 "$TOP/build/mkbootimg.py" create --profile "$CANONICAL_TARGET" --kernel "$OUT/kernel" --ramdisk "$OUT/initramfs.cpio.gz" -o "$OUT/boot.img"
 fi
 
 if [ ! -f "$OUT/boot.img" ]; then
@@ -167,8 +170,58 @@ if [ -n "$VBMETA_IMG" ]; then
   VBMETA_SHA="$(get_sha256 "$VBMETA_IMG")"
 fi
 
+# Compare image digests with trusted checksums manifest if present
+CHECKSUMS_FILE="$OUT/checksums.txt"
+if [ -f "$CHECKSUMS_FILE" ]; then
+  echo "==> Validating image hashes against trusted checksums ($CHECKSUMS_FILE)..."
+  verify_file_checksum() {
+    local target_file="$1"
+    local file_name
+    file_name="$(basename "$target_file")"
+    local expected
+    expected="$(grep -E "[[:space:]]\*?${file_name}$" "$CHECKSUMS_FILE" 2>/dev/null | awk '{print $1}' || echo "")"
+    if [ -n "$expected" ]; then
+      local actual
+      actual="$(get_sha256 "$target_file")"
+      if [ "$actual" != "$expected" ]; then
+        echo "[ERROR] Image digest mismatch for $file_name!" >&2
+        echo "        Expected: $expected" >&2
+        echo "        Actual:   $actual" >&2
+        exit 1
+      fi
+      echo "    [OK] Hash verified: $file_name -> $actual"
+    fi
+  }
+  verify_file_checksum "$OUT/boot.img"
+  verify_file_checksum "$SYS_IMG"
+  if [ -n "$VBMETA_IMG" ]; then
+    verify_file_checksum "$VBMETA_IMG"
+  fi
+fi
+
+# Resolve target A/B slot partition naming
+TARGET_SLOT="${SLOT_OVERRIDE:-$DEVICE_SLOT}"
+if [ "$CANONICAL_TARGET" = "oneplus-fajita" ] || [ -n "$TARGET_SLOT" ]; then
+  if [ "$TARGET_SLOT" = "a" ] || [ "$TARGET_SLOT" = "b" ]; then
+    BOOT_PART="boot_${TARGET_SLOT}"
+    SYS_PART="system_${TARGET_SLOT}"
+    VBMETA_PART="vbmeta_${TARGET_SLOT}"
+  else
+    BOOT_PART="boot"
+    SYS_PART="system"
+    VBMETA_PART="vbmeta"
+  fi
+else
+  BOOT_PART="boot"
+  SYS_PART="system"
+  VBMETA_PART="vbmeta"
+fi
+
 echo "==> Target images validated (Preflight Integrity):"
 echo "    Target:     $TARGET (canonical: $CANONICAL_TARGET)"
+if [ -n "$TARGET_SLOT" ]; then
+  echo "    Slot:       $TARGET_SLOT (partitions: $BOOT_PART, $SYS_PART, $VBMETA_PART)"
+fi
 echo "    Boot image: $OUT/boot.img (SHA-256: $BOOT_SHA)"
 echo "    System:     $SYS_IMG (SHA-256: $SYS_SHA)"
 if [ -n "$VBMETA_IMG" ]; then
@@ -183,10 +236,10 @@ else
 fi
 
 echo "==> Planned Fastboot Command Sequence:"
-echo "    1. fastboot flash boot \"$OUT/boot.img\""
-echo "    2. fastboot flash system \"$SYS_IMG\""
+echo "    1. fastboot flash $BOOT_PART \"$OUT/boot.img\""
+echo "    2. fastboot flash $SYS_PART \"$SYS_IMG\""
 if [ -n "$VBMETA_IMG" ]; then
-  echo "    3. fastboot flash vbmeta \"$VBMETA_IMG\""
+  echo "    3. fastboot flash $VBMETA_PART \"$VBMETA_IMG\""
 fi
 if [ "$WIPE_USERDATA" -eq 1 ]; then
   echo "    4. fastboot format userdata"
@@ -207,15 +260,15 @@ if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
   exit 0
 fi
 
-echo "==> Flashing boot partition..."
-fastboot flash boot "$OUT/boot.img" || { echo "[ERROR] Failed to flash boot partition" >&2; exit 1; }
+echo "==> Flashing boot partition ($BOOT_PART)..."
+fastboot flash "$BOOT_PART" "$OUT/boot.img" || { echo "[ERROR] Failed to flash $BOOT_PART partition" >&2; exit 1; }
 
-echo "==> Flashing system partition..."
-fastboot flash system "$SYS_IMG" || { echo "[ERROR] Failed to flash system partition" >&2; exit 1; }
+echo "==> Flashing system partition ($SYS_PART)..."
+fastboot flash "$SYS_PART" "$SYS_IMG" || { echo "[ERROR] Failed to flash $SYS_PART partition" >&2; exit 1; }
 
 if [ -n "$VBMETA_IMG" ]; then
-  echo "==> Flashing verified boot vbmeta..."
-  fastboot flash vbmeta "$VBMETA_IMG" || { echo "[ERROR] Failed to flash vbmeta partition" >&2; exit 1; }
+  echo "==> Flashing verified boot vbmeta ($VBMETA_PART)..."
+  fastboot flash "$VBMETA_PART" "$VBMETA_IMG" || { echo "[ERROR] Failed to flash $VBMETA_PART partition" >&2; exit 1; }
 fi
 
 if [ "$WIPE_USERDATA" -eq 1 ]; then

@@ -73,7 +73,7 @@ def check_synthetic_disk(size_mb):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rootfs", default=None,
-                        help="rootfs tree to package (default: out/x86_64-generic/rootfs)")
+                        help="rootfs tree to package (default: out/qemu-x86_64/rootfs)")
     parser.add_argument("--skip-disk", action="store_true",
                         help="only check the initramfs, not the disk image")
     parser.add_argument("--disk-size-mb", type=int, default=mkdisk.DISK_SIZE_MB,

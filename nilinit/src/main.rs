@@ -320,6 +320,8 @@ fn setup_cgroups() {
                     clean_active
                 ));
                 return;
+            } else {
+                log_warn("cgroups v2 subtree_control write did not activate requested controllers");
             }
         }
     }
@@ -347,8 +349,78 @@ fn handle_system_shutdown(action: &str, supervisor: &mut Supervisor) {
     #[cfg(target_os = "linux")]
     unsafe {
         libc::sync();
+        if action == "poweroff" || action == "halt" {
+            libc::reboot(libc::RB_POWER_OFF);
+        } else if action == "reboot" {
+            libc::reboot(libc::RB_AUTOBOOT);
+        }
     }
     log_ok("All storage buffers synchronized to disk. System halted safely.");
+    std::process::exit(0);
+}
+
+fn check_persistence_test(supervisor: &mut Supervisor) {
+    if let Ok(cmdline) = fs::read_to_string("/proc/cmdline") {
+        if cmdline.contains("onuron.test_persistence=write") {
+            log_info("Executing automated persistence test: WRITE phase...");
+            let marker_path = "/data/persistence_test_marker.bin";
+            let test_payload = b"ONURON_EXT4_PERSISTENCE_TEST_PAYLOAD_V1_VERIFIED";
+
+            // Verify /data is NOT tmpfs
+            if let Ok(mounts) = fs::read_to_string("/proc/mounts") {
+                let is_block_mount = mounts.lines().any(|l| l.contains("/data ext4") || l.contains("/data ext2"));
+                if !is_block_mount {
+                    kmsg("\x1b[1;31m[ FAIL ]\x1b[0m Persistence test failed: /data is not mounted from real ext block device!");
+                    handle_system_shutdown("halt", supervisor);
+                    return;
+                }
+            }
+
+            match fs::write(marker_path, test_payload) {
+                Ok(_) => {
+                    #[cfg(target_os = "linux")]
+                    unsafe { libc::sync(); }
+                    log_ok("Persistence marker written and synced to /data");
+                    log_ok("Persistence test WRITE phase completed successfully");
+                    handle_system_shutdown("poweroff", supervisor);
+                }
+                Err(e) => {
+                    kmsg(&format!("\x1b[1;31m[ FAIL ]\x1b[0m Failed writing persistence marker: {}", e));
+                    handle_system_shutdown("halt", supervisor);
+                }
+            }
+        } else if cmdline.contains("onuron.test_persistence=verify") {
+            log_info("Executing automated persistence test: VERIFY phase...");
+            let marker_path = "/data/persistence_test_marker.bin";
+            let expected_payload = b"ONURON_EXT4_PERSISTENCE_TEST_PAYLOAD_V1_VERIFIED";
+
+            // Verify /data is NOT tmpfs
+            if let Ok(mounts) = fs::read_to_string("/proc/mounts") {
+                let is_block_mount = mounts.lines().any(|l| l.contains("/data ext4") || l.contains("/data ext2"));
+                if !is_block_mount {
+                    kmsg("\x1b[1;31m[ FAIL ]\x1b[0m Persistence test verify failed: /data is tmpfs!");
+                    handle_system_shutdown("halt", supervisor);
+                    return;
+                }
+            }
+
+            match fs::read(marker_path) {
+                Ok(content) if content == expected_payload => {
+                    log_ok("Persistence marker verified across reboot: payload matches byte-for-byte");
+                    log_ok("Persistence test VERIFY phase completed successfully");
+                    handle_system_shutdown("poweroff", supervisor);
+                }
+                Ok(content) => {
+                    kmsg(&format!("\x1b[1;31m[ FAIL ]\x1b[0m Persistence marker corrupt (read {} bytes)", content.len()));
+                    handle_system_shutdown("halt", supervisor);
+                }
+                Err(e) => {
+                    kmsg(&format!("\x1b[1;31m[ FAIL ]\x1b[0m Persistence marker missing after reboot: {}", e));
+                    handle_system_shutdown("halt", supervisor);
+                }
+            }
+        }
+    }
 }
 
 fn main() {
@@ -434,7 +506,7 @@ fn main() {
 
     // Core services that MUST be running for Onuron OS to be considered operational
     let core_services = ["nild", "nilkeyd", "nilbus", "netd", "audiod", "powerd", "nilshell"];
-    let boot_failed = match supervisor.check_core_health(&core_services) {
+    let mut boot_failed = match supervisor.check_core_health(&core_services) {
         Ok(()) => false,
         Err(failed) => {
             for core in failed {
@@ -446,23 +518,54 @@ fn main() {
 
     // Core services readiness probes (socket existence and service liveness)
     let readiness_probes: [(&str, Option<&std::path::Path>); 7] = [
-        ("nild", None),
+        ("nild", Some(std::path::Path::new("/run/onuron/ready/nild"))),
         ("nilkeyd", Some(std::path::Path::new("/run/nilos/keyd.sock"))),
-        ("nilbus", None),
+        ("nilbus", Some(std::path::Path::new("/run/nilos/bus.sock"))),
         ("netd", Some(std::path::Path::new("/run/onuron/net.sock"))),
         ("audiod", Some(std::path::Path::new("/run/onuron/audio.sock"))),
         ("powerd", Some(std::path::Path::new("/run/onuron/power.sock"))),
-        ("nilshell", None),
+        ("nilshell", Some(std::path::Path::new("/run/onuron/ready/nilshell"))),
     ];
-    if let Err(not_ready) = supervisor.check_readiness(&readiness_probes) {
-        log_info(&format!("Service socket binding pending or initialized on-demand: {:?}", not_ready));
-    } else {
-        log_ok("Core service sockets verified ready");
+
+    // Bounded retry loop for readiness checks
+    let max_readiness_wait = Duration::from_millis(5000);
+    let poll_interval = Duration::from_millis(100);
+    let readiness_start = Instant::now();
+    let mut readiness_ok = false;
+    let mut last_not_ready = Vec::new();
+
+    while readiness_start.elapsed() < max_readiness_wait {
+        supervisor.tick();
+        match supervisor.check_readiness(&readiness_probes) {
+            Ok(()) => {
+                readiness_ok = true;
+                break;
+            }
+            Err(not_ready) => {
+                last_not_ready = not_ready;
+                if let Err(failed) = supervisor.check_core_health(&core_services) {
+                    for core in failed {
+                        kmsg(&format!("\x1b[1;31m[ FAIL ]\x1b[0m Core service '{}' crashed during boot initialization!", core));
+                    }
+                    boot_failed = true;
+                    break;
+                }
+                thread::sleep(poll_interval);
+            }
+        }
     }
 
     if boot_failed {
         kmsg("\x1b[1;31m[ FATAL ]\x1b[0m Onuron OS boot failed: core services not operational");
+    } else if !readiness_ok {
+        kmsg(&format!(
+            "\x1b[1;33m[ WARN ]\x1b[0m Core service readiness timed out after {:.2} ms (pending: {:?})",
+            readiness_start.elapsed().as_secs_f64() * 1000.0,
+            last_not_ready
+        ));
+        kmsg("\x1b[1;33m[ WARN ]\x1b[0m Onuron OS boot degraded: core readiness incomplete");
     } else {
+        log_ok("Core service sockets verified ready");
         log_ok(&format!("Core services verified healthy ({}/{} active)", core_services.len(), core_services.len()));
         log_ok(&format!(
             "Onuron OS boot completed in {:.2} ms ({} services active, core services verified healthy)",
@@ -478,6 +581,9 @@ fn main() {
             log_warn(&format!("Could not clear boot counter: {}", e));
         }
     }
+
+    // Check if booted with persistence test flag
+    check_persistence_test(&mut supervisor);
 
     // Supervision Loop
     loop {

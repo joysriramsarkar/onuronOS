@@ -102,6 +102,9 @@ impl Supervisor {
         }
     }
 
+#[allow(dead_code)]
+pub const PING_REQ_ID: u64 = 0x5049_4E47; // ASCII 'PING' in hex
+
 /// Probes a service socket or readiness marker, using canonical framed IPC Ping/Pong on Unix sockets.
 #[cfg(unix)]
 pub fn probe_socket_alive(sock_path: &std::path::Path) -> bool {
@@ -112,27 +115,46 @@ pub fn probe_socket_alive(sock_path: &std::path::Path) -> bool {
     if let Ok(meta) = std::fs::metadata(sock_path) {
         if meta.file_type().is_socket() {
             if let Ok(mut stream) = UnixStream::connect(sock_path) {
-                let _ = stream.set_read_timeout(Some(Duration::from_millis(150)));
-                let _ = stream.set_write_timeout(Some(Duration::from_millis(150)));
-                let ping_frame = Frame::new(MessageType::Ping, 1, Vec::new());
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+                let _ = stream.set_write_timeout(Some(Duration::from_millis(200)));
+                let ping_frame = Frame::new(MessageType::Ping, PING_REQ_ID, Vec::new());
                 if ping_frame.write_to(&mut stream).is_ok() {
                     if let Ok(resp) = Frame::read_from(&mut stream) {
-                        return resp.message_type == u16::from(MessageType::Pong)
-                            || resp.message_type == u16::from(MessageType::ServiceStatusResponse);
+                        return resp.request_id == PING_REQ_ID
+                            && (resp.message_type == u16::from(MessageType::Pong)
+                                || resp.message_type == u16::from(MessageType::ServiceStatusResponse));
                     }
                 }
-                return true;
+            }
+            return false;
+        } else if meta.file_type().is_file() {
+            if meta.len() == 0 {
+                return false;
+            }
+            if let Ok(content) = std::fs::read_to_string(sock_path) {
+                return content.contains("pid=") || content.contains("READY=1") || content.contains("ready");
             }
             return false;
         }
-        return true;
     }
     false
 }
 
 #[cfg(not(unix))]
 pub fn probe_socket_alive(sock_path: &std::path::Path) -> bool {
-    sock_path.exists()
+    if let Ok(meta) = std::fs::metadata(sock_path) {
+        if meta.is_file() {
+            if meta.len() == 0 {
+                return false;
+            }
+            if let Ok(content) = std::fs::read_to_string(sock_path) {
+                return content.contains("pid=") || content.contains("READY=1") || content.contains("ready");
+            }
+            return false;
+        }
+        return true;
+    }
+    false
 }
 
     /// Checks whether the specified services are running AND their readiness socket/file (if specified) is present and responding.
@@ -577,6 +599,22 @@ mod tests {
         let ready_file = temp_dir.join("service.ready");
         std::fs::write(&ready_file, "ready").unwrap();
         assert!(supervisor.check_readiness(&[("sleeper", Some(&ready_file))]).is_ok());
+
+        // Empty file probe must fail
+        let empty_file = temp_dir.join("empty.ready");
+        std::fs::write(&empty_file, "").unwrap();
+        assert!(supervisor.check_readiness(&[("sleeper", Some(&empty_file))]).is_err());
+
+        // Corrupted file probe lacking marker must fail
+        let bad_file = temp_dir.join("bad.ready");
+        std::fs::write(&bad_file, "garbage-content-without-valid-marker").unwrap();
+        assert!(supervisor.check_readiness(&[("sleeper", Some(&bad_file))]).is_err());
+
+        // Standard pid marker format must succeed
+        let pid_file = temp_dir.join("daemon.ready");
+        std::fs::write(&pid_file, "pid=4242\nsocket=/run/test.sock\n").unwrap();
+        assert!(supervisor.check_readiness(&[("sleeper", Some(&pid_file))]).is_ok());
+
         let _ = std::fs::remove_dir_all(&temp_dir);
 
         supervisor.shutdown();

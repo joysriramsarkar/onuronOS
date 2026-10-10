@@ -13,6 +13,7 @@ fn main() {
     let _dispatcher = HalDispatcher::init();
     println!("[nild] iwd Wi-Fi & oFono Telephony sub-managers initialized.");
     println!("[nild] Power governance profile: BALANCED (120Hz dynamic refresh)");
+    let _ = nilsd::notify_ready("nild", None);
 
     loop {
         thread::sleep(Duration::from_secs(60));

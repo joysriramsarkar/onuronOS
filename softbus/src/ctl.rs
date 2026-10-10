@@ -54,6 +54,21 @@ impl SoftBusControl {
             tokio::spawn(async move {
                 let mut buf = [0u8; 2048];
                 if let Ok(n) = stream.read(&mut buf).await {
+                    if n >= 4 && &buf[..4] == &nilprotocol::PROTOCOL_MAGIC {
+                        let mut cursor = std::io::Cursor::new(&buf[..n]);
+                        if let Ok(frame) = nilprotocol::Frame::read_from(&mut cursor) {
+                            let reply = if frame.message_type == u16::from(nilprotocol::MessageType::Ping) {
+                                nilprotocol::Frame::new(nilprotocol::MessageType::Pong, frame.request_id, b"pong".to_vec())
+                            } else {
+                                nilprotocol::Frame::new(nilprotocol::MessageType::ServiceStatusResponse, frame.request_id, b"ok".to_vec())
+                            };
+                            let mut out = Vec::new();
+                            if reply.write_to(&mut out).is_ok() {
+                                let _ = stream.write_all(&out).await;
+                                return;
+                            }
+                        }
+                    }
                     if n > 0 {
                         let cmd = String::from_utf8_lossy(&buf[..n]);
                         let response = ctrl.handle_command(cmd.trim()).await;

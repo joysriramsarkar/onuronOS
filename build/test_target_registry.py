@@ -74,6 +74,39 @@ class TestTargetRegistry(unittest.TestCase):
         self.assertEqual(res.returncode, 1)
         self.assertIn("false", res.stdout)
 
+    def test_canonical_output_dirs_match_registry(self):
+        self.assertTrue(target_registry.get_target_output_dir("qemu-x86_64").endswith(os.path.join("out", "qemu-x86_64")))
+        self.assertTrue(target_registry.get_target_output_dir("qemu-aarch64").endswith(os.path.join("out", "qemu-aarch64")))
+        self.assertTrue(target_registry.get_target_output_dir("android-host-arm64").endswith(os.path.join("out", "android-host-arm64")))
+        self.assertTrue(target_registry.get_target_output_dir("oneplus-fajita").endswith(os.path.join("out", "oneplus-fajita")))
+
+    def test_android_host_sdk_alignment_with_gradle(self):
+        cfg = target_registry.load_target("android-host-arm64", warn=False)
+        sdk_info = cfg.get("jni", cfg.get("android", {}))
+        self.assertEqual(sdk_info.get("min_sdk"), 29, "target.toml min_sdk must align with build.gradle.kts minSdk=29")
+        self.assertEqual(sdk_info.get("target_sdk"), 35, "target.toml target_sdk must align with build.gradle.kts targetSdk=35")
+
+    def test_build_scripts_agree_on_target_output_dirs(self):
+        import importlib.util
+        sys.path.insert(0, os.path.join(TOP, "build"))
+        import mkinitramfs
+        import mkdisk
+
+        spec = importlib.util.spec_from_file_location("qemu_smoke", os.path.join(TOP, "build", "qemu-smoke.py"))
+        qemu_smoke = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(qemu_smoke)
+
+        # mkinitramfs configs must point to canonical target directories
+        self.assertEqual(mkinitramfs.ARCH_CONFIGS["x86_64"]["out_dir"], target_registry.get_target_output_dir("qemu-x86_64"))
+        self.assertEqual(mkinitramfs.ARCH_CONFIGS["aarch64"]["out_dir"], target_registry.get_target_output_dir("qemu-aarch64"))
+
+        # qemu_smoke defaults must point to canonical target directories
+        self.assertEqual(qemu_smoke.ARCH_DEFAULTS["x86_64"]["out_dir"], target_registry.get_target_output_dir("qemu-x86_64"))
+        self.assertEqual(qemu_smoke.ARCH_DEFAULTS["aarch64"]["out_dir"], target_registry.get_target_output_dir("qemu-aarch64"))
+
+        # mkdisk default must point to canonical x86_64 output directory
+        self.assertEqual(mkdisk.OUT, target_registry.get_target_output_dir("qemu-x86_64"))
+
 
 if __name__ == "__main__":
     unittest.main()

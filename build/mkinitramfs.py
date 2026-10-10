@@ -19,26 +19,39 @@ import json
 
 TOP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+try:
+    import target_registry
+except ImportError:
+    try:
+        from . import target_registry
+    except (ImportError, ValueError):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import target_registry
+
+
+def _load_arch_config(target_name, default_initrd):
+    canonical = target_registry.resolve_target(target_name, warn=False)
+    cfg = target_registry.load_target(canonical, warn=False)
+    out_dir = target_registry.get_target_output_dir(canonical)
+    kernel_sec = cfg.get("kernel", {})
+    target_sec = cfg.get("target", {})
+    return {
+        "canonical_target": canonical,
+        "out_dir": out_dir,
+        "kernel_name": kernel_sec.get("name", "vmlinuz-lts"),
+        "kernel_url": kernel_sec.get("url", ""),
+        "kernel_sha256": kernel_sec.get("sha256", ""),
+        "target_triple": target_sec.get("target_triple", ""),
+        "initrd_name": default_initrd,
+    }
+
+
 ARCH_CONFIGS = {
-    "x86_64": {
-        "out_dir": os.path.join(TOP, "out", "x86_64-generic"),
-        "kernel_name": "vmlinuz-lts",
-        "kernel_url": "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/netboot/vmlinuz-lts",
-        "kernel_sha256": "aaa1c6732e5de0af5e497ca70ba654609bc3597b8eda103936368a61561f3cad",
-        "target_triple": "x86_64-unknown-linux-musl",
-        "initrd_name": "nilos-initramfs.cpio.gz",
-    },
-    "aarch64": {
-        "out_dir": os.path.join(TOP, "out", "aarch64-qemu"),
-        "kernel_name": "vmlinuz-lts",
-        "kernel_url": "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/netboot/vmlinuz-lts",
-        "kernel_sha256": "014887a8047739213ce21090349c71f75c7edc0133efa03c840a2db8a354f9e1",
-        "target_triple": "aarch64-unknown-linux-musl",
-        "initrd_name": "initramfs.cpio.gz",
-    },
+    "x86_64": _load_arch_config("qemu-x86_64", "nilos-initramfs.cpio.gz"),
+    "aarch64": _load_arch_config("qemu-aarch64", "initramfs.cpio.gz"),
 }
 
-# Default backwards-compatible globals for tests
+# Default authoritative canonical globals for tests
 OUT = ARCH_CONFIGS["x86_64"]["out_dir"]
 ROOTFS = os.path.join(OUT, "rootfs")
 KERNEL_PATH = os.path.join(OUT, "vmlinuz-lts")
@@ -417,6 +430,8 @@ def write_manifest_and_checksums(out_dir, arch, kernel_file, initrd_file, instal
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description="NilOS Initramfs & Image Builder")
+    parser.add_argument("--target", default=None,
+                        help="Target profile name or alias (e.g. qemu-x86_64, qemu-aarch64)")
     parser.add_argument("--arch", choices=["x86_64", "aarch64", "arm64"], default="x86_64",
                         help="Target CPU architecture (x86_64 or aarch64, default: x86_64)")
     parser.add_argument("--skip-kernel-download", action="store_true",
@@ -430,9 +445,11 @@ def main(argv=None):
                              "with --check-reproducible this can be any pre-populated tree")
     args = parser.parse_args(argv)
 
-    norm_arch = "aarch64" if args.arch in ("aarch64", "arm64") else "x86_64"
+    target_name = args.target or args.arch
+    canonical = target_registry.resolve_target(target_name)
+    norm_arch = "aarch64" if canonical == "qemu-aarch64" else "x86_64"
     cfg = ARCH_CONFIGS[norm_arch]
-    out_dir = cfg["out_dir"]
+    out_dir = target_registry.get_target_output_dir(canonical)
     target_rootfs = args.rootfs or os.path.join(out_dir, "rootfs")
     initrd_path = os.path.join(out_dir, cfg["initrd_name"])
 

@@ -11,7 +11,8 @@ flashing_allowed = false
 library_name = "libandroid_host.so"
 abi = "arm64-v8a"
 protocol_version = 1
-min_sdk = 34
+min_sdk = 29
+target_sdk = 35
 
 [storage]
 data_dir = "/data/data/org.onuron.mobile"

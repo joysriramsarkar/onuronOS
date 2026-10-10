@@ -9,6 +9,7 @@ serde_json   = "1.0"
 tokio        = { version = "1", features = ["full"] }
 hex          = "0.4"
 nilsd        = { path = "../runtime/nilsd" }
+nilprotocol  = { path = "../protocol" }
 
 # QUIC/TLS stack — only compiled on Linux/Unix targets (the actual runtime).
 # On Windows dev-hosts these are skipped to avoid needing gcc/MinGW.

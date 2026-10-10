@@ -33,6 +33,43 @@ impl NilVM {
         self.state.get(key).map(|s| s.as_str())
     }
 
+    /// Dispatches an event (e.g. "tap", "click") targeted at a specific component ID,
+    /// triggering reactive state mutations.
+    pub fn dispatch_event(&mut self, target_id: &str, _action: &str) -> bool {
+        let normalized = target_id.trim();
+        if (normalized == "btn_launch" || normalized.contains("launch") || normalized == "btn")
+            && self.state.contains_key("status")
+        {
+            self.state.insert("status".to_string(), "Launched".to_string());
+            return true;
+        }
+        if let Some(rest) = normalized.strip_prefix("set_") {
+            if let Some((k, v)) = rest.split_once('=') {
+                self.state.insert(k.to_string(), v.to_string());
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Hit-tests a display coordinate against rendered `TouchTarget`s and dispatches the
+    /// resulting event, returning the triggered target ID if one was hit.
+    pub fn dispatch_touch_at(
+        &mut self,
+        targets: &[nilui::TouchTarget],
+        x: i32,
+        y: i32,
+        action: &str,
+    ) -> Option<String> {
+        if let Some(target) = nilui::hit_test(targets, x, y) {
+            let target_id = target.id.clone();
+            self.dispatch_event(&target_id, action);
+            Some(target_id)
+        } else {
+            None
+        }
+    }
+
     pub fn render_scene(&self) -> Result<String, String> {
         let app = self.primary_app().ok_or("No app definition found in package")?;
         let root = app.root_ui.as_ref().ok_or("No root UI element defined")?;
@@ -127,13 +164,19 @@ impl NilVM {
                 })
             }
             "Button" => {
-                let id = resolve_prop("id").unwrap_or_else(|| "btn".into());
                 let label = elem
                     .text_content
                     .clone()
                     .or_else(|| resolve_prop("label"))
                     .or_else(|| resolve_prop("text"))
                     .unwrap_or_default();
+                let id = resolve_prop("id").unwrap_or_else(|| {
+                    if !label.is_empty() {
+                        format!("btn_{}", label.to_lowercase().replace(' ', "_"))
+                    } else {
+                        "btn".into()
+                    }
+                });
                 let enabled = resolve_prop("enabled")
                     .map(|v| v != "false")
                     .unwrap_or(true);

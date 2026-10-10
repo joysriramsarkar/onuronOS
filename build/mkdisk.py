@@ -29,8 +29,18 @@ import subprocess
 import sys
 
 TOP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(TOP, "out", "x86_64-generic")
-DISK_PATH = os.path.join(OUT, "nilos.img")
+
+try:
+    import target_registry
+except ImportError:
+    try:
+        from . import target_registry
+    except (ImportError, ValueError):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import target_registry
+
+OUT = target_registry.get_target_output_dir("qemu-x86_64")
+DISK_PATH = os.path.join(OUT, "data.img")
 
 # Disk geometry
 DISK_SIZE_MB = 256
@@ -232,6 +242,7 @@ def create_disk_image(path: str = DISK_PATH, mode: str = "auto",
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--target", default=None, help="target profile or alias (e.g. qemu-x86_64 or qemu-aarch64)")
     parser.add_argument("--output", default=DISK_PATH, help="output image path")
     parser.add_argument("--size-mb", type=int, default=DISK_SIZE_MB, help="image size in MiB")
     mode = parser.add_mutually_exclusive_group()
@@ -244,6 +255,14 @@ def main(argv=None):
                         help="directory whose contents are copied into the real image")
     parser.add_argument("--force", action="store_true", help="rebuild even if the image exists")
     args = parser.parse_args(argv)
+
+    if args.target:
+        canonical = target_registry.resolve_target(args.target, warn=False)
+        target_out = target_registry.get_target_output_dir(canonical)
+        cfg = target_registry.load_target(canonical, warn=False)
+        primary_disk = cfg.get("storage", {}).get("primary_disk", "data.img")
+        if args.output == DISK_PATH:
+            args.output = os.path.join(target_out, primary_disk)
 
     print("=========================================================")
     print("         OnuronOS Data Partition Image Builder           ")

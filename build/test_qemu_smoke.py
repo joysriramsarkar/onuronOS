@@ -75,6 +75,15 @@ class QemuSmokeTests(unittest.TestCase):
         self.assertEqual(status, "PANIC")
         self.assertIn("core services not operational", details)
 
+    def test_check_boot_log_degraded_failure(self):
+        log = """
+[    0.000000] Linux version 6.6.110-0-lts
+[ WARN ] Onuron OS boot degraded: core readiness incomplete
+"""
+        status, details = qemu_smoke.check_boot_log(log)
+        self.assertEqual(status, "PANIC")
+        self.assertIn("degraded", details)
+
     def test_check_boot_log_kernel_panic(self):
         log = """
 [    0.000000] Linux version 6.6.110-0-lts
