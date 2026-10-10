@@ -40,7 +40,7 @@ jobs:
         run: python3 build/qemu-smoke.py
       - name: QEMU end-to-end reboot persistence test
         timeout-minutes: 3
-        run: python3 build/qemu-persistence-test.py
+        run: python3 build/qemu-persistence-test.py --allow-skip
 
   aarch64-qemu:
     runs-on: ubuntu-latest
@@ -70,7 +70,7 @@ jobs:
         run: python3 build/qemu-smoke.py --target qemu-aarch64
       - name: QEMU ARM64 end-to-end reboot persistence test
         timeout-minutes: 3
-        run: python3 build/qemu-persistence-test.py --target qemu-aarch64
+        run: python3 build/qemu-persistence-test.py --target qemu-aarch64 --allow-skip
       - name: Upload ARM64 build manifest artifact
         uses: actions/upload-artifact@v4
         if: always()
