@@ -27,19 +27,55 @@ TOP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def _resolve_smoke_defaults(target_name):
     canonical = target_registry.resolve_target(target_name, warn=False)
     out_dir = target_registry.get_target_output_dir(canonical)
+    cfg = target_registry.load_target(canonical, warn=False)
     norm_arch = "aarch64" if canonical == "qemu-aarch64" else "x86_64"
-    qemu_bin = "qemu-system-aarch64" if norm_arch == "aarch64" else "qemu-system-x86_64"
-    initrd_name = "initramfs.cpio.gz" if norm_arch == "aarch64" else "nilos-initramfs.cpio.gz"
-    disk_name = "data.img" if norm_arch == "aarch64" else "nilos.img"
+    qemu_bin_name = "qemu-system-aarch64" if norm_arch == "aarch64" else "qemu-system-x86_64"
+    qemu_bin = qemu_bin_name
+    if sys.platform == "win32":
+        default_win_qemu = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "qemu", f"{qemu_bin_name}.exe")
+        if os.path.exists(default_win_qemu) and not shutil.which(qemu_bin_name):
+            qemu_bin = default_win_qemu
 
-    c_kernel = os.path.join(out_dir, "vmlinuz-lts")
+    initrd_name = "initramfs.cpio.gz" if norm_arch == "aarch64" else "nilos-initramfs.cpio.gz"
+    kernel_name = cfg.get("kernel", {}).get("name", "vmlinuz-virt")
+    disk_name = cfg.get("storage", {}).get("primary_disk", "data.img")
+
+    c_kernel = os.path.join(out_dir, kernel_name)
     c_initrd = os.path.join(out_dir, initrd_name)
     c_disk = os.path.join(out_dir, disk_name)
 
+    is_ci = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
     legacy_dir = os.path.join(TOP, "out", "aarch64-qemu" if norm_arch == "aarch64" else "x86_64-generic")
-    kernel = c_kernel if os.path.exists(c_kernel) else os.path.join(legacy_dir, "vmlinuz-lts")
-    initrd = c_initrd if os.path.exists(c_initrd) else os.path.join(legacy_dir, initrd_name)
-    disk = c_disk if os.path.exists(c_disk) else os.path.join(legacy_dir, disk_name)
+
+    if os.path.exists(c_kernel):
+        kernel = c_kernel
+    elif not is_ci and os.path.exists(os.path.join(legacy_dir, kernel_name)):
+        print(f"[WARN] [qemu-smoke] Using legacy fallback kernel: {legacy_dir}/{kernel_name}", file=sys.stderr)
+        kernel = os.path.join(legacy_dir, kernel_name)
+    elif not is_ci and os.path.exists(os.path.join(legacy_dir, "vmlinuz-lts")):
+        print(f"[WARN] [qemu-smoke] Using legacy fallback kernel: {legacy_dir}/vmlinuz-lts", file=sys.stderr)
+        kernel = os.path.join(legacy_dir, "vmlinuz-lts")
+    else:
+        kernel = c_kernel
+
+    if os.path.exists(c_initrd):
+        initrd = c_initrd
+    elif not is_ci and os.path.exists(os.path.join(legacy_dir, initrd_name)):
+        print(f"[WARN] [qemu-smoke] Using legacy fallback initrd: {legacy_dir}/{initrd_name}", file=sys.stderr)
+        initrd = os.path.join(legacy_dir, initrd_name)
+    else:
+        initrd = c_initrd
+
+    if os.path.exists(c_disk):
+        disk = c_disk
+    elif not is_ci and os.path.exists(os.path.join(legacy_dir, disk_name)):
+        print(f"[WARN] [qemu-smoke] Using legacy fallback disk: {legacy_dir}/{disk_name}", file=sys.stderr)
+        disk = os.path.join(legacy_dir, disk_name)
+    elif not is_ci and os.path.exists(os.path.join(legacy_dir, "nilos.img")):
+        print(f"[WARN] [qemu-smoke] Using legacy fallback disk: {legacy_dir}/nilos.img", file=sys.stderr)
+        disk = os.path.join(legacy_dir, "nilos.img")
+    else:
+        disk = c_disk
 
     return {
         "canonical_target": canonical,

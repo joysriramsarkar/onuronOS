@@ -147,7 +147,56 @@ fn mount_early_fs() {
     log_ok("Early virtual filesystems mounted (/proc, /sys, /dev, /run, /tmp)");
 }
 
+fn load_kernel_modules() {
+    #[cfg(target_os = "linux")]
+    {
+        let module_dir = std::path::Path::new("/lib/modules/storage");
+        if !module_dir.exists() {
+            return;
+        }
+
+        // Required order: virtio_blk first for /dev/vda, then crc16, mbcache, jbd2, ext4
+        let module_order = [
+            "virtio_blk.ko",
+            "crc16.ko",
+            "mbcache.ko",
+            "jbd2.ko",
+            "ext4.ko",
+        ];
+
+        for mod_name in &module_order {
+            let mod_path = module_dir.join(mod_name);
+            if mod_path.exists() {
+                if let Ok(file) = fs::File::open(&mod_path) {
+                    use std::os::unix::io::AsRawFd;
+                    let fd = file.as_raw_fd();
+                    let param = std::ffi::CString::new("").unwrap();
+                    let ret = unsafe {
+                        libc::syscall(
+                            libc::SYS_finit_module,
+                            fd,
+                            param.as_ptr(),
+                            0 as libc::c_int,
+                        )
+                    };
+                    if ret == 0 {
+                        log_ok(&format!("Kernel module loaded: {}", mod_name));
+                    } else {
+                        let err = std::io::Error::last_os_error();
+                        if err.raw_os_error() == Some(libc::EEXIST) {
+                            log_ok(&format!("Kernel module already built-in/loaded: {}", mod_name));
+                        } else {
+                            log_warn(&format!("Failed loading module {}: {}", mod_name, err));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn mount_data_partition() {
+    load_kernel_modules();
     let _ = fs::create_dir_all("/data");
 
     #[cfg(target_os = "linux")]
@@ -159,13 +208,13 @@ fn mount_data_partition() {
         for dev in &candidates {
             // Wait briefly for device to appear
             let mut tries = 0;
-            while tries < 5 && !std::path::Path::new(dev).exists() {
+            while tries < 10 && !std::path::Path::new(dev).exists() {
                 thread::sleep(Duration::from_millis(100));
                 tries += 1;
             }
 
             if std::path::Path::new(dev).exists() {
-                // Try mounting as ext2/ext4
+                // Try mounting as ext4/ext2
                 let result = nix::mount::mount(
                     Some(*dev),
                     "/data",

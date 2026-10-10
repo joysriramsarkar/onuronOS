@@ -8,9 +8,9 @@ output_dir = "out/qemu-x86_64"
 flashing_allowed = false
 
 [kernel]
-name = "vmlinuz-lts"
-url = "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/netboot/vmlinuz-lts"
-sha256 = "aaa1c6732e5de0af5e497ca70ba654609bc3597b8eda103936368a61561f3cad"
+name = "vmlinuz-virt"
+url = "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/netboot/vmlinuz-virt"
+sha256 = "ea2e787d9d87de78162575567ac8f685d79fbeece88d38024be6816a341c4f7a"
 bootargs = "console=ttyS0 root=/dev/ram0 panic=1 quiet"
 
 [qemu]

@@ -87,7 +87,7 @@ class InitramfsTests(unittest.TestCase):
 
     def test_ensure_kernel_rejects_corrupted_digest(self):
         with tempfile.TemporaryDirectory() as tmp:
-            bad_kernel = os.path.join(tmp, "vmlinuz-lts")
+            bad_kernel = os.path.join(tmp, mkinitramfs.ARCH_CONFIGS["x86_64"]["kernel_name"])
             with open(bad_kernel, "wb") as f:
                 f.write(b"CORRUPTED_KERNEL_DATA" * 50000)
             with self.assertRaisesRegex(RuntimeError, "integrity verification failed"):

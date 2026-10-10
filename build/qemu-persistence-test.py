@@ -200,9 +200,16 @@ def run_persistence_test(
     canonical = target_registry.resolve_target(target_name, warn=False)
     norm_arch = "aarch64" if canonical == "qemu-aarch64" else "x86_64"
     out_dir = target_registry.get_target_output_dir(canonical)
+    cfg = target_registry.load_target(canonical, warn=False)
+    kernel_name = cfg.get("kernel", {}).get("name", "vmlinuz-virt")
 
     qemu_bin_name = "qemu-system-aarch64" if norm_arch == "aarch64" else "qemu-system-x86_64"
     qemu_bin = shutil.which(qemu_bin_name)
+    if not qemu_bin and sys.platform == "win32":
+        default_win_qemu = os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "qemu", f"{qemu_bin_name}.exe")
+        if os.path.exists(default_win_qemu):
+            qemu_bin = default_win_qemu
+
     if not qemu_bin:
         msg = f"{qemu_bin_name} not found in PATH"
         if allow_skip:
@@ -211,7 +218,7 @@ def run_persistence_test(
         raise RuntimeError(msg)
 
     initrd_name = "initramfs.cpio.gz" if norm_arch == "aarch64" else "nilos-initramfs.cpio.gz"
-    k_path = kernel or os.path.join(out_dir, "vmlinuz-lts")
+    k_path = kernel or os.path.join(out_dir, kernel_name)
     i_path = initrd or os.path.join(out_dir, initrd_name)
 
     for path in (k_path, i_path):
@@ -239,13 +246,7 @@ def run_persistence_test(
     try:
         print(f"[qemu-persistence] Phase 1: Booting QEMU to write marker ({norm_arch})...")
         cmd_write = build_qemu_cmd(qemu_bin, k_path, i_path, d_path, phase="write", arch=norm_arch)
-        try:
-            res_write = run_qemu_phase(cmd_write, check_write_log, timeout_secs, "Phase 1: Write")
-        except RuntimeError as exc:
-            if allow_skip and "tmpfs fallback rejected" in str(exc):
-                print(f"[SKIP] [qemu-persistence] Storage hardware driver missing in netboot kernel ({exc}); test skipped.")
-                return True
-            raise
+        res_write = run_qemu_phase(cmd_write, check_write_log, timeout_secs, "Phase 1: Write")
         print(f"  [ PASS ] {res_write}")
 
         print(f"[qemu-persistence] Phase 2: Rebooting QEMU with same disk to verify marker ({norm_arch})...")

@@ -10,10 +10,19 @@ param (
 
 $ErrorActionPreference = "Stop"
 $TOP = Split-Path -Parent $PSScriptRoot
-$OUT = Join-Path $TOP "out\x86_64-generic"
-$KERNEL = Join-Path $OUT "vmlinuz-lts"
+$OUT = Join-Path $TOP "out\qemu-x86_64"
+if (-not (Test-Path $OUT) -and (Test-Path (Join-Path $TOP "out\x86_64-generic"))) {
+    $OUT = Join-Path $TOP "out\x86_64-generic"
+}
+$KERNEL = Join-Path $OUT "vmlinuz-virt"
+if (-not (Test-Path $KERNEL) -and (Test-Path (Join-Path $OUT "vmlinuz-lts"))) {
+    $KERNEL = Join-Path $OUT "vmlinuz-lts"
+}
 $INITRD = Join-Path $OUT "nilos-initramfs.cpio.gz"
-$DISK   = Join-Path $OUT "nilos.img"
+$DISK   = Join-Path $OUT "data.img"
+if (-not (Test-Path $DISK) -and (Test-Path (Join-Path $OUT "nilos.img"))) {
+    $DISK = Join-Path $OUT "nilos.img"
+}
 
 Write-Host "=========================================================" -ForegroundColor Cyan
 Write-Host "          NilOS QEMU Bootloader (Phase 1+2)              " -ForegroundColor Cyan

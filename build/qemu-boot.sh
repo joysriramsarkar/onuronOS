@@ -3,10 +3,19 @@
 set -euo pipefail
 
 TOP="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$TOP/out/x86_64-generic"
-KERNEL="$OUT/vmlinuz-lts"
+OUT="$TOP/out/qemu-x86_64"
+if [ ! -d "$OUT" ] && [ -d "$TOP/out/x86_64-generic" ]; then
+    OUT="$TOP/out/x86_64-generic"
+fi
+KERNEL="$OUT/vmlinuz-virt"
+if [ ! -f "$KERNEL" ] && [ -f "$OUT/vmlinuz-lts" ]; then
+    KERNEL="$OUT/vmlinuz-lts"
+fi
 INITRD="$OUT/nilos-initramfs.cpio.gz"
-DISK="$OUT/nilos.img"
+DISK="$OUT/data.img"
+if [ ! -f "$DISK" ] && [ -f "$OUT/nilos.img" ]; then
+    DISK="$OUT/nilos.img"
+fi
 
 HEADLESS=0
 NO_REBUILD=0

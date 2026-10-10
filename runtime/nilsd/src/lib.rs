@@ -59,35 +59,45 @@ pub fn first_listener_or_bind(_fallback_path: &str) -> std::io::Result<()> {
 /// Notify supervisor and runtime that this service has initialized and is ready.
 ///
 /// On Unix, if NOTIFY_SOCKET or ONURON_NOTIFY_SOCKET is present, a datagram notification
-/// is dispatched. Additionally, the readiness marker `/run/onuron/ready/<service_name>` is written.
-#[cfg(unix)]
+/// is dispatched. Additionally, the readiness marker `<ready_dir>/<service_name>` is written.
 pub fn notify_ready(service_name: &str, sock_path: Option<&str>) -> std::io::Result<()> {
-    if let Ok(notify_socket) = env::var("NOTIFY_SOCKET").or_else(|_| env::var("ONURON_NOTIFY_SOCKET")) {
-        use std::os::unix::net::UnixDatagram;
-        if let Ok(socket) = UnixDatagram::unbound() {
-            let msg = format!("READY=1\nMAINPID={}\nSERVICE={}\n", std::process::id(), service_name);
-            let _ = socket.send_to(msg.as_bytes(), &notify_socket);
+    #[cfg(unix)]
+    {
+        use std::env;
+        if let Ok(notify_socket) = env::var("NOTIFY_SOCKET").or_else(|_| env::var("ONURON_NOTIFY_SOCKET")) {
+            use std::os::unix::net::UnixDatagram;
+            if let Ok(socket) = UnixDatagram::unbound() {
+                let msg = format!("READY=1\nMAINPID={}\nSERVICE={}\n", std::process::id(), service_name);
+                let _ = socket.send_to(msg.as_bytes(), &notify_socket);
+            }
         }
     }
 
-    let ready_dir = if let Ok(dir) = env::var("ONURON_READY_DIR") {
+    let ready_dir = if let Ok(dir) = std::env::var("ONURON_READY_DIR") {
         std::path::PathBuf::from(dir)
     } else {
-        let default_run = std::path::Path::new("/run/onuron/ready");
-        if std::fs::create_dir_all(default_run).is_ok() {
-            default_run.to_path_buf()
-        } else if let Ok(xdg) = env::var("XDG_RUNTIME_DIR") {
-            let xdg_path = std::path::PathBuf::from(xdg).join("onuron/ready");
-            let _ = std::fs::create_dir_all(&xdg_path);
-            xdg_path
-        } else {
-            let tmp_path = std::path::PathBuf::from("/tmp/onuron/ready");
-            let _ = std::fs::create_dir_all(&tmp_path);
-            tmp_path
+        #[cfg(unix)]
+        {
+            let default_run = std::path::Path::new("/run/onuron/ready");
+            if std::fs::create_dir_all(default_run).is_ok() {
+                default_run.to_path_buf()
+            } else if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+                let xdg_path = std::path::PathBuf::from(xdg).join("onuron/ready");
+                let _ = std::fs::create_dir_all(&xdg_path);
+                xdg_path
+            } else {
+                let tmp_path = std::path::PathBuf::from("/tmp/onuron/ready");
+                let _ = std::fs::create_dir_all(&tmp_path);
+                tmp_path
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            std::env::temp_dir().join("onuron").join("ready")
         }
     };
 
-    let _ = std::fs::create_dir_all(&ready_dir);
+    std::fs::create_dir_all(&ready_dir)?;
     let ready_file = ready_dir.join(service_name);
     let pid = std::process::id();
     let sock = sock_path.unwrap_or("");
@@ -96,12 +106,7 @@ pub fn notify_ready(service_name: &str, sock_path: Option<&str>) -> std::io::Res
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let content = format!("pid={}\nsocket={}\ntimestamp_secs={}\n", pid, sock, timestamp);
-    let _ = std::fs::write(ready_file, content);
-    Ok(())
-}
-
-#[cfg(not(unix))]
-pub fn notify_ready(_service_name: &str, _sock_path: Option<&str>) -> std::io::Result<()> {
+    std::fs::write(&ready_file, content)?;
     Ok(())
 }
 
@@ -110,8 +115,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_notify_ready_does_not_panic() {
-        assert!(notify_ready("test_daemon", Some("/run/onuron/test.sock")).is_ok());
+    fn test_notify_ready_creates_valid_marker_file() {
+        let temp_dir = std::env::temp_dir().join(format!("onuron_test_ready_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::env::set_var("ONURON_READY_DIR", &temp_dir);
+
+        let res = notify_ready("test_daemon", Some("/run/onuron/test.sock"));
+        assert!(res.is_ok(), "notify_ready should succeed with valid directory");
+
+        let marker_path = temp_dir.join("test_daemon");
+        assert!(marker_path.exists(), "Marker file must actually be created on disk");
+
+        let content = std::fs::read_to_string(&marker_path).expect("Marker file should be readable");
+        assert!(content.contains(&format!("pid={}", std::process::id())), "Marker must contain correct PID");
+        assert!(content.contains("socket=/run/onuron/test.sock"), "Marker must contain socket path");
+        assert!(content.contains("timestamp_secs="), "Marker must contain timestamp");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::env::remove_var("ONURON_READY_DIR");
+    }
+
+    #[test]
+    fn test_notify_ready_propagates_write_error() {
+        // Create a regular file and use a subpath of it as ONURON_READY_DIR so create_dir_all fails
+        let blocker_file = std::env::temp_dir().join(format!("onuron_blocker_{}", std::process::id()));
+        std::fs::write(&blocker_file, "blocking").expect("Must create blocker file");
+
+        let impossible_dir = blocker_file.join("subfolder_impossible");
+        std::env::set_var("ONURON_READY_DIR", &impossible_dir);
+
+        let res = notify_ready("fail_daemon", None);
+        assert!(res.is_err(), "notify_ready must propagate error when directory cannot be created");
+
+        let _ = std::fs::remove_file(&blocker_file);
+        std::env::remove_var("ONURON_READY_DIR");
     }
 }
 

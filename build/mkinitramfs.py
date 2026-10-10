@@ -54,9 +54,67 @@ ARCH_CONFIGS = {
 # Default authoritative canonical globals for tests
 OUT = ARCH_CONFIGS["x86_64"]["out_dir"]
 ROOTFS = os.path.join(OUT, "rootfs")
-KERNEL_PATH = os.path.join(OUT, "vmlinuz-lts")
+KERNEL_PATH = os.path.join(OUT, ARCH_CONFIGS["x86_64"]["kernel_name"])
 INITRD_PATH = os.path.join(OUT, "nilos-initramfs.cpio.gz")
 KERNEL_URL = ARCH_CONFIGS["x86_64"]["kernel_url"]
+
+STORAGE_MODULE_NAMES = ["virtio_blk.ko", "crc16.ko", "mbcache.ko", "jbd2.ko", "ext4.ko"]
+
+
+def provision_storage_modules(arch, rootfs_dir, out_dir):
+    """Ensure kernel storage modules (virtio_blk and ext4 stack) are present in rootfs."""
+    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else "x86_64"
+    dest_dir = os.path.join(rootfs_dir, "lib", "modules", "storage")
+    os.makedirs(dest_dir, exist_ok=True)
+
+    missing = [m for m in STORAGE_MODULE_NAMES if not os.path.exists(os.path.join(dest_dir, m))]
+    if not missing:
+        return
+
+    modloop_path = os.path.join(out_dir, "modloop-virt")
+    if not os.path.exists(modloop_path) or os.path.getsize(modloop_path) < 1000000:
+        url = f"https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/{norm_arch}/netboot/modloop-virt"
+        print(f"==> Fetching Alpine kernel storage modules ({norm_arch}) from:\n    {url}")
+        try:
+            urllib.request.urlretrieve(url, modloop_path)
+        except Exception as exc:
+            print(f"[WARN] Failed downloading modloop-virt ({exc}); checking existing modules...")
+            return
+
+    try:
+        try:
+            from PySquashfsImage import SquashFsImage
+            with open(modloop_path, "rb") as f:
+                img = SquashFsImage(f)
+                for item in img.root.riter():
+                    if item.name in STORAGE_MODULE_NAMES:
+                        target = os.path.join(dest_dir, item.name)
+                        with open(target, "wb") as out:
+                            out.write(item.read_bytes())
+        except ImportError:
+            unsquashfs_bin = shutil.which("unsquashfs")
+            if unsquashfs_bin:
+                with tempfile.TemporaryDirectory() as tmp_sq:
+                    subprocess.run(
+                        [unsquashfs_bin, "-f", "-d", tmp_sq, modloop_path] + [f"*{m}" for m in STORAGE_MODULE_NAMES],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                    for root, _, files in os.walk(tmp_sq):
+                        for f in files:
+                            if f in STORAGE_MODULE_NAMES:
+                                shutil.copy(os.path.join(root, f), os.path.join(dest_dir, f))
+            else:
+                print("[WARN] Neither PySquashfsImage nor unsquashfs available; cannot unpack modloop-virt.")
+    except Exception as exc:
+        print(f"[WARN] Could not extract storage modules from {modloop_path}: {exc}")
+
+    extracted = [m for m in STORAGE_MODULE_NAMES if os.path.exists(os.path.join(dest_dir, m))]
+    if len(extracted) == len(STORAGE_MODULE_NAMES):
+        print(f"[OK] Storage kernel modules provisioned in /lib/modules/storage ({', '.join(extracted)})")
+    else:
+        print(f"[WARN] Partial storage modules provisioned: {extracted}")
 
 
 def compute_file_sha256(filepath):
@@ -303,14 +361,21 @@ def check_reproducible(root_dir):
 
 
 def prepare_rootfs(arch="x86_64", rootfs_dir=None, allow_host_fallback=False):
+    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else ("x86_64" if arch in ("x86_64", "amd64") else None)
+    if not norm_arch or norm_arch not in ARCH_CONFIGS:
+        raise ValueError(f"Unknown or unsupported architecture: {arch}")
+
     target_rootfs = rootfs_dir or ROOTFS
     os.makedirs(target_rootfs, exist_ok=True)
     dirs = [
         "bin", "sbin", "usr/bin", "usr/lib", "etc/nilos",
-        "proc", "sys", "dev", "run/nilos", "run/onuron", "tmp", "mnt", "data"
+        "proc", "sys", "dev", "run/nilos", "run/onuron", "tmp", "mnt", "data",
+        "lib/modules/storage"
     ]
     for d in dirs:
         os.makedirs(os.path.join(target_rootfs, d), exist_ok=True)
+
+    provision_storage_modules(norm_arch, target_rootfs, ARCH_CONFIGS[norm_arch]["out_dir"])
 
     # Copy etc/nilos configs
     etc_src = os.path.join(TOP, "etc", "nilos")
@@ -318,10 +383,6 @@ def prepare_rootfs(arch="x86_64", rootfs_dir=None, allow_host_fallback=False):
         shutil.copytree(etc_src, os.path.join(target_rootfs, "etc", "nilos"), dirs_exist_ok=True)
 
     # Target-specific release directories
-    norm_arch = "aarch64" if arch in ("aarch64", "arm64") else ("x86_64" if arch in ("x86_64", "amd64") else None)
-    if not norm_arch or norm_arch not in ARCH_CONFIGS:
-        raise ValueError(f"Unknown or unsupported architecture: {arch}")
-
     triple = ARCH_CONFIGS[norm_arch]["target_triple"]
     release_dir = os.path.join(TOP, "target", triple, "release")
     fallback_release = os.path.join(TOP, "target", "release")

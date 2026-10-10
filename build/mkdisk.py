@@ -2,7 +2,7 @@
 """
 build/mkdisk.py — OnuronOS Data Partition Image Builder
 
-Creates a 256 MB raw disk image (nilos.img) that QEMU exposes as /dev/vda.
+Creates a 256 MB raw disk image (data.img) that QEMU exposes as /dev/vda.
 
 Two build modes are supported:
 

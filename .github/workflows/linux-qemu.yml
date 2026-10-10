@@ -20,7 +20,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y musl-tools qemu-system-x86 python3 e2fsprogs
+        run: sudo apt-get update && sudo apt-get install -y musl-tools qemu-system-x86 python3 e2fsprogs squashfs-tools
       - name: Workspace tests
         run: cargo test --workspace --all-targets
       - name: Build & harness unit tests
@@ -40,7 +40,7 @@ jobs:
         run: python3 build/qemu-smoke.py
       - name: QEMU end-to-end reboot persistence test
         timeout-minutes: 3
-        run: python3 build/qemu-persistence-test.py --allow-skip
+        run: python3 build/qemu-persistence-test.py
 
   aarch64-qemu:
     runs-on: ubuntu-latest
@@ -51,7 +51,7 @@ jobs:
           targets: aarch64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu qemu-system-arm python3 e2fsprogs
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu qemu-system-arm python3 e2fsprogs squashfs-tools
       - name: Configure cross-linker
         run: |
           mkdir -p .cargo
@@ -70,7 +70,7 @@ jobs:
         run: python3 build/qemu-smoke.py --target qemu-aarch64
       - name: QEMU ARM64 end-to-end reboot persistence test
         timeout-minutes: 3
-        run: python3 build/qemu-persistence-test.py --target qemu-aarch64 --allow-skip
+        run: python3 build/qemu-persistence-test.py --target qemu-aarch64
       - name: Upload ARM64 build manifest artifact
         uses: actions/upload-artifact@v4
         if: always()

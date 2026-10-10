@@ -50,7 +50,7 @@ simulated = false
 [[entries]]
 name = "QEMU Boot Automation"
 tier = "functional-prototype"
-details = "Persistent `nilos.img` disk + virtio-blk + automated headless boot smoke testing harness"
+details = "Persistent `data.img` disk + virtio-blk + automated headless boot smoke testing harness"
 evidence = ["build/qemu-boot.sh", "build/qemu-boot.ps1", "build/qemu-smoke.py", "build/test_qemu_smoke.py"]
 simulated = false
 
