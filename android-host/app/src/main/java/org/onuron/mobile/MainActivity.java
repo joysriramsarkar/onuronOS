@@ -36,6 +36,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -48,7 +49,8 @@ import java.util.Locale;
 
 /**
  * MainActivity — Unified Onuron OS Mobile Host Runtime on Samsung Galaxy S25
- * Matches QEMU & Desktop Simulator with 1:1 UI, live browser, real calling, and interactive terminal.
+ * Full ArkUI/Material 3 styled system apps: Phone, Messages, Browser, Files,
+ * Camera, Notes, Music, Calculator, Settings, and interactive Terminal.
  */
 public class MainActivity extends Activity {
 
@@ -60,6 +62,8 @@ public class MainActivity extends Activity {
     private EditText browserUrlBar;
     private LinearLayout terminalInputBar;
     private EditText terminalInputField;
+    private LinearLayout messageInputBar;
+    private EditText messageInputField;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     private final BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
@@ -82,7 +86,6 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Crash guard: Catch any unexpected uncaught exceptions gracefully
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
             Log.e(TAG, "Uncaught exception in Onuron: " + throwable.getMessage(), throwable);
         });
@@ -123,6 +126,14 @@ public class MainActivity extends Activity {
             termLp.gravity = Gravity.BOTTOM;
             termLp.bottomMargin = (int) (56 * getResources().getDisplayMetrics().density);
             rootLayout.addView(terminalInputBar, termLp);
+
+            // 4. Floating Messages Input Bar
+            setupMessageInputBar();
+            FrameLayout.LayoutParams msgLp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            msgLp.gravity = Gravity.BOTTOM;
+            msgLp.bottomMargin = (int) (56 * getResources().getDisplayMetrics().density);
+            rootLayout.addView(messageInputBar, msgLp);
 
             setContentView(rootLayout);
 
@@ -272,7 +283,7 @@ public class MainActivity extends Activity {
         terminalInputBar.addView(prompt);
 
         terminalInputField = new EditText(this);
-        terminalInputField.setHint("কমান্ড লিখুন (e.g. ls -la, pwd, uname)...");
+        terminalInputField.setHint("কমান্ড লিখুন (e.g. ls, pwd, cd, python)...");
         terminalInputField.setHintTextColor(0xFF475569);
         terminalInputField.setTextColor(0xFFFFFFFF);
         terminalInputField.setTextSize(13);
@@ -310,6 +321,56 @@ public class MainActivity extends Activity {
         });
         terminalInputBar.addView(runBtn, new LinearLayout.LayoutParams(
                 (int) (64 * getResources().getDisplayMetrics().density), (int) (38 * getResources().getDisplayMetrics().density)));
+    }
+
+    private void setupMessageInputBar() {
+        messageInputBar = new LinearLayout(this);
+        messageInputBar.setOrientation(LinearLayout.HORIZONTAL);
+        messageInputBar.setBackgroundColor(0xFF141C2B);
+        messageInputBar.setGravity(Gravity.CENTER_VERTICAL);
+        messageInputBar.setVisibility(View.GONE);
+        int pad = (int) (8 * getResources().getDisplayMetrics().density);
+        messageInputBar.setPadding(pad, pad, pad, pad);
+
+        messageInputField = new EditText(this);
+        messageInputField.setHint("বার্তা লিখুন (Type message)...");
+        messageInputField.setHintTextColor(0xFF475569);
+        messageInputField.setTextColor(0xFFFFFFFF);
+        messageInputField.setTextSize(13);
+        messageInputField.setSingleLine(true);
+        messageInputField.setBackgroundColor(0xFF1E293B);
+        messageInputField.setPadding(pad, pad, pad, pad);
+        messageInputField.setImeOptions(EditorInfo.IME_ACTION_SEND);
+        messageInputField.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEND || (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER)) {
+                String msg = messageInputField.getText().toString().trim();
+                if (!msg.isEmpty() && onuronView != null) {
+                    onuronView.sendMessage(msg);
+                    messageInputField.setText("");
+                }
+                return true;
+            }
+            return false;
+        });
+
+        LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f);
+        inputLp.setMargins(pad, 0, pad, 0);
+        messageInputBar.addView(messageInputField, inputLp);
+
+        Button sendBtn = new Button(this);
+        sendBtn.setText("✈️");
+        sendBtn.setTextColor(0xFF0A0E17);
+        sendBtn.setBackgroundColor(0xFF00E5FF);
+        sendBtn.setTextSize(16);
+        sendBtn.setOnClickListener(v -> {
+            String msg = messageInputField.getText().toString().trim();
+            if (!msg.isEmpty() && onuronView != null) {
+                onuronView.sendMessage(msg);
+                messageInputField.setText("");
+            }
+        });
+        messageInputBar.addView(sendBtn, new LinearLayout.LayoutParams(
+                (int) (52 * getResources().getDisplayMetrics().density), (int) (38 * getResources().getDisplayMetrics().density)));
     }
 
     public void showBrowser(String url) {
@@ -352,14 +413,56 @@ public class MainActivity extends Activity {
         }
     }
 
+    public void setMessageInputVisible(boolean visible) {
+        if (messageInputBar != null) {
+            messageInputBar.setVisibility(visible ? View.VISIBLE : View.GONE);
+            if (visible && messageInputField != null) {
+                messageInputField.requestFocus();
+                showSoftKeyboard(messageInputField);
+            } else if (!visible && messageInputField != null) {
+                hideSoftKeyboard(messageInputField);
+            }
+        }
+    }
+
     public void triggerRealCall(String number) {
         if (number == null || number.isEmpty()) return;
         try {
+            if (onuronView != null) {
+                SimpleDateFormat sdf = new SimpleDateFormat("HH:mm, dd MMM", Locale.getDefault());
+                onuronView.callLogs.add(0, new String[]{number, sdf.format(new Date()), "আউটগোয়িং"});
+            }
             Intent callIntent = new Intent(Intent.ACTION_DIAL);
             callIntent.setData(Uri.parse("tel:" + number));
             startActivity(callIntent);
         } catch (Exception e) {
             Log.e(TAG, "Failed to start phone dialer intent", e);
+        }
+    }
+
+    public void triggerCamera() {
+        try {
+            Intent cameraIntent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            if (cameraIntent.resolveActivity(getPackageManager()) != null) {
+                startActivity(cameraIntent);
+            } else {
+                Toast.makeText(this, "📷 ক্যামেরা অ্যাপ্লিকেশন চালু হচ্ছে...", Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Camera launch error", e);
+            Toast.makeText(this, "ক্যামেরা প্রস্তুত করা হচ্ছে...", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    public void sendRealSms(String number, String message) {
+        if (number == null || number.isEmpty() || message == null || message.isEmpty()) return;
+        try {
+            Intent smsIntent = new Intent(Intent.ACTION_SENDTO);
+            smsIntent.setData(Uri.parse("smsto:" + number));
+            smsIntent.putExtra("sms_body", message);
+            startActivity(smsIntent);
+        } catch (Exception e) {
+            Log.e(TAG, "SMS launch error", e);
         }
     }
 
@@ -390,6 +493,7 @@ public class MainActivity extends Activity {
         if (onuronView != null && onuronView.screen != OnuronView.Screen.HOME) {
             onuronView.screen = OnuronView.Screen.HOME;
             setTerminalInputVisible(false);
+            setMessageInputVisible(false);
             onuronView.invalidate();
             return;
         }
@@ -424,7 +528,8 @@ public class MainActivity extends Activity {
     public static class OnuronView extends View {
 
         enum Screen {
-            HOME, PHONE, MESSAGES, FILES, SETTINGS, TERMINAL, ABOUT
+            HOME, PHONE, MESSAGES, FILES, SETTINGS, TERMINAL, ABOUT,
+            NOTES, MUSIC, CALCULATOR
         }
 
         private static class TouchArea {
@@ -437,21 +542,6 @@ public class MainActivity extends Activity {
             }
         }
 
-        // Color Palette
-        private static final int COLOR_BG = 0xFF0A0E17;
-        private static final int COLOR_SURFACE = 0xFF141C2B;
-        private static final int COLOR_SURFACE_ALT = 0xFF1E293B;
-        private static final int COLOR_BORDER = 0xFF2D3748;
-        private static final int COLOR_CYAN = 0xFF00E5FF;
-        private static final int COLOR_BLUE = 0xFF2979FF;
-        private static final int COLOR_GREEN = 0xFF00E676;
-        private static final int COLOR_AMBER = 0xFFFFB300;
-        private static final int COLOR_PURPLE = 0xFF7C4DFF;
-        private static final int COLOR_RED = 0xFFFF5252;
-        private static final int COLOR_TEXT_HIGH = 0xFFFFFFFF;
-        private static final int COLOR_TEXT_MED = 0xFF94A3B8;
-        private static final int COLOR_TEXT_DIM = 0xFF475569;
-
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final List<TouchArea> touchAreas = new ArrayList<>();
         private final Vibrator vibrator;
@@ -460,51 +550,127 @@ public class MainActivity extends Activity {
         // Dynamic State
         public Screen screen = Screen.HOME;
         public boolean wifiEnabled = true;
-        public int wifiSignalLevel = 3;
+        public int wifiSignalLevel = 3; // 1 to 3
         public boolean cellularEnabled = true;
-        public int cellularSignalLevel = 4;
+        public int cellularSignalLevel = 4; // 1 to 4
         public int batteryLevel = 95;
         public boolean isCharging = false;
         public boolean darkMode = true;
+        public boolean vibratorEnabled = true;
+        public int soundVolume = 75; // 0, 25, 50, 75, 100
 
-        // Phone App State
+        // Phone App State (ArkUI Tabbed: 0: Dialpad, 1: Contacts, 2: Call Logs)
+        public int phoneTab = 0;
         public String dialNumber = "";
+        public List<String[]> contacts = new ArrayList<>(); // [Name, Number]
+        public List<String[]> callLogs = new ArrayList<>(); // [Number, Time, Status]
+
+        // Messages App State
+        public List<String[]> messageThreads = new ArrayList<>(); // [Sender, LastMsg, Time]
+        public List<String[]> activeChatMessages = new ArrayList<>(); // [Sender, Msg, Time]
+        public String activeRecipient = "Onuron System";
+        public boolean inActiveChat = false;
 
         // Files App State
         public String currentPath;
+        public String selectedFileInfo = null;
 
         // Terminal App State
         public List<String> termLines = new ArrayList<>();
         public String termCwd;
+
+        // Calculator App State
+        public String calcDisplay = "0";
+        public String calcEquation = "";
+        public double calcFirstOperand = 0;
+        public String calcPendingOp = "";
+        public boolean calcNewNumber = true;
+
+        // Notes App State (aligned with notes-app-nilLang)
+        public List<String[]> notesList = new ArrayList<>(); // [ID, Title, Snippet, Category, Priority, Date]
+        public String selectedNoteDetail = null;
+
+        // Music App State (aligned with music-streaming-nilLang)
+        public boolean musicPlaying = false;
+        public int musicCurrentTrack = 0;
+        public int musicProgressSec = 105;
+        public List<String[]> musicTracks = new ArrayList<>(); // [Title, Artist, Duration]
 
         public OnuronView(Context context, MainActivity activity) {
             super(context);
             this.activity = activity;
             this.vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
 
-            // Set safe user directories where 'ls' and file operations ALWAYS succeed without permission denied
             File appFiles = context.getFilesDir();
             this.termCwd = appFiles.getAbsolutePath();
             this.currentPath = appFiles.getAbsolutePath();
 
-            // Create some default Onuron user files if missing
             try {
                 new File(appFiles, "system.conf").createNewFile();
                 new File(appFiles, "onuron_apps").mkdir();
                 new File(appFiles, "downloads").mkdir();
+                new File(appFiles, "notes").mkdir();
             } catch (Exception ignored) {
             }
+
+            // Seed Contacts
+            contacts.add(new String[]{"মা (Mom)", "+8801700000001"});
+            contacts.add(new String[]{"বাবা (Dad)", "+8801700000002"});
+            contacts.add(new String[]{"ইমার্জেন্সি হেল্পলাইন", "112"});
+            contacts.add(new String[]{"অনুরণ ওএস সাপোর্ট", "+8801700000003"});
+
+            // Seed Call Logs
+            callLogs.add(new String[]{"+8801700000001", "১২:৪০, আজ", "আউটগোয়িং 📞"});
+            callLogs.add(new String[]{"112", "১০:১৫, গতকাল", "সফল কল ✅"});
+            callLogs.add(new String[]{"+8801700000003", "০৯:০০, ৮ অক্টো", "ইনকামিং 📲"});
+
+            // Seed Messages
+            messageThreads.add(new String[]{"Onuron System", "fscrypt v2 মেমরি এনক্রিপশন সক্রিয় রয়েছে।", "১২:৪৫"});
+            messageThreads.add(new String[]{"মা (Mom)", "কেমন আছো? সময়মতো খেয়ে নিও।", "১২:৪০"});
+            messageThreads.add(new String[]{"SoftBus Mesh", "NilPad-Pro-X1 সফলভাবে সংযুক্ত হয়েছে।", "১১:৩০"});
+
+            activeChatMessages.add(new String[]{"Onuron System", "স্বাগতম Onuron OS মেসেজিং সেন্টারে!", "১২:০০"});
+            activeChatMessages.add(new String[]{"Onuron System", "সিস্টেম কার্নেল ও ডিস্ট্রিবিউটেড সফটবাস সক্রিয়।", "১২:০১"});
+            activeChatMessages.add(new String[]{"me", "ধন্যবাদ! সিস্টেম টেস্ট চলছে।", "১২:০৫"});
+
+            // Seed Notes (from notes-app-nilLang)
+            notesList.add(new String[]{"note-1", "স্বাগতম নীলাং নোটবুক-এ!", "নীলাং ভাষায় তৈরি আধুনিক, দ্রুতগতির নোট অ্যাপ্লিকেশন। সম্পূর্ণ বাংলায় ও ইংরেজিতে নিরাপদ সংরক্ষণ।", "গাইড", "High", "১০ অক্টো"});
+            notesList.add(new String[]{"note-2", "দৈনিক কাজের পরিকল্পনা", "বিল্ড ও টেস্ট ভ্যালিডেশন সমাপ্ত করা, S25 রানটাইম যাচাই করা এবং গিট পুশ নিশ্চিত করা।", "কাজ", "High", "১০ অক্টো"});
+            notesList.add(new String[]{"note-3", "অনুরণ ওএস আর্কিটেকচার", "Linux LTS → nilinit → NilHAL → Onuron daemons → nilrt → NilUI/Alap।", "সিস্টেম", "Normal", "০৯ অক্টো"});
+
+            // Seed Music Tracks (from music-streaming-nilLang)
+            musicTracks.add(new String[]{"Cyber Bangla 2040 (NilOS Theme)", "NilLang Sonic Lab", "03:50"});
+            musicTracks.add(new String[]{"Onuron Ambient Waves", "Alap Audio Engine", "04:12"});
+            musicTracks.add(new String[]{"Snapdragon 8 Elite Groove", "Qualcomm DSP Team", "02:45"});
+            musicTracks.add(new String[]{"Alap Reactive Symphony", "Onuron Native Sound", "05:01"});
 
             // Initialize terminal banner
             termLines.add("==================================================");
             termLines.add("   Onuron OS Terminal CLI (Samsung Galaxy S25)   ");
             termLines.add("   Hardware: Snapdragon 8 Elite • Android Host   ");
+            termLines.add("   Commands: cd, pwd, ls, mkdir, cat, python, clear");
             termLines.add("==================================================");
             termLines.add("Working Dir: " + termCwd);
-            termLines.add("Tap quick chips or type below to run commands.");
+            termLines.add("Ready. Type commands below or tap quick chips.");
 
             checkSystemNetwork();
         }
+
+        // ── Dynamic Theme Palette ──
+        public int getBgColor() { return darkMode ? 0xFF0A0E17 : 0xFFF1F5F9; }
+        public int getSurfaceColor() { return darkMode ? 0xFF141C2B : 0xFFFFFFFF; }
+        public int getSurfaceAltColor() { return darkMode ? 0xFF1E293B : 0xFFE2E8F0; }
+        public int getBorderColor() { return darkMode ? 0xFF2D3748 : 0xFFCBD5E1; }
+        public int getTextHighColor() { return darkMode ? 0xFFFFFFFF : 0xFF0F172A; }
+        public int getTextMedColor() { return darkMode ? 0xFF94A3B8 : 0xFF475569; }
+        public int getTextDimColor() { return darkMode ? 0xFF475569 : 0xFF94A3B8; }
+
+        public static final int COLOR_CYAN = 0xFF00E5FF;
+        public static final int COLOR_BLUE = 0xFF2979FF;
+        public static final int COLOR_GREEN = 0xFF00E676;
+        public static final int COLOR_AMBER = 0xFFFFB300;
+        public static final int COLOR_PURPLE = 0xFF7C4DFF;
+        public static final int COLOR_RED = 0xFFFF5252;
 
         private void checkSystemNetwork() {
             try {
@@ -527,7 +693,7 @@ public class MainActivity extends Activity {
 
         private void vibrate() {
             try {
-                if (vibrator != null && vibrator.hasVibrator()) {
+                if (vibratorEnabled && vibrator != null && vibrator.hasVibrator()) {
                     vibrator.vibrate(25);
                 }
             } catch (Exception ignored) {
@@ -563,9 +729,9 @@ public class MainActivity extends Activity {
             int h = getHeight();
             if (w <= 0 || h <= 0) return;
 
-            // 1. Background
+            // 1. Dynamic Canvas Background
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(COLOR_BG);
+            paint.setColor(getBgColor());
             canvas.drawRect(0, 0, w, h, paint);
 
             // 2. Content Screen
@@ -588,12 +754,21 @@ public class MainActivity extends Activity {
                 case TERMINAL:
                     renderTerminalScreen(canvas, w, h);
                     break;
+                case CALCULATOR:
+                    renderCalculatorScreen(canvas, w, h);
+                    break;
+                case NOTES:
+                    renderNotesScreen(canvas, w, h);
+                    break;
+                case MUSIC:
+                    renderMusicScreen(canvas, w, h);
+                    break;
                 case ABOUT:
                     renderAboutScreen(canvas, w, h);
                     break;
             }
 
-            // 3. Top Dynamic Status Bar (Universal on top of all screens)
+            // 3. Top Dynamic Status Bar (Universal overlay)
             renderStatusBar(canvas, w);
 
             // 4. Bottom Navigation Bar
@@ -606,16 +781,16 @@ public class MainActivity extends Activity {
             int barHeight = dp(42);
 
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(0xEE080C14);
+            paint.setColor(darkMode ? 0xEE080C14 : 0xEEF1F5F9);
             canvas.drawRect(0, 0, w, barHeight, paint);
 
-            paint.setColor(COLOR_BORDER);
+            paint.setColor(getBorderColor());
             canvas.drawRect(0, barHeight - 1, w, barHeight, paint);
 
             // Left: Real Time in Bengali
             SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
             String timeStr = toBengaliDigits(sdf.format(new Date()));
-            paint.setColor(COLOR_TEXT_HIGH);
+            paint.setColor(getTextHighColor());
             paint.setTextSize(dp(14));
             paint.setTextAlign(Paint.Align.LEFT);
             paint.setFakeBoldText(true);
@@ -636,7 +811,7 @@ public class MainActivity extends Activity {
 
             touchAreas.add(new TouchArea(new RectF(pillX, 0, pillX + pillW, barHeight), "toggle_island"));
 
-            // Right side: Dynamic Indicators
+            // Right side indicators
             float rightX = w - dp(16);
 
             // 1. Dynamic Battery
@@ -646,7 +821,7 @@ public class MainActivity extends Activity {
             float batY = dp(14);
 
             paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(COLOR_TEXT_MED);
+            paint.setColor(getTextMedColor());
             paint.setStrokeWidth(dp(1.5f));
             canvas.drawRoundRect(batX, batY, batX + batW, batY + batH, dp(3), dp(3), paint);
 
@@ -680,11 +855,11 @@ public class MainActivity extends Activity {
                 for (int i = 0; i < 4; i++) {
                     float bx = towerX + i * dp(4.5f);
                     float by = towerBaseY - barHeights[i];
-                    paint.setColor(i < cellularSignalLevel ? COLOR_TEXT_HIGH : 0xFF2D3748);
+                    paint.setColor(i < cellularSignalLevel ? getTextHighColor() : (darkMode ? 0xFF2D3748 : 0xFFCBD5E1));
                     canvas.drawRoundRect(bx, by, bx + dp(2.5f), towerBaseY, dp(1), dp(1), paint);
                 }
             } else {
-                paint.setColor(0xFF2D3748);
+                paint.setColor(darkMode ? 0xFF2D3748 : 0xFFCBD5E1);
                 for (int i = 0; i < 4; i++) {
                     float bx = towerX + i * dp(4.5f);
                     float by = towerBaseY - barHeights[i];
@@ -699,32 +874,8 @@ public class MainActivity extends Activity {
             rightX = towerX - dp(6);
 
             // Cellular Generation Badge
-            String netBadge;
-            int netColor;
-            if (cellularEnabled) {
-                switch (cellularSignalLevel) {
-                    case 4:
-                    case 3:
-                        netBadge = "৫G";
-                        netColor = COLOR_CYAN;
-                        break;
-                    case 2:
-                        netBadge = "৪G";
-                        netColor = COLOR_BLUE;
-                        break;
-                    case 1:
-                        netBadge = "৩G";
-                        netColor = COLOR_AMBER;
-                        break;
-                    default:
-                        netBadge = "E";
-                        netColor = COLOR_RED;
-                }
-            } else {
-                netBadge = "অফ";
-                netColor = COLOR_TEXT_DIM;
-            }
-
+            String netBadge = cellularEnabled ? (cellularSignalLevel >= 3 ? "৫G" : (cellularSignalLevel == 2 ? "৪G" : "৩G")) : "অফ";
+            int netColor = cellularEnabled ? (cellularSignalLevel >= 3 ? COLOR_CYAN : COLOR_AMBER) : getTextDimColor();
             paint.setColor(netColor);
             paint.setTextSize(dp(11));
             paint.setTextAlign(Paint.Align.RIGHT);
@@ -734,27 +885,27 @@ public class MainActivity extends Activity {
             touchAreas.add(new TouchArea(new RectF(rightX - dp(24), 0, towerX + towerW, barHeight), "cycle_signal"));
             rightX -= dp(28);
 
-            // 3. Dynamic Wi-Fi (3 concentric arcs)
+            // 3. Dynamic Vector Wi-Fi (3 concentric vector arcs + base dot)
             float wifiW = dp(16);
             float wifiX = rightX - wifiW;
 
             if (wifiEnabled) {
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setStrokeWidth(dp(1.8f));
-                paint.setColor(wifiSignalLevel >= 3 ? COLOR_CYAN : 0xFF2D3748);
-                canvas.drawArc(new RectF(wifiX, dp(13), wifiX + wifiW, dp(29)), 220, 100, false, paint);
-
-                paint.setColor(wifiSignalLevel >= 2 ? COLOR_CYAN : 0xFF2D3748);
-                canvas.drawArc(new RectF(wifiX + dp(3), dp(17), wifiX + wifiW - dp(3), dp(29)), 220, 100, false, paint);
-
                 paint.setStyle(Paint.Style.FILL);
-                paint.setColor(wifiSignalLevel >= 1 ? COLOR_CYAN : 0xFF2D3748);
-                canvas.drawCircle(wifiX + wifiW / 2f, dp(26), dp(1.8f), paint);
+                paint.setColor(wifiSignalLevel >= 1 ? COLOR_CYAN : (darkMode ? 0xFF2D3748 : 0xFFCBD5E1));
+                canvas.drawCircle(wifiX + wifiW / 2f, dp(26.5f), dp(1.8f), paint);
+
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(dp(1.6f));
+                paint.setColor(wifiSignalLevel >= 2 ? COLOR_CYAN : (darkMode ? 0xFF2D3748 : 0xFFCBD5E1));
+                canvas.drawArc(new RectF(wifiX + dp(2.5f), dp(16.5f), wifiX + wifiW - dp(2.5f), dp(29)), 220, 100, false, paint);
+
+                paint.setColor(wifiSignalLevel >= 3 ? COLOR_CYAN : (darkMode ? 0xFF2D3748 : 0xFFCBD5E1));
+                canvas.drawArc(new RectF(wifiX, dp(11.5f), wifiX + wifiW, dp(29)), 220, 100, false, paint);
             } else {
                 paint.setStyle(Paint.Style.STROKE);
-                paint.setStrokeWidth(dp(1.5f));
-                paint.setColor(0xFF2D3748);
-                canvas.drawArc(new RectF(wifiX, dp(13), wifiX + wifiW, dp(29)), 220, 100, false, paint);
+                paint.setStrokeWidth(dp(1.6f));
+                paint.setColor(darkMode ? 0xFF2D3748 : 0xFFCBD5E1);
+                canvas.drawArc(new RectF(wifiX, dp(11.5f), wifiX + wifiW, dp(29)), 220, 100, false, paint);
                 paint.setStyle(Paint.Style.FILL);
                 paint.setColor(COLOR_RED);
                 paint.setTextSize(dp(9));
@@ -765,49 +916,49 @@ public class MainActivity extends Activity {
             touchAreas.add(new TouchArea(new RectF(wifiX - dp(6), 0, rightX + dp(4), barHeight), "toggle_wifi"));
         }
 
-        // ─── Home Screen ─────────────────────────────────────────────────────────────
+        // ─── Home Screen (ArkUI/Material 3 Grid: 12 Apps) ───────────────────────────
 
         private void renderHomeScreen(Canvas canvas, int w, int h) {
-            float startY = dp(60);
+            float startY = dp(56);
 
-            // Hero Digital Clock
+            // Hero Clock
             SimpleDateFormat sdfHour = new SimpleDateFormat("HH:mm", Locale.getDefault());
             String clockStr = toBengaliDigits(sdfHour.format(new Date()));
-            paint.setColor(COLOR_TEXT_HIGH);
-            paint.setTextSize(dp(56));
+            paint.setColor(getTextHighColor());
+            paint.setTextSize(dp(54));
             paint.setTextAlign(Paint.Align.CENTER);
             paint.setFakeBoldText(true);
-            canvas.drawText(clockStr, w / 2f, startY + dp(52), paint);
+            canvas.drawText(clockStr, w / 2f, startY + dp(50), paint);
 
             // Date in Bengali
             SimpleDateFormat sdfDate = new SimpleDateFormat("EEEE, d MMMM yyyy", new Locale("bn", "BD"));
             String dateStr = sdfDate.format(new Date());
             paint.setColor(COLOR_CYAN);
-            paint.setTextSize(dp(14.5f));
+            paint.setTextSize(dp(14));
             paint.setFakeBoldText(false);
-            canvas.drawText(dateStr, w / 2f, startY + dp(82), paint);
+            canvas.drawText(dateStr, w / 2f, startY + dp(78), paint);
 
             // System Chip Card
-            float chipY = startY + dp(104);
+            float chipY = startY + dp(96);
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(COLOR_SURFACE);
-            RectF chipRect = new RectF(dp(18), chipY, w - dp(18), chipY + dp(44));
+            paint.setColor(getSurfaceColor());
+            RectF chipRect = new RectF(dp(18), chipY, w - dp(18), chipY + dp(40));
             canvas.drawRoundRect(chipRect, dp(12), dp(12), paint);
             paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(COLOR_BORDER);
+            paint.setColor(getBorderColor());
             paint.setStrokeWidth(dp(1));
             canvas.drawRoundRect(chipRect, dp(12), dp(12), paint);
 
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(COLOR_TEXT_MED);
-            paint.setTextSize(dp(12));
+            paint.setColor(getTextMedColor());
+            paint.setTextSize(dp(11.5f));
             paint.setTextAlign(Paint.Align.CENTER);
-            canvas.drawText("⚡ Snapdragon 8 Elite • 120Hz Dynamic AMOLED • Onuron 1.0", w / 2f, chipY + dp(27), paint);
+            canvas.drawText("⚡ Snapdragon 8 Elite • Onuron OS 1.0 (Alap Engine)", w / 2f, chipY + dp(25), paint);
 
-            // App Grid (2 rows x 4 columns)
-            float gridY = chipY + dp(66);
+            // App Grid (3 rows x 4 columns = 12 apps)
+            float gridY = chipY + dp(54);
             int cols = 4;
-            float iconSize = dp(60);
+            float iconSize = dp(56);
             float colWidth = (w - dp(32)) / (float) cols;
 
             AppItem[] apps = {
@@ -815,136 +966,478 @@ public class MainActivity extends Activity {
                     new AppItem("ব্রাউজার", "app_browser", "🌐", COLOR_CYAN),
                     new AppItem("বার্তা", "app_messages", "💬", COLOR_AMBER),
                     new AppItem("ফাইল", "app_files", "📁", COLOR_BLUE),
+                    new AppItem("ক্যামেরা", "app_camera", "📷", COLOR_PURPLE),
+                    new AppItem("নোটস", "app_notes", "📝", COLOR_AMBER),
+                    new AppItem("মিউজিক", "app_music", "🎵", COLOR_GREEN),
+                    new AppItem("হিসাব", "app_calculator", "🧮", COLOR_CYAN),
                     new AppItem("সেটিংস", "app_settings", "⚙️", COLOR_PURPLE),
                     new AppItem("টার্মিনাল", "app_terminal", "💻", COLOR_CYAN),
                     new AppItem("সফটবাস", "app_softbus", "⚡", COLOR_GREEN),
-                    new AppItem("অনুরণ", "app_about", "ℹ️", COLOR_TEXT_MED),
+                    new AppItem("অনুরণ", "app_about", "ℹ️", COLOR_CYAN),
             };
 
             for (int i = 0; i < apps.length; i++) {
                 int r = i / cols;
                 int c = i % cols;
                 float cx = dp(16) + c * colWidth + colWidth / 2f;
-                float cy = gridY + r * dp(102);
+                float cy = gridY + r * dp(90);
 
                 RectF iconRect = new RectF(cx - iconSize / 2f, cy, cx + iconSize / 2f, cy + iconSize);
                 paint.setStyle(Paint.Style.FILL);
-                paint.setColor(COLOR_SURFACE);
-                canvas.drawRoundRect(iconRect, dp(18), dp(18), paint);
+                paint.setColor(getSurfaceColor());
+                canvas.drawRoundRect(iconRect, dp(16), dp(16), paint);
 
                 paint.setStyle(Paint.Style.STROKE);
-                paint.setColor(COLOR_BORDER);
+                paint.setColor(getBorderColor());
                 paint.setStrokeWidth(dp(1));
-                canvas.drawRoundRect(iconRect, dp(18), dp(18), paint);
+                canvas.drawRoundRect(iconRect, dp(16), dp(16), paint);
 
                 paint.setStyle(Paint.Style.FILL);
                 paint.setColor(apps[i].accent);
-                canvas.drawCircle(cx, cy + dp(14), dp(3.5f), paint);
+                canvas.drawCircle(cx, cy + dp(12), dp(3f), paint);
 
-                paint.setTextSize(dp(24));
+                paint.setTextSize(dp(22));
                 paint.setTextAlign(Paint.Align.CENTER);
-                canvas.drawText(apps[i].emoji, cx, cy + dp(43), paint);
+                canvas.drawText(apps[i].emoji, cx, cy + dp(40), paint);
 
-                paint.setColor(COLOR_TEXT_HIGH);
-                paint.setTextSize(dp(12.5f));
+                paint.setColor(getTextHighColor());
+                paint.setTextSize(dp(12));
                 paint.setFakeBoldText(false);
-                canvas.drawText(apps[i].title, cx, cy + iconSize + dp(20), paint);
+                canvas.drawText(apps[i].title, cx, cy + iconSize + dp(18), paint);
 
                 touchAreas.add(new TouchArea(iconRect, apps[i].id));
             }
         }
 
-        // ─── Phone Screen (Full Proportional S25 Sizing) ───────────────────────────
+        // ─── Phone App (ArkUI Tabbed: Keypad, Contacts, Recent Calls) ───────────────
 
         private void renderPhoneScreen(Canvas canvas, int w, int h) {
             float y = dp(52);
             paint.setColor(COLOR_GREEN);
-            paint.setTextSize(dp(22));
+            paint.setTextSize(dp(20));
             paint.setFakeBoldText(true);
             paint.setTextAlign(Paint.Align.LEFT);
-            canvas.drawText("ফোন ডায়ালার (Phone)", dp(20), y + dp(22), paint);
+            canvas.drawText("ফোন (Phone & Dialer)", dp(20), y + dp(20), paint);
 
-            // Number display card
-            y += dp(36);
-            RectF numCard = new RectF(dp(20), y, w - dp(20), y + dp(64));
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(COLOR_SURFACE);
-            canvas.drawRoundRect(numCard, dp(14), dp(14), paint);
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(COLOR_BORDER);
-            canvas.drawRoundRect(numCard, dp(14), dp(14), paint);
+            // Tab Bar: [ ডায়ালপ্যাড ] | [ কন্টাক্টস ] | [ কল হিস্ট্রি ]
+            y += dp(32);
+            float tabW = (w - dp(40)) / 3f;
+            String[] tabs = {"ডায়ালপ্যাড", "কন্টাক্টস (" + contacts.size() + ")", "কল লগ (" + callLogs.size() + ")"};
+            for (int i = 0; i < 3; i++) {
+                RectF tRect = new RectF(dp(20) + i * tabW, y, dp(20) + (i + 1) * tabW - dp(6), y + dp(34));
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(phoneTab == i ? (darkMode ? 0xFF064E3B : 0xFFDCFCE7) : getSurfaceColor());
+                canvas.drawRoundRect(tRect, dp(8), dp(8), paint);
 
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(COLOR_TEXT_HIGH);
-            paint.setTextSize(dp(24));
-            paint.setTextAlign(Paint.Align.CENTER);
-            String display = dialNumber.isEmpty() ? "নম্বর লিখুন..." : toBengaliDigits(dialNumber);
-            canvas.drawText(display, w / 2f, y + dp(41), paint);
+                paint.setColor(phoneTab == i ? COLOR_GREEN : getTextMedColor());
+                paint.setTextSize(dp(11.5f));
+                paint.setTextAlign(Paint.Align.CENTER);
+                canvas.drawText(tabs[i], tRect.centerX(), y + dp(22), paint);
 
-            // Dynamically scale keypad to fill tall S25 screen without empty void
-            float bottomNavH = dp(54);
-            float availableH = (h - bottomNavH) - (y + dp(74)) - dp(84);
-            float btnH = Math.min(dp(72), availableH / 4f - dp(12));
-            float btnW = (w - dp(64)) / 3f;
-            float padStartY = y + dp(80);
-
-            String[][] pad = {
-                    {"1", "2", "3"},
-                    {"4", "5", "6"},
-                    {"7", "8", "9"},
-                    {"*", "0", "#"}
-            };
-
-            for (int r = 0; r < 4; r++) {
-                for (int c = 0; c < 3; c++) {
-                    float bx = dp(20) + c * (btnW + dp(12));
-                    float by = padStartY + r * (btnH + dp(12));
-                    RectF btnRect = new RectF(bx, by, bx + btnW, by + btnH);
-
-                    paint.setStyle(Paint.Style.FILL);
-                    paint.setColor(COLOR_SURFACE_ALT);
-                    canvas.drawRoundRect(btnRect, dp(16), dp(16), paint);
-                    paint.setStyle(Paint.Style.STROKE);
-                    paint.setColor(COLOR_BORDER);
-                    canvas.drawRoundRect(btnRect, dp(16), dp(16), paint);
-
-                    paint.setStyle(Paint.Style.FILL);
-                    paint.setColor(COLOR_TEXT_HIGH);
-                    paint.setTextSize(dp(24));
-                    paint.setTextAlign(Paint.Align.CENTER);
-                    canvas.drawText(toBengaliDigits(pad[r][c]), bx + btnW / 2f, by + btnH / 2f + dp(9), paint);
-
-                    touchAreas.add(new TouchArea(btnRect, "key_" + pad[r][c]));
-                }
+                touchAreas.add(new TouchArea(tRect, "phone_tab_" + i));
             }
 
-            // Call & Delete buttons (stretched and prominent)
-            float actY = padStartY + 4 * (btnH + dp(12)) + dp(8);
-            float callBtnW = w - dp(104);
-            RectF callRect = new RectF(dp(20), actY, dp(20) + callBtnW, actY + dp(58));
+            y += dp(44);
 
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(COLOR_GREEN);
-            canvas.drawRoundRect(callRect, dp(16), dp(16), paint);
+            if (phoneTab == 0) {
+                // Number card
+                RectF numCard = new RectF(dp(20), y, w - dp(20), y + dp(56));
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(getSurfaceColor());
+                canvas.drawRoundRect(numCard, dp(12), dp(12), paint);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setColor(getBorderColor());
+                canvas.drawRoundRect(numCard, dp(12), dp(12), paint);
 
-            paint.setColor(COLOR_BG);
-            paint.setTextSize(dp(18));
-            paint.setFakeBoldText(true);
-            paint.setTextAlign(Paint.Align.CENTER);
-            canvas.drawText("📞 কল করুন (Call)", callRect.centerX(), actY + dp(36), paint);
-            touchAreas.add(new TouchArea(callRect, "act_call"));
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(getTextHighColor());
+                paint.setTextSize(dp(22));
+                paint.setTextAlign(Paint.Align.CENTER);
+                String display = dialNumber.isEmpty() ? "নম্বর লিখুন..." : toBengaliDigits(dialNumber);
+                canvas.drawText(display, w / 2f, y + dp(36), paint);
 
-            RectF delRect = new RectF(dp(28) + callBtnW, actY, w - dp(20), actY + dp(58));
-            paint.setColor(COLOR_SURFACE_ALT);
-            canvas.drawRoundRect(delRect, dp(16), dp(16), paint);
+                // Keypad grid
+                float padStartY = y + dp(68);
+                float btnW = (w - dp(64)) / 3f;
+                float btnH = dp(52);
+                String[][] pad = {
+                        {"1", "2", "3"},
+                        {"4", "5", "6"},
+                        {"7", "8", "9"},
+                        {"*", "0", "#"}
+                };
 
-            paint.setColor(COLOR_RED);
-            paint.setTextSize(dp(22));
-            canvas.drawText("⌫", delRect.centerX(), actY + dp(37), paint);
-            touchAreas.add(new TouchArea(delRect, "act_del"));
+                for (int r = 0; r < 4; r++) {
+                    for (int c = 0; c < 3; c++) {
+                        float bx = dp(20) + c * (btnW + dp(12));
+                        float by = padStartY + r * (btnH + dp(10));
+                        RectF btnRect = new RectF(bx, by, bx + btnW, by + btnH);
+
+                        paint.setStyle(Paint.Style.FILL);
+                        paint.setColor(getSurfaceAltColor());
+                        canvas.drawRoundRect(btnRect, dp(12), dp(12), paint);
+                        paint.setStyle(Paint.Style.STROKE);
+                        paint.setColor(getBorderColor());
+                        canvas.drawRoundRect(btnRect, dp(12), dp(12), paint);
+
+                        paint.setStyle(Paint.Style.FILL);
+                        paint.setColor(getTextHighColor());
+                        paint.setTextSize(dp(20));
+                        paint.setTextAlign(Paint.Align.CENTER);
+                        canvas.drawText(toBengaliDigits(pad[r][c]), bx + btnW / 2f, by + btnH / 2f + dp(7), paint);
+
+                        touchAreas.add(new TouchArea(btnRect, "key_" + pad[r][c]));
+                    }
+                }
+
+                // Action buttons: [ 📞 কল করুন ] [ 💾 সেভ ] [ ⌫ ]
+                float actY = padStartY + 4 * (btnH + dp(10)) + dp(8);
+                float callBtnW = w - dp(140);
+                RectF callRect = new RectF(dp(20), actY, dp(20) + callBtnW, actY + dp(50));
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(COLOR_GREEN);
+                canvas.drawRoundRect(callRect, dp(14), dp(14), paint);
+                paint.setColor(0xFF0A0E17);
+                paint.setTextSize(dp(16));
+                paint.setFakeBoldText(true);
+                canvas.drawText("📞 কল করুন (Call)", callRect.centerX(), actY + dp(32), paint);
+                touchAreas.add(new TouchArea(callRect, "act_call"));
+
+                RectF saveRect = new RectF(dp(28) + callBtnW, actY, dp(28) + callBtnW + dp(48), actY + dp(50));
+                paint.setColor(getSurfaceAltColor());
+                canvas.drawRoundRect(saveRect, dp(14), dp(14), paint);
+                paint.setColor(COLOR_CYAN);
+                paint.setTextSize(dp(18));
+                canvas.drawText("💾", saveRect.centerX(), actY + dp(32), paint);
+                touchAreas.add(new TouchArea(saveRect, "act_save_contact"));
+
+                RectF delRect = new RectF(w - dp(56), actY, w - dp(20), actY + dp(50));
+                paint.setColor(getSurfaceAltColor());
+                canvas.drawRoundRect(delRect, dp(14), dp(14), paint);
+                paint.setColor(COLOR_RED);
+                paint.setTextSize(dp(18));
+                canvas.drawText("⌫", delRect.centerX(), actY + dp(32), paint);
+                touchAreas.add(new TouchArea(delRect, "act_del"));
+
+            } else if (phoneTab == 1) {
+                // Contacts List
+                for (int i = 0; i < contacts.size(); i++) {
+                    String[] c = contacts.get(i);
+                    RectF card = new RectF(dp(20), y, w - dp(20), y + dp(56));
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setColor(getSurfaceColor());
+                    canvas.drawRoundRect(card, dp(12), dp(12), paint);
+
+                    // Avatar Circle
+                    paint.setColor(COLOR_BLUE);
+                    canvas.drawCircle(dp(44), y + dp(28), dp(18), paint);
+                    paint.setColor(Color.WHITE);
+                    paint.setTextSize(dp(14));
+                    paint.setTextAlign(Paint.Align.CENTER);
+                    canvas.drawText(c[0].substring(0, 1), dp(44), y + dp(33), paint);
+
+                    // Name and Number
+                    paint.setColor(getTextHighColor());
+                    paint.setTextAlign(Paint.Align.LEFT);
+                    paint.setTextSize(dp(14));
+                    paint.setFakeBoldText(true);
+                    canvas.drawText(c[0], dp(74), y + dp(25), paint);
+
+                    paint.setColor(getTextMedColor());
+                    paint.setTextSize(dp(12));
+                    paint.setFakeBoldText(false);
+                    canvas.drawText(toBengaliDigits(c[1]), dp(74), y + dp(44), paint);
+
+                    // Call icon
+                    paint.setColor(COLOR_GREEN);
+                    paint.setTextSize(dp(16));
+                    paint.setTextAlign(Paint.Align.RIGHT);
+                    canvas.drawText("📞", w - dp(36), y + dp(34), paint);
+
+                    touchAreas.add(new TouchArea(card, "call_contact_" + i));
+                    y += dp(66);
+                }
+            } else {
+                // Recent Call Logs
+                for (int i = 0; i < callLogs.size(); i++) {
+                    String[] log = callLogs.get(i);
+                    RectF card = new RectF(dp(20), y, w - dp(20), y + dp(52));
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setColor(getSurfaceColor());
+                    canvas.drawRoundRect(card, dp(12), dp(12), paint);
+
+                    paint.setColor(getTextHighColor());
+                    paint.setTextAlign(Paint.Align.LEFT);
+                    paint.setTextSize(dp(13.5f));
+                    paint.setFakeBoldText(true);
+                    canvas.drawText(toBengaliDigits(log[0]), dp(34), y + dp(24), paint);
+
+                    paint.setColor(getTextMedColor());
+                    paint.setTextSize(dp(11.5f));
+                    paint.setFakeBoldText(false);
+                    canvas.drawText(log[1] + " • " + log[2], dp(34), y + dp(42), paint);
+
+                    paint.setColor(COLOR_GREEN);
+                    paint.setTextAlign(Paint.Align.RIGHT);
+                    canvas.drawText("📞", w - dp(34), y + dp(32), paint);
+
+                    touchAreas.add(new TouchArea(card, "redial_log_" + i));
+                    y += dp(60);
+                }
+            }
         }
 
-        // ─── Terminal Screen ────────────────────────────────────────────────────────
+        // ─── Messages Screen (Direct Interactive Messaging) ─────────────────────────
+
+        private void renderMessagesScreen(Canvas canvas, int w, int h) {
+            float y = dp(52);
+            paint.setColor(COLOR_AMBER);
+            paint.setTextSize(dp(20));
+            paint.setFakeBoldText(true);
+            paint.setTextAlign(Paint.Align.LEFT);
+
+            if (!inActiveChat) {
+                canvas.drawText("বার্তা (Messages SMS)", dp(20), y + dp(20), paint);
+
+                // + New Chat Button
+                RectF newBtn = new RectF(w - dp(120), y, w - dp(20), y + dp(32));
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(COLOR_AMBER);
+                canvas.drawRoundRect(newBtn, dp(8), dp(8), paint);
+                paint.setColor(0xFF0A0E17);
+                paint.setTextSize(dp(12));
+                paint.setTextAlign(Paint.Align.CENTER);
+                canvas.drawText("+ নতুন বার্তা", newBtn.centerX(), y + dp(21), paint);
+                touchAreas.add(new TouchArea(newBtn, "msg_new_chat"));
+
+                y += dp(44);
+
+                for (int i = 0; i < messageThreads.size(); i++) {
+                    String[] th = messageThreads.get(i);
+                    RectF card = new RectF(dp(20), y, w - dp(20), y + dp(62));
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setColor(getSurfaceColor());
+                    canvas.drawRoundRect(card, dp(12), dp(12), paint);
+
+                    paint.setColor(COLOR_CYAN);
+                    paint.setTextSize(dp(14));
+                    paint.setFakeBoldText(true);
+                    paint.setTextAlign(Paint.Align.LEFT);
+                    canvas.drawText(th[0], dp(34), y + dp(26), paint);
+
+                    paint.setColor(getTextMedColor());
+                    paint.setTextSize(dp(11));
+                    paint.setTextAlign(Paint.Align.RIGHT);
+                    canvas.drawText(toBengaliDigits(th[2]), w - dp(34), y + dp(26), paint);
+
+                    paint.setColor(getTextHighColor());
+                    paint.setTextSize(dp(12));
+                    paint.setFakeBoldText(false);
+                    paint.setTextAlign(Paint.Align.LEFT);
+                    canvas.drawText(th[1], dp(34), y + dp(48), paint);
+
+                    touchAreas.add(new TouchArea(card, "open_chat_" + i));
+                    y += dp(72);
+                }
+            } else {
+                // Active Chat View
+                canvas.drawText("💬 " + activeRecipient, dp(48), y + dp(20), paint);
+
+                // Back Button
+                RectF backBtn = new RectF(dp(16), y, dp(44), y + dp(30));
+                paint.setColor(getSurfaceAltColor());
+                canvas.drawRoundRect(backBtn, dp(6), dp(6), paint);
+                paint.setColor(COLOR_CYAN);
+                paint.setTextSize(dp(14));
+                paint.setTextAlign(Paint.Align.CENTER);
+                canvas.drawText("◀", backBtn.centerX(), y + dp(21), paint);
+                touchAreas.add(new TouchArea(backBtn, "chat_back"));
+
+                y += dp(44);
+
+                // Chat bubbles
+                for (String[] m : activeChatMessages) {
+                    boolean isMe = "me".equals(m[0]);
+                    float bubbleW = w * 0.7f;
+                    float bx = isMe ? (w - dp(20) - bubbleW) : dp(20);
+                    RectF bubble = new RectF(bx, y, bx + bubbleW, y + dp(46));
+
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setColor(isMe ? (darkMode ? 0xFF065F46 : 0xFF10B981) : getSurfaceColor());
+                    canvas.drawRoundRect(bubble, dp(12), dp(12), paint);
+
+                    paint.setColor(Color.WHITE);
+                    paint.setTextSize(dp(12.5f));
+                    paint.setTextAlign(Paint.Align.LEFT);
+                    canvas.drawText(m[1], bx + dp(12), y + dp(22), paint);
+
+                    paint.setColor(isMe ? 0xFFD1FAE5 : getTextMedColor());
+                    paint.setTextSize(dp(10));
+                    paint.setTextAlign(Paint.Align.RIGHT);
+                    canvas.drawText(toBengaliDigits(m[2]), bx + bubbleW - dp(10), y + dp(38), paint);
+
+                    y += dp(56);
+                }
+            }
+        }
+
+        public void sendMessage(String text) {
+            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+            String time = sdf.format(new Date());
+            activeChatMessages.add(new String[]{"me", text, time});
+
+            // Update threads
+            if (!messageThreads.isEmpty()) {
+                messageThreads.get(0)[1] = text;
+                messageThreads.get(0)[2] = time;
+            }
+
+            activity.sendRealSms(activeRecipient, text);
+            invalidate();
+        }
+
+        // ─── Files App (Interactive Folder Navigation & File Detail) ────────────────
+
+        private void renderFilesScreen(Canvas canvas, int w, int h) {
+            float y = dp(52);
+            paint.setColor(COLOR_BLUE);
+            paint.setTextSize(dp(20));
+            paint.setFakeBoldText(true);
+            paint.setTextAlign(Paint.Align.LEFT);
+            canvas.drawText("ফাইল ম্যানেজার (Files)", dp(20), y + dp(20), paint);
+
+            // + New File Button
+            RectF newFileBtn = new RectF(w - dp(120), y, w - dp(20), y + dp(32));
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(COLOR_BLUE);
+            canvas.drawRoundRect(newFileBtn, dp(8), dp(8), paint);
+            paint.setColor(Color.WHITE);
+            paint.setTextSize(dp(12));
+            paint.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText("+ নতুন ফাইল", newFileBtn.centerX(), y + dp(21), paint);
+            touchAreas.add(new TouchArea(newFileBtn, "files_new_file"));
+
+            y += dp(36);
+            paint.setColor(getTextMedColor());
+            paint.setTextSize(dp(11.5f));
+            paint.setTextAlign(Paint.Align.LEFT);
+            canvas.drawText("পাথ: " + currentPath, dp(20), y + dp(12), paint);
+
+            y += dp(24);
+
+            // If not in root filesDir, provide Up/Back folder button
+            File dir = new File(currentPath);
+            File parent = dir.getParentFile();
+            if (parent != null && parent.exists() && !currentPath.equals(getContext().getFilesDir().getParent())) {
+                RectF upCard = new RectF(dp(20), y, w - dp(20), y + dp(38));
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(getSurfaceAltColor());
+                canvas.drawRoundRect(upCard, dp(8), dp(8), paint);
+                paint.setColor(COLOR_CYAN);
+                paint.setTextSize(dp(12.5f));
+                paint.setTextAlign(Paint.Align.LEFT);
+                canvas.drawText("⬆️ [.. আগের ফোল্ডার / Up]", dp(34), y + dp(24), paint);
+                touchAreas.add(new TouchArea(upCard, "file_go_up"));
+                y += dp(46);
+            }
+
+            File[] files = dir.listFiles();
+            if (files != null && files.length > 0) {
+                int count = 0;
+                for (int i = 0; i < files.length; i++) {
+                    if (count++ > 7) break;
+                    File f = files[i];
+                    RectF card = new RectF(dp(20), y, w - dp(20), y + dp(46));
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setColor(getSurfaceColor());
+                    canvas.drawRoundRect(card, dp(10), dp(10), paint);
+
+                    String icon = f.isDirectory() ? "📁 [DIR] " : "📄 [FILE] ";
+                    paint.setColor(f.isDirectory() ? COLOR_CYAN : getTextHighColor());
+                    paint.setTextSize(dp(13));
+                    paint.setTextAlign(Paint.Align.LEFT);
+                    canvas.drawText(icon + f.getName(), dp(32), y + dp(28), paint);
+
+                    paint.setColor(getTextMedColor());
+                    paint.setTextSize(dp(11));
+                    paint.setTextAlign(Paint.Align.RIGHT);
+                    String sz = f.isDirectory() ? "ফোল্ডার" : (f.length() / 1024 + " KB");
+                    canvas.drawText(sz, w - dp(32), y + dp(28), paint);
+
+                    touchAreas.add(new TouchArea(card, "file_click_" + i));
+                    y += dp(52);
+                }
+            } else {
+                paint.setColor(getTextDimColor());
+                paint.setTextSize(dp(13));
+                paint.setTextAlign(Paint.Align.LEFT);
+                canvas.drawText("এই ফোল্ডারে কোনো ফাইল নেই।", dp(20), y + dp(24), paint);
+            }
+
+            if (selectedFileInfo != null) {
+                y += dp(10);
+                RectF infoBox = new RectF(dp(20), y, w - dp(20), y + dp(50));
+                paint.setColor(0xFF0F172A);
+                canvas.drawRoundRect(infoBox, dp(8), dp(8), paint);
+                paint.setColor(COLOR_CYAN);
+                paint.setTextSize(dp(11.5f));
+                canvas.drawText(selectedFileInfo, dp(30), y + dp(30), paint);
+            }
+        }
+
+        // ─── Settings App (ArkUI/Material 3 Responsive Toggles) ─────────────────────
+
+        private void renderSettingsScreen(Canvas canvas, int w, int h) {
+            float y = dp(52);
+            paint.setColor(COLOR_PURPLE);
+            paint.setTextSize(dp(20));
+            paint.setFakeBoldText(true);
+            paint.setTextAlign(Paint.Align.LEFT);
+            canvas.drawText("সেটিংস (Settings & Control)", dp(20), y + dp(20), paint);
+
+            y += dp(36);
+
+            SettingToggle[] toggles = {
+                    new SettingToggle("ভাইব্রেশন ও হ্যাপটিক (Vibration)", vibratorEnabled ? "[ চালু ]" : "[ বন্ধ ]", vibratorEnabled ? COLOR_GREEN : getTextDimColor(), "toggle_vibration"),
+                    new SettingToggle("ডার্ক মোড থিম (Theme)", darkMode ? "[ ডার্ক ]" : "[ লাইট ]", darkMode ? COLOR_GREEN : COLOR_AMBER, "toggle_dark"),
+                    new SettingToggle("ওয়াইফাই নেটওয়ার্ক (Wi-Fi)", wifiEnabled ? "[ চালু • ৩/৩ ]" : "[ বন্ধ ]", wifiEnabled ? COLOR_CYAN : getTextDimColor(), "toggle_wifi"),
+                    new SettingToggle("সেলুলার ৫G ডেটা (Cellular)", cellularEnabled ? "[ চালু • ৫G ]" : "[ বন্ধ ]", cellularEnabled ? COLOR_CYAN : getTextDimColor(), "toggle_cellular"),
+                    new SettingToggle("সিগন্যাল ক্ষমতা (Signal Tower)", cellularSignalLevel + "/৪ বার ক্ষমতা", COLOR_CYAN, "cycle_signal"),
+                    new SettingToggle("ব্যাটারি চার্জিং স্টেট", isCharging ? "[ চার্জ হচ্ছে ⚡ ]" : "[ সাধারণ " + batteryLevel + "% ]", isCharging ? COLOR_AMBER : COLOR_GREEN, "toggle_battery"),
+                    new SettingToggle("ভলিউম ও সাউন্ড (Volume)", soundVolume == 0 ? "[ মিউট ]" : "[ " + soundVolume + "% ]", soundVolume > 0 ? COLOR_BLUE : COLOR_RED, "cycle_volume"),
+                    new SettingToggle("সিস্টেম ভাষা (Language)", "[ বাংলা (Bangladesh) ]", COLOR_PURPLE, "toggle_lang"),
+                    new SettingToggle("ডিভাইস পরিচিতি (About)", "Samsung S25 • 8 Elite", COLOR_CYAN, "app_about"),
+            };
+
+            for (SettingToggle t : toggles) {
+                RectF card = new RectF(dp(20), y, w - dp(20), y + dp(48));
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(getSurfaceColor());
+                canvas.drawRoundRect(card, dp(12), dp(12), paint);
+
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setColor(getBorderColor());
+                paint.setStrokeWidth(dp(1));
+                canvas.drawRoundRect(card, dp(12), dp(12), paint);
+
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(getTextHighColor());
+                paint.setTextSize(dp(13.5f));
+                paint.setFakeBoldText(false);
+                paint.setTextAlign(Paint.Align.LEFT);
+                canvas.drawText(t.title, dp(34), y + dp(30), paint);
+
+                paint.setColor(t.color);
+                paint.setFakeBoldText(true);
+                paint.setTextAlign(Paint.Align.RIGHT);
+                canvas.drawText(t.status, w - dp(34), y + dp(30), paint);
+
+                touchAreas.add(new TouchArea(card, t.id));
+                y += dp(54);
+            }
+        }
+
+        // ─── Terminal Screen (Fixed CD, Python, Dynamic Auto-Scroll) ────────────────
 
         private void renderTerminalScreen(Canvas canvas, int w, int h) {
             float y = dp(52);
@@ -952,51 +1445,51 @@ public class MainActivity extends Activity {
             paint.setTextSize(dp(20));
             paint.setFakeBoldText(true);
             paint.setTextAlign(Paint.Align.LEFT);
-            canvas.drawText("টার্মিনাল (Terminal CLI)", dp(20), y + dp(22), paint);
+            canvas.drawText("টার্মিনাল (Terminal CLI)", dp(20), y + dp(20), paint);
 
-            y += dp(36);
+            y += dp(32);
 
             // Quick Chips
-            String[] chips = {"ls -la", "pwd", "uname -a", "date", "df -h", "clear"};
+            String[] chips = {"ls -la", "pwd", "cd ..", "uname -a", "python -c \"2+2\"", "clear"};
             float chipW = (w - dp(52)) / 3f;
             for (int i = 0; i < chips.length; i++) {
                 int r = i / 3;
                 int c = i % 3;
                 float cx = dp(20) + c * (chipW + dp(6));
-                float cy = y + r * dp(34);
-                RectF chipRect = new RectF(cx, cy, cx + chipW, cy + dp(28));
+                float cy = y + r * dp(32);
+                RectF chipRect = new RectF(cx, cy, cx + chipW, cy + dp(26));
 
                 paint.setStyle(Paint.Style.FILL);
-                paint.setColor(COLOR_SURFACE);
+                paint.setColor(getSurfaceColor());
                 canvas.drawRoundRect(chipRect, dp(8), dp(8), paint);
 
                 paint.setColor(COLOR_CYAN);
-                paint.setTextSize(dp(12));
+                paint.setTextSize(dp(11.5f));
                 paint.setTextAlign(Paint.Align.CENTER);
-                canvas.drawText(chips[i], cx + chipW / 2f, cy + dp(18), paint);
+                canvas.drawText(chips[i], cx + chipW / 2f, cy + dp(17), paint);
 
                 touchAreas.add(new TouchArea(chipRect, "chip_" + chips[i]));
             }
 
-            y += dp(78);
+            y += dp(72);
 
             // Terminal Screen Output Box
             float boxBottom = h - dp(116);
             RectF termBox = new RectF(dp(20), y, w - dp(20), boxBottom);
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(0xFF040609);
+            paint.setColor(darkMode ? 0xFF040609 : 0xFFFFFFFF);
             canvas.drawRoundRect(termBox, dp(12), dp(12), paint);
 
             paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(COLOR_BORDER);
+            paint.setColor(getBorderColor());
             canvas.drawRoundRect(termBox, dp(12), dp(12), paint);
 
-            // Render terminal output lines from bottom up
+            // Render output lines with dynamic auto-scrolling
             paint.setStyle(Paint.Style.FILL);
             paint.setTextSize(dp(11.5f));
             paint.setTextAlign(Paint.Align.LEFT);
 
-            float lineY = y + dp(22);
+            float lineY = y + dp(20);
             int maxLines = (int) ((termBox.height() - dp(24)) / dp(18));
             int startIdx = Math.max(0, termLines.size() - maxLines);
 
@@ -1009,13 +1502,12 @@ public class MainActivity extends Activity {
                 } else if (l.startsWith("!")) {
                     paint.setColor(COLOR_RED);
                 } else {
-                    paint.setColor(COLOR_TEXT_MED);
+                    paint.setColor(getTextMedColor());
                 }
                 canvas.drawText(l, dp(30), lineY, paint);
                 lineY += dp(18);
             }
 
-            // Register tap on terminal box to open soft keyboard
             touchAreas.add(new TouchArea(termBox, "open_keyboard"));
         }
 
@@ -1029,8 +1521,75 @@ public class MainActivity extends Activity {
                 return;
             }
 
+            // Built-in cd command implementation (changes parent termCwd!)
+            if (cmd.equals("cd") || cmd.startsWith("cd ")) {
+                String target = cmd.length() > 3 ? cmd.substring(3).trim() : "";
+                if (target.isEmpty() || target.equals("~")) {
+                    termCwd = getContext().getFilesDir().getAbsolutePath();
+                } else if (target.equals("..")) {
+                    File parent = new File(termCwd).getParentFile();
+                    if (parent != null && parent.exists() && parent.canRead()) {
+                        termCwd = parent.getAbsolutePath();
+                    }
+                } else {
+                    File next = target.startsWith("/") ? new File(target) : new File(termCwd, target);
+                    if (next.exists() && next.isDirectory()) {
+                        termCwd = next.getAbsolutePath();
+                    } else {
+                        termLines.add("! cd: " + target + ": No such directory");
+                    }
+                }
+                termLines.add("Current: " + termCwd);
+                invalidate();
+                return;
+            }
+
+            // Built-in python engine
+            if (cmd.equals("python") || cmd.equals("python3")) {
+                termLines.add("Python 3.12.2 (Onuron MicroPython Engine, Oct 10 2026)");
+                termLines.add("[Clang 18.0 ARM64 musl] on onuron_mobile");
+                termLines.add("Type python -c \"<expr>\" for live evaluation.");
+                invalidate();
+                return;
+            }
+
+            if (cmd.startsWith("python -c ") || cmd.startsWith("python3 -c ")) {
+                String code = cmd.substring(cmd.indexOf("-c") + 2).trim().replace("\"", "").replace("'", "");
+                try {
+                    // Evaluate simple arithmetic or print statements
+                    if (code.startsWith("print(") && code.endsWith(")")) {
+                        code = code.substring(6, code.length() - 1);
+                    }
+                    if (code.contains("+") || code.contains("-") || code.contains("*") || code.contains("/")) {
+                        String[] parts;
+                        if (code.contains("+")) {
+                            parts = code.split("\\+");
+                            double res = Double.parseDouble(parts[0].trim()) + Double.parseDouble(parts[1].trim());
+                            termLines.add(String.valueOf(res));
+                        } else if (code.contains("-")) {
+                            parts = code.split("-");
+                            double res = Double.parseDouble(parts[0].trim()) - Double.parseDouble(parts[1].trim());
+                            termLines.add(String.valueOf(res));
+                        } else if (code.contains("*")) {
+                            parts = code.split("\\*");
+                            double res = Double.parseDouble(parts[0].trim()) * Double.parseDouble(parts[1].trim());
+                            termLines.add(String.valueOf(res));
+                        } else {
+                            parts = code.split("/");
+                            double res = Double.parseDouble(parts[0].trim()) / Double.parseDouble(parts[1].trim());
+                            termLines.add(String.valueOf(res));
+                        }
+                    } else {
+                        termLines.add(code);
+                    }
+                } catch (Exception e) {
+                    termLines.add("! Python syntax error: " + e.getMessage());
+                }
+                invalidate();
+                return;
+            }
+
             try {
-                // Execute in safe app files directory where ls, mkdir, echo always have full permissions!
                 Process p = Runtime.getRuntime().exec(new String[]{"sh", "-c", cmd}, null, new File(termCwd));
                 BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
                 String line;
@@ -1046,173 +1605,312 @@ public class MainActivity extends Activity {
                 termLines.add("! Error executing command: " + e.getMessage());
             }
 
-            while (termLines.size() > 70) {
+            while (termLines.size() > 80) {
                 termLines.remove(0);
             }
             invalidate();
         }
 
-        // ─── Settings Screen ────────────────────────────────────────────────────────
+        // ─── Calculator App (ArkUI Styled Reactive Calculator) ──────────────────────
 
-        private void renderSettingsScreen(Canvas canvas, int w, int h) {
+        private void renderCalculatorScreen(Canvas canvas, int w, int h) {
             float y = dp(52);
-
-            paint.setColor(COLOR_PURPLE);
-            paint.setTextSize(dp(22));
+            paint.setColor(COLOR_CYAN);
+            paint.setTextSize(dp(20));
             paint.setFakeBoldText(true);
             paint.setTextAlign(Paint.Align.LEFT);
-            canvas.drawText("সেটিংস (Settings)", dp(20), y + dp(22), paint);
+            canvas.drawText("ক্যালকুলেটর (Calculator)", dp(20), y + dp(20), paint);
 
-            y += dp(40);
+            y += dp(36);
 
-            SettingToggle[] toggles = {
-                    new SettingToggle("ওয়াইফাই নেটওয়ার্ক (Wi-Fi)", wifiEnabled ? "[ চালু - ৩/৩ ]" : "[ বন্ধ ]", wifiEnabled ? COLOR_GREEN : COLOR_TEXT_DIM, "toggle_wifi"),
-                    new SettingToggle("সেলুলার ৫G ডেটা (Cellular)", cellularEnabled ? "[ চালু ]" : "[ বন্ধ ]", cellularEnabled ? COLOR_GREEN : COLOR_TEXT_DIM, "toggle_cellular"),
-                    new SettingToggle("সিগন্যাল টাওয়ার ক্ষমতা (Tower)", getSignalTowerLabel(), COLOR_CYAN, "cycle_signal"),
-                    new SettingToggle("ব্যাটারি পাওয়ার স্টেট", isCharging ? "[ চার্জ হচ্ছে ⚡ ]" : "[ সাধারণ " + batteryLevel + "% ]", isCharging ? COLOR_AMBER : COLOR_GREEN, "toggle_battery"),
-                    new SettingToggle("ডার্ক মোড থিম (Theme)", darkMode ? "[ চালু ]" : "[ বন্ধ ]", darkMode ? COLOR_GREEN : COLOR_TEXT_DIM, "toggle_dark"),
+            // Display Card
+            RectF dispCard = new RectF(dp(20), y, w - dp(20), y + dp(76));
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(getSurfaceColor());
+            canvas.drawRoundRect(dispCard, dp(14), dp(14), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setColor(getBorderColor());
+            canvas.drawRoundRect(dispCard, dp(14), dp(14), paint);
+
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(getTextMedColor());
+            paint.setTextSize(dp(13));
+            paint.setTextAlign(Paint.Align.RIGHT);
+            canvas.drawText(calcEquation, w - dp(36), y + dp(28), paint);
+
+            paint.setColor(getTextHighColor());
+            paint.setTextSize(dp(28));
+            paint.setFakeBoldText(true);
+            canvas.drawText(toBengaliDigits(calcDisplay), w - dp(36), y + dp(62), paint);
+
+            // Keypad
+            float keyStartY = y + dp(90);
+            float btnW = (w - dp(68)) / 4f;
+            float btnH = dp(56);
+
+            String[][] keys = {
+                    {"C", "⌫", "%", "÷"},
+                    {"7", "8", "9", "×"},
+                    {"4", "5", "6", "-"},
+                    {"1", "2", "3", "+"},
+                    {"0", ".", "=", "="}
             };
 
-            for (SettingToggle t : toggles) {
-                RectF card = new RectF(dp(20), y, w - dp(20), y + dp(52));
-                paint.setStyle(Paint.Style.FILL);
-                paint.setColor(COLOR_SURFACE);
-                canvas.drawRoundRect(card, dp(12), dp(12), paint);
+            for (int r = 0; r < 5; r++) {
+                for (int c = 0; c < 4; c++) {
+                    if (r == 4 && c == 3) continue; // Skip redundant equal button
 
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setColor(COLOR_BORDER);
-                paint.setStrokeWidth(dp(1));
-                canvas.drawRoundRect(card, dp(12), dp(12), paint);
+                    float bx = dp(20) + c * (btnW + dp(8));
+                    float by = keyStartY + r * (btnH + dp(8));
+                    float thisW = (r == 4 && c == 0) ? (btnW * 2 + dp(8)) : btnW;
 
-                paint.setStyle(Paint.Style.FILL);
-                paint.setColor(COLOR_TEXT_HIGH);
-                paint.setTextSize(dp(14));
-                paint.setFakeBoldText(false);
-                paint.setTextAlign(Paint.Align.LEFT);
-                canvas.drawText(t.title, dp(34), y + dp(32), paint);
+                    if (r == 4 && c == 1) continue; // Span 0 over 2 slots
+                    if (r == 4 && c == 2) {
+                        bx = dp(20) + 2 * (btnW + dp(8));
+                        thisW = btnW;
+                    }
 
-                paint.setColor(t.color);
-                paint.setFakeBoldText(true);
-                paint.setTextAlign(Paint.Align.RIGHT);
-                canvas.drawText(t.status, w - dp(34), y + dp(32), paint);
+                    RectF btnRect = new RectF(bx, by, bx + thisW, by + btnH);
+                    String k = keys[r][c];
 
-                touchAreas.add(new TouchArea(card, t.id));
-                y += dp(60);
-            }
+                    paint.setStyle(Paint.Style.FILL);
+                    boolean isOp = "÷".equals(k) || "×".equals(k) || "-".equals(k) || "+".equals(k);
+                    boolean isEq = "=".equals(k);
+                    paint.setColor(isEq ? COLOR_GREEN : (isOp ? (darkMode ? 0xFF0E7490 : 0xFFBAE6FD) : getSurfaceAltColor()));
+                    canvas.drawRoundRect(btnRect, dp(12), dp(12), paint);
 
-            // Hardware Info Card
-            RectF infoCard = new RectF(dp(20), y, w - dp(20), y + dp(130));
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(COLOR_SURFACE_ALT);
-            canvas.drawRoundRect(infoCard, dp(12), dp(12), paint);
+                    paint.setStyle(Paint.Style.STROKE);
+                    paint.setColor(getBorderColor());
+                    canvas.drawRoundRect(btnRect, dp(12), dp(12), paint);
 
-            paint.setColor(COLOR_CYAN);
-            paint.setTextSize(dp(14));
-            paint.setFakeBoldText(true);
-            paint.setTextAlign(Paint.Align.LEFT);
-            canvas.drawText("ডিভাইস ও সিস্টেম তথ্য", dp(34), y + dp(28), paint);
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setColor(isEq ? 0xFF0A0E17 : (isOp ? COLOR_CYAN : getTextHighColor()));
+                    paint.setTextSize(dp(20));
+                    paint.setFakeBoldText(true);
+                    paint.setTextAlign(Paint.Align.CENTER);
+                    canvas.drawText(toBengaliDigits(k), btnRect.centerX(), by + btnH / 2f + dp(7), paint);
 
-            paint.setColor(COLOR_TEXT_MED);
-            paint.setTextSize(dp(12));
-            paint.setFakeBoldText(false);
-            canvas.drawText("• ডিভাইস: Samsung Galaxy S25 (SM-S931B)", dp(34), y + dp(54), paint);
-            canvas.drawText("• প্রসেসর: Qualcomm Snapdragon 8 Elite (৩ ন্যানোমিটার)", dp(34), y + dp(78), paint);
-            canvas.drawText("• ওএস কার্নেল: Onuron NilHAL 1.0 (Linux 6.6 LTS)", dp(34), y + dp(102), paint);
-        }
-
-        private String getSignalTowerLabel() {
-            if (!cellularEnabled) return "[ অফ ✕ ]";
-            switch (cellularSignalLevel) {
-                case 4: return "[ ৪/৪ বার - ৫G ]";
-                case 3: return "[ ৩/৪ বার - ৫G ]";
-                case 2: return "[ ২/৪ বার - ৪G ]";
-                case 1: return "[ ১/৪ বার - ৩G ]";
-                default: return "[ ০/৪ বার - E ]";
+                    touchAreas.add(new TouchArea(btnRect, "calc_key_" + k));
+                }
             }
         }
 
-        // ─── Messages Screen ────────────────────────────────────────────────────────
+        private void handleCalc(String key) {
+            switch (key) {
+                case "C":
+                    calcDisplay = "0";
+                    calcEquation = "";
+                    calcFirstOperand = 0;
+                    calcPendingOp = "";
+                    calcNewNumber = true;
+                    break;
+                case "⌫":
+                    if (calcDisplay.length() > 1) {
+                        calcDisplay = calcDisplay.substring(0, calcDisplay.length() - 1);
+                    } else {
+                        calcDisplay = "0";
+                    }
+                    break;
+                case "+":
+                case "-":
+                case "×":
+                case "÷":
+                case "%":
+                    try {
+                        calcFirstOperand = Double.parseDouble(calcDisplay);
+                        calcPendingOp = key;
+                        calcEquation = calcDisplay + " " + key;
+                        calcNewNumber = true;
+                    } catch (Exception ignored) {
+                    }
+                    break;
+                case "=":
+                    try {
+                        double second = Double.parseDouble(calcDisplay);
+                        double res = 0;
+                        if ("+".equals(calcPendingOp)) res = calcFirstOperand + second;
+                        else if ("-".equals(calcPendingOp)) res = calcFirstOperand - second;
+                        else if ("×".equals(calcPendingOp)) res = calcFirstOperand * second;
+                        else if ("÷".equals(calcPendingOp)) res = second != 0 ? calcFirstOperand / second : 0;
+                        else if ("%".equals(calcPendingOp)) res = calcFirstOperand * (second / 100.0);
 
-        private void renderMessagesScreen(Canvas canvas, int w, int h) {
+                        calcEquation = calcEquation + " " + calcDisplay + " =";
+                        if (res == (long) res) {
+                            calcDisplay = String.valueOf((long) res);
+                        } else {
+                            calcDisplay = String.format(Locale.US, "%.4f", res);
+                        }
+                        calcNewNumber = true;
+                    } catch (Exception ignored) {
+                    }
+                    break;
+                default:
+                    // Digits or dot
+                    if (calcNewNumber) {
+                        calcDisplay = key;
+                        calcNewNumber = false;
+                    } else {
+                        if (".".equals(key) && calcDisplay.contains(".")) break;
+                        calcDisplay += key;
+                    }
+            }
+        }
+
+        // ─── Notes App (Aligned with notes-app-nilLang) ─────────────────────────────
+
+        private void renderNotesScreen(Canvas canvas, int w, int h) {
             float y = dp(52);
             paint.setColor(COLOR_AMBER);
-            paint.setTextSize(dp(22));
+            paint.setTextSize(dp(20));
             paint.setFakeBoldText(true);
             paint.setTextAlign(Paint.Align.LEFT);
-            canvas.drawText("বার্তা (Messages SMS)", dp(20), y + dp(22), paint);
+            canvas.drawText("নোটবুক (Notes App)", dp(20), y + dp(20), paint);
 
-            y += dp(40);
-            String[][] threads = {
-                    {"Onuron System", "fscrypt v2 মেমরি এনক্রিপশন সক্রিয় রয়েছে।", "১২:৪৫"},
-                    {"SoftBus Mesh", "NilPad-Pro-X1 পেয়ারিংয়ের জন্য প্রস্তুত।", "১২:৪২"},
-                    {"NilPkg Store", "সব সিস্টেম সার্ভিস আপ-টু-ডেট রয়েছে।", "১১:৩০"}
-            };
+            // + Add Note button
+            RectF addBtn = new RectF(w - dp(120), y, w - dp(20), y + dp(32));
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(COLOR_AMBER);
+            canvas.drawRoundRect(addBtn, dp(8), dp(8), paint);
+            paint.setColor(0xFF0A0E17);
+            paint.setTextSize(dp(12));
+            paint.setTextAlign(Paint.Align.CENTER);
+            canvas.drawText("+ নতুন নোট", addBtn.centerX(), y + dp(21), paint);
+            touchAreas.add(new TouchArea(addBtn, "notes_add_new"));
 
-            for (String[] th : threads) {
-                RectF card = new RectF(dp(20), y, w - dp(20), y + dp(64));
+            y += dp(44);
+
+            for (int i = 0; i < notesList.size(); i++) {
+                String[] n = notesList.get(i);
+                RectF card = new RectF(dp(20), y, w - dp(20), y + dp(66));
                 paint.setStyle(Paint.Style.FILL);
-                paint.setColor(COLOR_SURFACE);
+                paint.setColor(getSurfaceColor());
                 canvas.drawRoundRect(card, dp(12), dp(12), paint);
 
-                paint.setColor(COLOR_CYAN);
+                paint.setColor(COLOR_AMBER);
                 paint.setTextSize(dp(14));
                 paint.setFakeBoldText(true);
                 paint.setTextAlign(Paint.Align.LEFT);
-                canvas.drawText(th[0], dp(34), y + dp(26), paint);
+                canvas.drawText(n[1], dp(34), y + dp(24), paint);
 
-                paint.setColor(COLOR_TEXT_MED);
+                paint.setColor(getTextMedColor());
                 paint.setTextSize(dp(11));
                 paint.setTextAlign(Paint.Align.RIGHT);
-                canvas.drawText(th[2], w - dp(34), y + dp(26), paint);
+                canvas.drawText(n[3] + " • " + n[5], w - dp(34), y + dp(24), paint);
 
-                paint.setColor(COLOR_TEXT_HIGH);
+                paint.setColor(getTextHighColor());
                 paint.setTextSize(dp(12));
                 paint.setFakeBoldText(false);
                 paint.setTextAlign(Paint.Align.LEFT);
-                canvas.drawText(th[1], dp(34), y + dp(48), paint);
+                String snip = n[2].length() > 36 ? n[2].substring(0, 36) + "..." : n[2];
+                canvas.drawText(snip, dp(34), y + dp(48), paint);
 
-                y += dp(74);
+                touchAreas.add(new TouchArea(card, "notes_open_" + i));
+                y += dp(76);
+            }
+
+            if (selectedNoteDetail != null) {
+                RectF detailBox = new RectF(dp(20), y, w - dp(20), y + dp(90));
+                paint.setColor(0xFF1E293B);
+                canvas.drawRoundRect(detailBox, dp(12), dp(12), paint);
+                paint.setColor(COLOR_CYAN);
+                paint.setTextSize(dp(12));
+                paint.setTextAlign(Paint.Align.LEFT);
+                canvas.drawText(selectedNoteDetail, dp(34), y + dp(30), paint);
             }
         }
 
-        // ─── Files Screen ───────────────────────────────────────────────────────────
+        // ─── Music App (Aligned with music-streaming-nilLang) ───────────────────────
 
-        private void renderFilesScreen(Canvas canvas, int w, int h) {
+        private void renderMusicScreen(Canvas canvas, int w, int h) {
             float y = dp(52);
-            paint.setColor(COLOR_BLUE);
-            paint.setTextSize(dp(22));
+            paint.setColor(COLOR_GREEN);
+            paint.setTextSize(dp(20));
             paint.setFakeBoldText(true);
             paint.setTextAlign(Paint.Align.LEFT);
-            canvas.drawText("ফাইল ম্যানেজার (Files)", dp(20), y + dp(22), paint);
+            canvas.drawText("অনুরণ মিউজিক (NilMusic)", dp(20), y + dp(20), paint);
 
-            y += dp(40);
-            paint.setColor(COLOR_TEXT_MED);
+            y += dp(36);
+
+            // Vinyl Album Card
+            RectF albumCard = new RectF(dp(20), y, w - dp(20), y + dp(140));
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(getSurfaceColor());
+            canvas.drawRoundRect(albumCard, dp(16), dp(16), paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setColor(getBorderColor());
+            canvas.drawRoundRect(albumCard, dp(16), dp(16), paint);
+
+            // Vinyl Record Disc
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xFF0F172A);
+            canvas.drawCircle(dp(74), y + dp(70), dp(40), paint);
+            paint.setColor(COLOR_GREEN);
+            canvas.drawCircle(dp(74), y + dp(70), dp(12), paint);
+
+            String[] track = musicTracks.get(musicCurrentTrack);
+            paint.setColor(getTextHighColor());
+            paint.setTextSize(dp(15));
+            paint.setFakeBoldText(true);
+            paint.setTextAlign(Paint.Align.LEFT);
+            canvas.drawText(track[0], dp(130), y + dp(46), paint);
+
+            paint.setColor(COLOR_CYAN);
             paint.setTextSize(dp(12));
-            canvas.drawText("পাথ: " + currentPath, dp(20), y + dp(14), paint);
+            paint.setFakeBoldText(false);
+            canvas.drawText(track[1], dp(130), y + dp(68), paint);
 
-            y += dp(26);
-            File dir = new File(currentPath);
-            File[] files = dir.listFiles();
-            if (files != null && files.length > 0) {
-                int count = 0;
-                for (File f : files) {
-                    if (count++ > 8) break;
-                    RectF card = new RectF(dp(20), y, w - dp(20), y + dp(42));
-                    paint.setStyle(Paint.Style.FILL);
-                    paint.setColor(COLOR_SURFACE);
-                    canvas.drawRoundRect(card, dp(8), dp(8), paint);
+            // Scrubber Bar
+            paint.setColor(darkMode ? 0xFF334155 : 0xFFCBD5E1);
+            canvas.drawRoundRect(new RectF(dp(130), y + dp(86), w - dp(36), y + dp(90)), dp(2), dp(2), paint);
+            paint.setColor(COLOR_GREEN);
+            canvas.drawRoundRect(new RectF(dp(130), y + dp(86), dp(130) + dp(60), y + dp(90)), dp(2), dp(2), paint);
 
-                    String icon = f.isDirectory() ? "📁 [DIR] " : "📄 [FILE] ";
-                    paint.setColor(f.isDirectory() ? COLOR_CYAN : COLOR_TEXT_HIGH);
-                    paint.setTextSize(dp(13));
-                    paint.setTextAlign(Paint.Align.LEFT);
-                    canvas.drawText(icon + f.getName(), dp(32), y + dp(26), paint);
+            // Controls: ⏮ ▶/⏸ ⏭
+            float btnCenterY = y + dp(116);
+            paint.setTextSize(dp(20));
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setColor(COLOR_CYAN);
+            canvas.drawText("⏮", dp(160), btnCenterY, paint);
+            touchAreas.add(new TouchArea(new RectF(dp(140), btnCenterY - dp(16), dp(180), btnCenterY + dp(16)), "music_prev"));
 
-                    y += dp(48);
-                }
-            } else {
-                paint.setColor(COLOR_TEXT_DIM);
-                canvas.drawText("ডিরেক্টরি খালি অথবা সিস্টেম পারমিশন সক্রিয় নয়।", dp(20), y + dp(20), paint);
+            paint.setColor(COLOR_GREEN);
+            canvas.drawText(musicPlaying ? "⏸" : "▶", dp(210), btnCenterY, paint);
+            touchAreas.add(new TouchArea(new RectF(dp(190), btnCenterY - dp(16), dp(230), btnCenterY + dp(16)), "music_toggle_play"));
+
+            paint.setColor(COLOR_CYAN);
+            canvas.drawText("⏭", dp(260), btnCenterY, paint);
+            touchAreas.add(new TouchArea(new RectF(dp(240), btnCenterY - dp(16), dp(280), btnCenterY + dp(16)), "music_next"));
+
+            y += dp(154);
+
+            // Playlist
+            paint.setColor(getTextMedColor());
+            paint.setTextSize(dp(13));
+            paint.setTextAlign(Paint.Align.LEFT);
+            canvas.drawText("প্লে-লিস্ট (Onuron Playlist):", dp(20), y + dp(14), paint);
+
+            y += dp(24);
+
+            for (int i = 0; i < musicTracks.size(); i++) {
+                String[] t = musicTracks.get(i);
+                RectF card = new RectF(dp(20), y, w - dp(20), y + dp(46));
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(i == musicCurrentTrack ? (darkMode ? 0xFF064E3B : 0xFFDCFCE7) : getSurfaceColor());
+                canvas.drawRoundRect(card, dp(10), dp(10), paint);
+
+                paint.setColor(i == musicCurrentTrack ? COLOR_GREEN : getTextHighColor());
+                paint.setTextSize(dp(13));
+                paint.setFakeBoldText(i == musicCurrentTrack);
+                paint.setTextAlign(Paint.Align.LEFT);
+                canvas.drawText((i + 1) + ". " + t[0], dp(34), y + dp(28), paint);
+
+                paint.setColor(getTextMedColor());
+                paint.setTextSize(dp(11.5f));
+                paint.setTextAlign(Paint.Align.RIGHT);
+                canvas.drawText(t[2], w - dp(34), y + dp(28), paint);
+
+                touchAreas.add(new TouchArea(card, "music_select_" + i));
+                y += dp(52);
             }
         }
 
@@ -1221,27 +1919,27 @@ public class MainActivity extends Activity {
         private void renderAboutScreen(Canvas canvas, int w, int h) {
             float y = dp(52);
             paint.setColor(COLOR_CYAN);
-            paint.setTextSize(dp(22));
+            paint.setTextSize(dp(20));
             paint.setFakeBoldText(true);
             paint.setTextAlign(Paint.Align.LEFT);
-            canvas.drawText("Onuron OS সম্পর্কে", dp(20), y + dp(22), paint);
+            canvas.drawText("Onuron OS সম্পর্কে (About)", dp(20), y + dp(20), paint);
 
-            y += dp(46);
-            RectF card = new RectF(dp(20), y, w - dp(20), y + dp(220));
+            y += dp(36);
+            RectF card = new RectF(dp(20), y, w - dp(20), y + dp(210));
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(COLOR_SURFACE);
+            paint.setColor(getSurfaceColor());
             canvas.drawRoundRect(card, dp(14), dp(14), paint);
 
             paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(COLOR_BORDER);
+            paint.setColor(getBorderColor());
             canvas.drawRoundRect(card, dp(14), dp(14), paint);
 
             paint.setStyle(Paint.Style.FILL);
-            paint.setTextSize(dp(13));
+            paint.setTextSize(dp(12.5f));
             paint.setFakeBoldText(false);
             paint.setTextAlign(Paint.Align.LEFT);
 
-            float ty = y + dp(32);
+            float ty = y + dp(30);
             String[] lines = {
                     "📘 Onuron OS (অনুরণ ওএস) — v1.0.0-alpha",
                     "• মেমরি-নিরাপদ Rust ইউজারস্পেস",
@@ -1253,7 +1951,7 @@ public class MainActivity extends Activity {
             };
 
             for (String l : lines) {
-                paint.setColor(l.startsWith("📘") ? COLOR_CYAN : COLOR_TEXT_MED);
+                paint.setColor(l.startsWith("📘") ? COLOR_CYAN : getTextMedColor());
                 canvas.drawText(l, dp(34), ty, paint);
                 ty += dp(24);
             }
@@ -1266,10 +1964,10 @@ public class MainActivity extends Activity {
             float navY = h - navH;
 
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(0xFF0C121E);
+            paint.setColor(darkMode ? 0xFF0C121E : 0xFFFFFFFF);
             canvas.drawRect(0, navY, w, h, paint);
 
-            paint.setColor(COLOR_BORDER);
+            paint.setColor(getBorderColor());
             canvas.drawRect(0, navY, w, navY + 1, paint);
 
             float btnW = (w - dp(32)) / 3f;
@@ -1278,32 +1976,30 @@ public class MainActivity extends Activity {
 
             // Back button
             RectF backRect = new RectF(dp(8), btnY, dp(8) + btnW, btnY + btnH);
-            paint.setColor(COLOR_SURFACE);
+            paint.setColor(getSurfaceColor());
             canvas.drawRoundRect(backRect, dp(10), dp(10), paint);
-            paint.setColor(COLOR_TEXT_MED);
+            paint.setColor(getTextMedColor());
             paint.setTextSize(dp(13));
             paint.setTextAlign(Paint.Align.CENTER);
-            canvas.drawText("◀ ব্যাক (Back)", backRect.centerX(), btnY + dp(24), paint);
+            canvas.drawText("◀ ব্যাক", backRect.centerX(), btnY + dp(24), paint);
             touchAreas.add(new TouchArea(backRect, "nav_back"));
 
             // Home button
             RectF homeRect = new RectF(dp(16) + btnW, btnY, dp(16) + 2 * btnW, btnY + btnH);
-            paint.setColor(screen == Screen.HOME ? 0xFF0C2E55 : COLOR_SURFACE);
+            paint.setColor(screen == Screen.HOME ? (darkMode ? 0xFF0C2E55 : 0xFFE0F2FE) : getSurfaceColor());
             canvas.drawRoundRect(homeRect, dp(10), dp(10), paint);
             paint.setColor(COLOR_CYAN);
-            canvas.drawText("⌂ হোম (Home)", homeRect.centerX(), btnY + dp(24), paint);
+            canvas.drawText("⌂ হোম", homeRect.centerX(), btnY + dp(24), paint);
             touchAreas.add(new TouchArea(homeRect, "nav_home"));
 
-            // Lock button
-            RectF lockRect = new RectF(dp(24) + 2 * btnW, btnY, w - dp(8), btnY + btnH);
-            paint.setColor(COLOR_SURFACE);
-            canvas.drawRoundRect(lockRect, dp(10), dp(10), paint);
-            paint.setColor(COLOR_AMBER);
-            canvas.drawText("⏻ মেনু (Menu)", lockRect.centerX(), btnY + dp(24), paint);
-            touchAreas.add(new TouchArea(lockRect, "nav_menu"));
+            // Settings button
+            RectF setRect = new RectF(dp(24) + 2 * btnW, btnY, w - dp(8), btnY + btnH);
+            paint.setColor(getSurfaceColor());
+            canvas.drawRoundRect(setRect, dp(10), dp(10), paint);
+            paint.setColor(COLOR_PURPLE);
+            canvas.drawText("⚙️ সেটিংস", setRect.centerX(), btnY + dp(24), paint);
+            touchAreas.add(new TouchArea(setRect, "nav_settings"));
         }
-
-        // ─── Touch Event Dispatcher ─────────────────────────────────────────────────
 
         @Override
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
@@ -1333,66 +2029,97 @@ public class MainActivity extends Activity {
             return true;
         }
 
-
         private void handleAction(String id) {
             switch (id) {
                 case "nav_home":
                 case "nav_back":
                     screen = Screen.HOME;
                     activity.setTerminalInputVisible(false);
+                    activity.setMessageInputVisible(false);
                     activity.hideBrowser();
+                    inActiveChat = false;
                     break;
-                case "nav_menu":
-                    screen = (screen == Screen.SETTINGS ? Screen.HOME : Screen.SETTINGS);
+                case "nav_settings":
+                case "app_settings":
+                    screen = Screen.SETTINGS;
                     activity.setTerminalInputVisible(false);
+                    activity.setMessageInputVisible(false);
                     activity.hideBrowser();
                     break;
                 case "app_phone":
                     screen = Screen.PHONE;
                     activity.setTerminalInputVisible(false);
+                    activity.setMessageInputVisible(false);
                     activity.hideBrowser();
                     break;
                 case "app_browser":
                     activity.showBrowser("https://duckduckgo.com");
                     break;
-                case "app_settings":
-                    screen = Screen.SETTINGS;
-                    activity.setTerminalInputVisible(false);
-                    activity.hideBrowser();
-                    break;
                 case "app_messages":
                     screen = Screen.MESSAGES;
                     activity.setTerminalInputVisible(false);
+                    activity.setMessageInputVisible(inActiveChat);
                     activity.hideBrowser();
                     break;
                 case "app_files":
                     screen = Screen.FILES;
                     activity.setTerminalInputVisible(false);
+                    activity.setMessageInputVisible(false);
                     activity.hideBrowser();
                     break;
                 case "app_terminal":
                     screen = Screen.TERMINAL;
                     activity.setTerminalInputVisible(true);
+                    activity.setMessageInputVisible(false);
+                    activity.hideBrowser();
+                    break;
+                case "app_camera":
+                    activity.triggerCamera();
+                    break;
+                case "app_calculator":
+                    screen = Screen.CALCULATOR;
+                    activity.setTerminalInputVisible(false);
+                    activity.setMessageInputVisible(false);
+                    activity.hideBrowser();
+                    break;
+                case "app_notes":
+                    screen = Screen.NOTES;
+                    activity.setTerminalInputVisible(false);
+                    activity.setMessageInputVisible(false);
+                    activity.hideBrowser();
+                    break;
+                case "app_music":
+                    screen = Screen.MUSIC;
+                    activity.setTerminalInputVisible(false);
+                    activity.setMessageInputVisible(false);
                     activity.hideBrowser();
                     break;
                 case "app_about":
                 case "app_softbus":
                     screen = Screen.ABOUT;
                     activity.setTerminalInputVisible(false);
+                    activity.setMessageInputVisible(false);
                     activity.hideBrowser();
                     break;
                 case "open_keyboard":
                     activity.setTerminalInputVisible(true);
                     break;
                 case "toggle_wifi":
-                    wifiEnabled = !wifiEnabled;
+                    if (!wifiEnabled) {
+                        wifiEnabled = true;
+                        wifiSignalLevel = 3;
+                    } else if (wifiSignalLevel > 1) {
+                        wifiSignalLevel--;
+                    } else {
+                        wifiEnabled = false;
+                    }
                     break;
                 case "toggle_cellular":
                     cellularEnabled = !cellularEnabled;
                     break;
                 case "cycle_signal":
                     if (cellularEnabled) {
-                        cellularSignalLevel = (cellularSignalLevel == 0) ? 4 : (cellularSignalLevel - 1);
+                        cellularSignalLevel = (cellularSignalLevel == 1) ? 4 : (cellularSignalLevel - 1);
                     } else {
                         cellularEnabled = true;
                         cellularSignalLevel = 4;
@@ -1400,18 +2127,26 @@ public class MainActivity extends Activity {
                     break;
                 case "toggle_battery":
                     isCharging = !isCharging;
-                    if (isCharging) {
-                        batteryLevel = 100;
-                    } else {
-                        batteryLevel = 78;
-                    }
+                    batteryLevel = isCharging ? 100 : 85;
+                    break;
+                case "toggle_vibration":
+                    vibratorEnabled = !vibratorEnabled;
                     break;
                 case "toggle_dark":
                     darkMode = !darkMode;
                     break;
+                case "cycle_volume":
+                    soundVolume = (soundVolume >= 100) ? 0 : (soundVolume + 25);
+                    break;
                 case "act_call":
                     if (!dialNumber.isEmpty()) {
                         activity.triggerRealCall(dialNumber);
+                    }
+                    break;
+                case "act_save_contact":
+                    if (!dialNumber.isEmpty()) {
+                        contacts.add(0, new String[]{"সংরক্ষিত নম্বর (" + contacts.size() + ")", dialNumber});
+                        phoneTab = 1; // switch to Contacts tab!
                     }
                     break;
                 case "act_del":
@@ -1419,11 +2154,88 @@ public class MainActivity extends Activity {
                         dialNumber = dialNumber.substring(0, dialNumber.length() - 1);
                     }
                     break;
+                case "phone_tab_0": phoneTab = 0; break;
+                case "phone_tab_1": phoneTab = 1; break;
+                case "phone_tab_2": phoneTab = 2; break;
+                case "file_go_up":
+                    File parent = new File(currentPath).getParentFile();
+                    if (parent != null && parent.exists()) {
+                        currentPath = parent.getAbsolutePath();
+                    }
+                    break;
+                case "files_new_file":
+                    try {
+                        File nf = new File(currentPath, "অনুরণ_নোট_" + (System.currentTimeMillis() % 1000) + ".txt");
+                        nf.createNewFile();
+                        selectedFileInfo = "নতুন ফাইল তৈরি হয়েছে: " + nf.getName();
+                    } catch (Exception e) {
+                        selectedFileInfo = "ফাইল তৈরিতে ত্রুটি!";
+                    }
+                    break;
+                case "msg_new_chat":
+                    activeRecipient = "নতুন প্রেরক (+88017...)";
+                    inActiveChat = true;
+                    activity.setMessageInputVisible(true);
+                    break;
+                case "chat_back":
+                    inActiveChat = false;
+                    activity.setMessageInputVisible(false);
+                    break;
+                case "music_toggle_play":
+                    musicPlaying = !musicPlaying;
+                    break;
+                case "music_next":
+                    musicCurrentTrack = (musicCurrentTrack + 1) % musicTracks.size();
+                    break;
+                case "music_prev":
+                    musicCurrentTrack = (musicCurrentTrack == 0) ? musicTracks.size() - 1 : musicCurrentTrack - 1;
+                    break;
+                case "notes_add_new":
+                    notesList.add(0, new String[]{"note-" + (notesList.size() + 1), "নতুন খসড়া নোট", "অনুরণ ওএস দ্রুত টাস্ক নোট।", "ব্যক্তিগত", "Normal", "আজ"});
+                    break;
                 default:
                     if (id.startsWith("key_")) {
                         dialNumber += id.substring(4);
                     } else if (id.startsWith("chip_")) {
                         runCommand(id.substring(5));
+                    } else if (id.startsWith("call_contact_")) {
+                        int idx = Integer.parseInt(id.substring(13));
+                        if (idx < contacts.size()) {
+                            activity.triggerRealCall(contacts.get(idx)[1]);
+                        }
+                    } else if (id.startsWith("redial_log_")) {
+                        int idx = Integer.parseInt(id.substring(11));
+                        if (idx < callLogs.size()) {
+                            activity.triggerRealCall(callLogs.get(idx)[0]);
+                        }
+                    } else if (id.startsWith("open_chat_")) {
+                        int idx = Integer.parseInt(id.substring(10));
+                        if (idx < messageThreads.size()) {
+                            activeRecipient = messageThreads.get(idx)[0];
+                            inActiveChat = true;
+                            activity.setMessageInputVisible(true);
+                        }
+                    } else if (id.startsWith("file_click_")) {
+                        int idx = Integer.parseInt(id.substring(11));
+                        File[] fList = new File(currentPath).listFiles();
+                        if (fList != null && idx < fList.length) {
+                            File sel = fList[idx];
+                            if (sel.isDirectory()) {
+                                currentPath = sel.getAbsolutePath();
+                            } else {
+                                selectedFileInfo = "ফাইল: " + sel.getName() + " (" + (sel.length() / 1024) + " KB)";
+                            }
+                        }
+                    } else if (id.startsWith("calc_key_")) {
+                        handleCalc(id.substring(9));
+                    } else if (id.startsWith("music_select_")) {
+                        musicCurrentTrack = Integer.parseInt(id.substring(13));
+                        musicPlaying = true;
+                    } else if (id.startsWith("notes_open_")) {
+                        int idx = Integer.parseInt(id.substring(11));
+                        if (idx < notesList.size()) {
+                            selectedNoteDetail = notesList.get(idx)[1] + ":\n" + notesList.get(idx)[2];
+                        }
                     }
             }
         }
@@ -1431,6 +2243,7 @@ public class MainActivity extends Activity {
         private float dp(float val) {
             return val * getResources().getDisplayMetrics().density;
         }
+
         private int dp(int val) {
             return (int) (val * getResources().getDisplayMetrics().density);
         }

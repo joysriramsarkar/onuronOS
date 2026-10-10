@@ -61,6 +61,10 @@ pub fn screen_key(screen: &crate::Screen) -> &'static str {
         AppSoftBus => "softbus",
         AppAndroid => "android",
         AppTerminal => "terminal",
+        AppCalculator => "calculator",
+        AppNotes => "notes",
+        AppMusic => "music",
+        AppCamera => "camera",
         NotificationShade => "notifications",
     }
 }

@@ -52,6 +52,10 @@ enum Screen {
     AppSoftBus,
     AppAndroid,
     AppTerminal,
+    AppCalculator,
+    AppNotes,
+    AppMusic,
+    AppCamera,
     // Dialogs
     NotificationShade,
 }
@@ -77,6 +81,10 @@ struct AppState {
     wifi_enabled: bool,
     cellular_enabled: bool,
     signal_bars: u8,
+    term_cwd: String,
+    calc_val: String,
+    music_playing: bool,
+    music_track: usize,
 }
 
 impl AppState {
@@ -150,6 +158,10 @@ impl AppState {
             wifi_enabled: true,
             cellular_enabled: true,
             signal_bars: 4,
+            term_cwd: "/data".into(),
+            calc_val: "0".into(),
+            music_playing: false,
+            music_track: 0,
         }
     }
 
@@ -431,17 +443,22 @@ fn draw_home(sink: &mut Sink, state: &AppState) {
     sink.println("  │                                                        │");
     sink.println(&format!("  │  {}[4] ⚙️  Settings{}  {}[5] 📦 NilPkg{}    {}[6] 🔄 SoftBus{}    │", FG_MAGENTA, FG_CYAN, FG_GREEN, FG_CYAN, FG_CYAN, FG_CYAN));
     sink.println("  │   System Config    Package Store     Mesh Network     │");
-    sink.println("  │                                                        │");
     sink.println(&format!("  │  {}[7] 🤖 Android{}   {}[8] 💻 Terminal{}   {}[9] 🌟 Hello (.nilax){}│", FG_YELLOW, FG_CYAN, FG_WHITE, FG_CYAN, FG_GREEN, FG_CYAN));
     sink.println("  │   AOSP Container   Diagnostic CLI    Native Sandbox   │");
     sink.println("  │                                                        │");
+    sink.println(&format!("  │  {}[10] 🧮 Calculator{}  {}[11] 📝 Notes{}   {}[12] 🎵 Music{}      │", FG_CYAN, FG_CYAN, FG_YELLOW, FG_CYAN, FG_GREEN, FG_CYAN));
+    sink.println("  │   Alap Math        NilLang Notebook  Sonic Lab Player │");
+    sink.println("  │                                                        │");
+    sink.println(&format!("  │  {}[13] 📷 Camera{}                                          │", FG_MAGENTA, FG_CYAN));
+    sink.println("  │   HDR Cam Subsystem                                    │");
+    sink.println("  │                                                        │");
     sink.println(&format!("  │  {}[n] 🔔 Notifications  [l] 🔒 Lock screen  [run <id>]{}   │", FG_GRAY, FG_CYAN));
     sink.println("  ├────────────────────────────────────────────────────────┤");
-    sink.println(&format!("  │  {}[📞]  [💬]  [📁]  [⚙️]  [📦]  [🌟]{}                     │", FG_WHITE, FG_CYAN));
+    sink.println(&format!("  │  {}[📞]  [💬]  [📁]  [⚙️]  [📦]  [🧮]  [📝]  [🎵]{}           │", FG_WHITE, FG_CYAN));
     sink.println(&format!("  │                    {}━━━━━━━━{}                             │", FG_WHITE, FG_CYAN));
     sink.println("  ╰────────────────────────────────────────────────────────╯");
     sink.println(R);
-    sink.print(&format!("  {}Choice (1-9 / run <id> / n / l): {}", FG_YELLOW, R));
+    sink.print(&format!("  {}Choice (1-13 / run <id> / n / l): {}", FG_YELLOW, R));
 }
 
 // ─── Phone App ────────────────────────────────────────────────────────────────
@@ -778,13 +795,118 @@ fn draw_terminal(sink: &mut Sink, state: &AppState) {
         sink.println(&format!("  {}", line));
     }
     sink.println("");
-    sink.print(&format!("  {}nilos# {}", FG_GREEN, R));
+    sink.print(&format!("  {}nilos:{}$ {}", FG_GREEN, state.term_cwd, R));
+}
+
+fn eval_simple_math(expr: &str) -> Result<String, ()> {
+    let clean: String = expr.chars().filter(|c| !c.is_whitespace()).collect();
+    for op in ['+', '-', '*', '/'] {
+        if let Some(pos) = clean.rfind(op) {
+            if pos > 0 {
+                let left = &clean[..pos];
+                let right = &clean[pos + 1..];
+                if let (Ok(a), Ok(b)) = (left.parse::<f64>(), right.parse::<f64>()) {
+                    let res = match op {
+                        '+' => a + b,
+                        '-' => a - b,
+                        '*' => a * b,
+                        '/' => if b == 0.0 { return Err(()); } else { a / b },
+                        _ => return Err(()),
+                    };
+                    return Ok(if res.fract() == 0.0 { format!("{}", res as i64) } else { format!("{:.2}", res) });
+                }
+            }
+        }
+    }
+    if let Ok(n) = clean.parse::<f64>() {
+        return Ok(format!("{}", n));
+    }
+    Err(())
 }
 
 fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
-    let output = match cmd {
+    let trimmed = cmd.trim();
+    if trimmed == "clear" {
+        state.terminal_history.clear();
+        return;
+    }
+    let output = match trimmed {
         "help" => {
-            format!("Commands: services, mem, disk, net, ps, bt, modem, audio, camera, cat <file>, ls <dir>, uname, reboot, home  {}", simulated::badge())
+            format!("Commands: cd <dir>, pwd, ls [dir], cat <file>, python, calc <expr>, notes, music, camera, services, mem, disk, net, ps, bt, modem, audio, clear, uname, reboot, home  {}", simulated::badge())
+        }
+        "pwd" => state.term_cwd.clone(),
+        _ if trimmed == "cd" || trimmed == "cd ~" => {
+            state.term_cwd = "/data".into();
+            format!("Changed directory to {}", state.term_cwd)
+        }
+        _ if trimmed == "cd .." => {
+            let p = Path::new(&state.term_cwd);
+            if let Some(parent) = p.parent() {
+                let parent_str = parent.to_string_lossy().to_string();
+                state.term_cwd = if parent_str.is_empty() { "/".to_string() } else { parent_str };
+            }
+            format!("Changed directory to {}", state.term_cwd)
+        }
+        _ if trimmed.starts_with("cd ") => {
+            let target = trimmed.trim_start_matches("cd ").trim();
+            if target == ".." {
+                let p = Path::new(&state.term_cwd);
+                if let Some(parent) = p.parent() {
+                    let parent_str = parent.to_string_lossy().to_string();
+                    state.term_cwd = if parent_str.is_empty() { "/".to_string() } else { parent_str };
+                }
+                format!("Changed directory to {}", state.term_cwd)
+            } else {
+                let resolved = if target.starts_with('/') {
+                    target.to_string()
+                } else if state.term_cwd == "/" {
+                    format!("/{}", target)
+                } else {
+                    format!("{}/{}", state.term_cwd, target)
+                };
+                state.term_cwd = resolved.clone();
+                format!("Changed directory to {}", state.term_cwd)
+            }
+        }
+        "ls" => {
+            match fs::read_dir(&state.term_cwd) {
+                Ok(entries) => {
+                    let mut out = format!("Contents of {}:\n", state.term_cwd);
+                    for e in entries.flatten() {
+                        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                        out.push_str(&format!("  {}{}\n", e.file_name().to_string_lossy(), if is_dir { "/" } else { "" }));
+                    }
+                    out
+                }
+                Err(_) => {
+                    format!("Contents of {}:\n  system.conf\n  apps/\n  downloads/\n  notes/\n", state.term_cwd)
+                }
+            }
+        }
+        "python" | "python3" => {
+            format!("Python 3.12.2 (Onuron Embedded / Alap Bridge)\nType 'python -c \"<code>\"' to evaluate expressions.")
+        }
+        _ if trimmed.starts_with("python -c ") => {
+            let expr = trimmed.trim_start_matches("python -c ").trim().trim_matches('"').trim_matches('\'');
+            if let Ok(res) = eval_simple_math(expr) {
+                format!(">>> {}\n{}", expr, res)
+            } else {
+                format!(">>> {}\n<executed successfully>", expr)
+            }
+        }
+        _ if trimmed.starts_with("calc ") => {
+            let expr = trimmed.trim_start_matches("calc ").trim();
+            if let Ok(res) = eval_simple_math(expr) {
+                format!("🧮 Calculator Result: {} = {}", expr, res)
+            } else {
+                format!("🧮 Calculator: could not evaluate '{}'", expr)
+            }
+        }
+        "notes" => {
+            "📝 NilLang Notes (notes-app-nilLang):\n  1. [গাইড] স্বাগতম নীলাং নোটবুক-এ! (High)\n  2. [কাজ] দৈনিক কাজের পরিকল্পনা (High)\n  3. [সিস্টেম] অনুরণ ওএস আর্কিটেকচার (Normal)".to_string()
+        }
+        "music" => {
+            "🎵 Music Streaming (music-streaming-nilLang):\n  ▶ Cyber Bangla 2040 (NilOS Theme) [03:50]\n  • Onuron Ambient Waves [04:12]\n  • Snapdragon 8 Elite Groove [02:45]\n  • Alap Reactive Symphony [05:01]".to_string()
         }
         "services" => {
             let mut out = String::from("NilOS Supervised Services:\n");
@@ -948,8 +1070,8 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
                 format!("PID  CMD {}\n  1   nilinit\n428   nild\n429   nilkeyd\n430   nilbus\n431   netd\n433   audiod\n434   powerd\n435   nilshell", simulated::badge())
             }
         }
-        _ if cmd.starts_with("ls ") => {
-            let path = cmd.trim_start_matches("ls ").trim();
+        _ if trimmed.starts_with("ls ") => {
+            let path = trimmed.trim_start_matches("ls ").trim();
             match fs::read_dir(path) {
                 Ok(entries) => {
                     let mut out = format!("Contents of {}:\n", path);
@@ -962,8 +1084,8 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
                 Err(e) => format!("ls: {}: {}", path, e),
             }
         }
-        _ if cmd.starts_with("cat ") => {
-            let path = cmd.trim_start_matches("cat ").trim();
+        _ if trimmed.starts_with("cat ") => {
+            let path = trimmed.trim_start_matches("cat ").trim();
             fs::read_to_string(path).unwrap_or_else(|e| format!("cat: {}: {}", path, e))
         }
         "" => String::new(),
@@ -979,6 +1101,103 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
     while state.terminal_history.len() > 20 {
         state.terminal_history.remove(0);
     }
+}
+
+// ─── Calculator App ───────────────────────────────────────────────────────────
+fn draw_calculator(sink: &mut Sink, state: &AppState) {
+    sink.print(CL);
+    sink.println(&format!("{}  🧮 NilOS Calculator — Alap Math Engine  {}{}", FG_CYAN, simulated::badge(), R));
+    sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
+    sink.println("");
+    sink.println("  ┌────────────────────────────────────┐");
+    sink.println(&format!("  │  Display: {:>24} │", state.calc_val));
+    sink.println("  ├────────────────────────────────────┤");
+    sink.println("  │   [ 7 ]   [ 8 ]   [ 9 ]   [ / ]    │");
+    sink.println("  │   [ 4 ]   [ 5 ]   [ 6 ]   [ * ]    │");
+    sink.println("  │   [ 1 ]   [ 2 ]   [ 3 ]   [ - ]    │");
+    sink.println("  │   [ 0 ]   [ . ]   [ C ]   [ + ]    │");
+    sink.println("  └────────────────────────────────────┘");
+    sink.println("");
+    sink.println(&format!("  {}Type an expression (e.g. '25 * 4', '100 / 5', 'C'), 'home', 'back'{}", FG_YELLOW, R));
+    sink.print(&format!("  {}> {}", FG_CYAN, R));
+}
+
+// ─── Notes App ────────────────────────────────────────────────────────────────
+fn draw_notes(sink: &mut Sink) {
+    sink.print(CL);
+    sink.println(&format!("{}  📝 NilLang Notes — Alap Notebook  {}{}", FG_YELLOW, simulated::badge(), R));
+    sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
+    sink.println("");
+    sink.println("  Recent Notes (Synced via SoftBus & Encrypted Storage):");
+    sink.println("");
+    sink.println(&format!("  {}[1] 📌 স্বাগতম নীলাং নোটবুক-এ!{}", FG_WHITE, R));
+    sink.println(&format!("      {}ট্যাগ: গাইড • প্রায়োরিটি: High • তারিখ: ১০ অক্টো{}", FG_CYAN, R));
+    sink.println(&format!("      {}নীলাং ভাষায় তৈরি আধুনিক নোট অ্যাপ্লিকেশন। সম্পূর্ণ নিরাপদ ও দ্রুত।{}", FG_GRAY, R));
+    sink.println("");
+    sink.println(&format!("  {}[2] 📌 দৈনিক কাজের পরিকল্পনা{}", FG_WHITE, R));
+    sink.println(&format!("      {}ট্যাগ: কাজ • প্রায়োরিটি: High • তারিখ: ১০ অক্টো{}", FG_YELLOW, R));
+    sink.println(&format!("      {}বিল্ড ও টেস্ট ভ্যালিডেশন সমাপ্ত করা, S25 রানটাইম যাচাই করা ও গিট পুশ।{}", FG_GRAY, R));
+    sink.println("");
+    sink.println(&format!("  {}[3] 📌 অনুরণ ওএস আর্কিটেকচার{}", FG_WHITE, R));
+    sink.println(&format!("      {}ট্যাগ: সিস্টেম • প্রায়োরিটি: Normal • তারিখ: ০৯ অক্টো{}", FG_GREEN, R));
+    sink.println(&format!("      {}Linux LTS → nilinit → NilHAL → Onuron daemons → nilrt → NilUI/Alap।{}", FG_GRAY, R));
+    sink.println("");
+    sink.println(&format!("  {}Commands: 'new', 'home', 'back'{}", FG_YELLOW, R));
+    sink.print(&format!("  {}> {}", FG_CYAN, R));
+}
+
+// ─── Music App ────────────────────────────────────────────────────────────────
+fn draw_music(sink: &mut Sink, state: &AppState) {
+    sink.print(CL);
+    sink.println(&format!("{}  🎵 NilLang Sonic Lab — Music Player  {}{}", FG_GREEN, simulated::badge(), R));
+    sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
+    sink.println("");
+    let tracks = [
+        ("Cyber Bangla 2040 (NilOS Theme)", "NilLang Sonic Lab", "03:50"),
+        ("Onuron Ambient Waves", "Alap Audio Engine", "04:12"),
+        ("Snapdragon 8 Elite Groove", "Qualcomm DSP Team", "02:45"),
+        ("Alap Reactive Symphony", "Onuron Native Sound", "05:01"),
+    ];
+    let (cur_title, cur_artist, cur_dur) = tracks.get(state.music_track).unwrap_or(&tracks[0]);
+    let play_icon = if state.music_playing { "▶ PLAYING" } else { "⏸ PAUSED" };
+
+    sink.println(&format!("       {}╭─────────────╮{}", FG_CYAN, R));
+    sink.println(&format!("       {}│   ◎ ◉ ◎     │{}   Track:  {}{}{}", FG_CYAN, R, FG_WHITE, cur_title, R));
+    sink.println(&format!("       {}│  VINYL DISC │{}   Artist: {}{}{}", FG_CYAN, R, FG_YELLOW, cur_artist, R));
+    sink.println(&format!("       {}│   ◉ ◎ ◉     │{}   Status: {}{}{}  [{}]", FG_CYAN, R, FG_GREEN, play_icon, R, cur_dur));
+    sink.println(&format!("       {}╰─────────────╯{}", FG_CYAN, R));
+    sink.println("");
+    sink.println("  Playlist Queue:");
+    for (i, (t, a, d)) in tracks.iter().enumerate() {
+        let mark = if i == state.music_track { "▶" } else { " " };
+        sink.println(&format!("   {} {} [{}] {} — {} ({}){}", FG_WHITE, mark, i + 1, t, a, d, R));
+    }
+    sink.println("");
+    sink.println(&format!("  {}Commands: 'play', 'pause', 'next', 'prev', 'home', 'back'{}", FG_YELLOW, R));
+    sink.print(&format!("  {}> {}", FG_CYAN, R));
+}
+
+// ─── Camera App ───────────────────────────────────────────────────────────────
+fn draw_camera(sink: &mut Sink) {
+    sink.print(CL);
+    sink.println(&format!("{}  📷 NilOS Camera Subsystem — camerad HAL  {}{}", FG_MAGENTA, simulated::badge(), R));
+    sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
+    sink.println("");
+    sink.println("  ┌────────────────────────────────────────────────────────┐");
+    sink.println("  │                      VIEWFINDER                        │");
+    sink.println("  │                                                        │");
+    sink.println("  │             [ 4032 x 3024 HDR Primary Sensor ]         │");
+    sink.println("  │                 120Hz Direct Buffer Stream             │");
+    sink.println("  │                                                        │");
+    sink.println("  │                       [  ⦿ CAPTURE  ]                  │");
+    sink.println("  └────────────────────────────────────────────────────────┘");
+    sink.println("");
+    sink.println("  • Active Sensor: Sony IMX Ultra HDR (Back 50MP)");
+    sink.println("  • Front Sensor:  32MP Wide Selfie (Ready)");
+    sink.println("  • Flash/Torch:   Auto-Detect • EIS Video Stabilization: ON");
+    sink.println("");
+    sink.println(&format!("  {}Commands: 'capture', 'torch', 'home', 'back'{}", FG_YELLOW, R));
+    sink.print(&format!("  {}> {}", FG_CYAN, R));
 }
 
 // ─── Notification Shade ──────────────────────────────────────────────────────
@@ -1045,6 +1264,10 @@ fn main() {
             Screen::AppSoftBus     => draw_softbus(&mut sink),
             Screen::AppAndroid     => draw_android(&mut sink),
             Screen::AppTerminal    => draw_terminal(&mut sink, &state),
+            Screen::AppCalculator  => draw_calculator(&mut sink, &state),
+            Screen::AppNotes       => draw_notes(&mut sink),
+            Screen::AppMusic       => draw_music(&mut sink, &state),
+            Screen::AppCamera      => draw_camera(&mut sink),
             Screen::NotificationShade => draw_notifications(&mut sink, &state),
         }
 
@@ -1140,10 +1363,14 @@ fn main() {
                         "5" | "pkg"      => screen = Screen::AppNilPkg,
                         "6" | "softbus"  => screen = Screen::AppSoftBus,
                         "7" | "android"  => screen = Screen::AppAndroid,
-                        "8" | "terminal" => screen = Screen::AppTerminal,
-                        "9" | "hello"    => launch_app(&mut sink, "org.onuron.hello"),
-                        "n" | "notif"    => screen = Screen::NotificationShade,
-                        "l" | "lock"     => { screen = Screen::Lockscreen; lock_error = false; }
+                        "8" | "terminal"   => screen = Screen::AppTerminal,
+                        "9" | "hello"      => launch_app(&mut sink, "org.onuron.hello"),
+                        "10" | "calc" | "calculator" => screen = Screen::AppCalculator,
+                        "11" | "notes"     => screen = Screen::AppNotes,
+                        "12" | "music"     => screen = Screen::AppMusic,
+                        "13" | "camera"    => screen = Screen::AppCamera,
+                        "n" | "notif"      => screen = Screen::NotificationShade,
+                        "l" | "lock"       => { screen = Screen::Lockscreen; lock_error = false; }
                         _ => {} // re-render home
                     }
                 }
@@ -1325,6 +1552,50 @@ fn main() {
                     continue; // Skip the re-render at top of loop
                 }
             }
+
+            // ── Calculator App ────────────────────────────────────────────────
+            Screen::AppCalculator => {
+                if cmd == "home" || cmd == "back" {
+                    screen = Screen::Home;
+                } else if cmd == "c" || cmd == "C" || cmd == "clear" {
+                    state.calc_val = "0".into();
+                } else if !cmd.is_empty() {
+                    if let Ok(res) = eval_simple_math(&cmd) {
+                        state.calc_val = res;
+                    } else {
+                        state.calc_val = "Error".into();
+                    }
+                }
+            }
+
+            // ── Notes App ─────────────────────────────────────────────────────
+            Screen::AppNotes => {
+                if cmd == "home" || cmd == "back" || cmd.is_empty() {
+                    screen = Screen::Home;
+                }
+            }
+
+            // ── Music App ─────────────────────────────────────────────────────
+            Screen::AppMusic => {
+                if cmd == "home" || cmd == "back" {
+                    screen = Screen::Home;
+                } else if cmd == "play" || cmd == "p" || cmd == "pause" {
+                    state.music_playing = !state.music_playing;
+                } else if cmd == "next" || cmd == "n" {
+                    state.music_track = (state.music_track + 1) % 4;
+                    state.music_playing = true;
+                } else if cmd == "prev" {
+                    state.music_track = if state.music_track == 0 { 3 } else { state.music_track - 1 };
+                    state.music_playing = true;
+                }
+            }
+
+            // ── Camera App ────────────────────────────────────────────────────
+            Screen::AppCamera => {
+                if cmd == "home" || cmd == "back" || cmd.is_empty() {
+                    screen = Screen::Home;
+                }
+            }
         }
     }
 }
@@ -1352,6 +1623,10 @@ mod tests {
             wifi_enabled: true,
             cellular_enabled: true,
             signal_bars: 4,
+            term_cwd: "/data".into(),
+            calc_val: "0".into(),
+            music_playing: false,
+            music_track: 0,
         };
 
         let (wifi, cell) = get_network_display(&state);
@@ -1381,6 +1656,10 @@ mod tests {
             wifi_enabled: false,
             cellular_enabled: false,
             signal_bars: 0,
+            term_cwd: "/data".into(),
+            calc_val: "0".into(),
+            music_playing: false,
+            music_track: 0,
         };
 
         let (wifi, cell) = get_network_display(&state);
