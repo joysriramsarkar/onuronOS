@@ -10,6 +10,12 @@ pub struct LinuxDisplay {
     refresh_rate: u32,
 }
 
+impl Default for LinuxDisplay {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LinuxDisplay {
     pub fn new() -> Self {
         Self {
@@ -59,8 +65,8 @@ impl DisplayHal for LinuxDisplay {
                     let cur_path = entry.path().join("brightness");
                     if let (Ok(cur), Ok(max)) = (fs::read_to_string(cur_path), fs::read_to_string(max_path)) {
                         if let (Ok(c), Ok(m)) = (cur.trim().parse::<u32>(), max.trim().parse::<u32>()) {
-                            if m > 0 {
-                                return ((c * 100) / m) as u8;
+                            if let Some(pct) = (c * 100).checked_div(m) {
+                                return pct as u8;
                             }
                         }
                     }
@@ -73,6 +79,12 @@ impl DisplayHal for LinuxDisplay {
 
 pub struct LinuxInput {
     events: Vec<HalInputEvent>,
+}
+
+impl Default for LinuxInput {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LinuxInput {
@@ -166,6 +178,19 @@ impl NetworkHal for LinuxNetwork {
         Ok(Vec::new())
     }
     fn connect_wifi(&mut self, _ssid: &str, _psk: &str) -> Result<(), HalError> {
+        let has_wifi = if let Ok(entries) = fs::read_dir("/sys/class/net") {
+            entries.flatten().any(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.starts_with("wl") || name.starts_with("wlan")
+            })
+        } else {
+            false
+        };
+        if !has_wifi {
+            return Err(HalError::BackendUnavailable(
+                "No wireless network interface found in /sys/class/net".into(),
+            ));
+        }
         Ok(())
     }
     fn set_cellular_enabled(&mut self, _enabled: bool) -> Result<(), HalError> {
@@ -234,6 +259,15 @@ pub struct LinuxTelephony;
 
 impl TelephonyHal for LinuxTelephony {
     fn dial(&mut self, number: &str) -> Result<String, HalError> {
+        let has_modem = Path::new("/dev/cdc-wdm0").exists()
+            || Path::new("/dev/ttyUSB0").exists()
+            || Path::new("/dev/smd11").exists()
+            || Path::new("/dev/modem").exists();
+        if !has_modem {
+            return Err(HalError::BackendUnavailable(
+                "No physical or virtual cellular modem device found (/dev/cdc-wdm0, /dev/ttyUSB0, /dev/smd11)".into(),
+            ));
+        }
         Ok(format!("linux_call_{}", number))
     }
     fn hangup(&mut self, _call_id: &str) -> Result<(), HalError> {
@@ -243,16 +277,33 @@ impl TelephonyHal for LinuxTelephony {
         Ok(())
     }
     fn send_sms(&mut self, _recipient: &str, _message: &str) -> Result<(), HalError> {
+        let has_modem = Path::new("/dev/cdc-wdm0").exists()
+            || Path::new("/dev/ttyUSB0").exists()
+            || Path::new("/dev/smd11").exists()
+            || Path::new("/dev/modem").exists();
+        if !has_modem {
+            return Err(HalError::BackendUnavailable(
+                "No cellular modem device available for SMS transmission".into(),
+            ));
+        }
         Ok(())
     }
     fn get_call_state(&self) -> CallState {
         CallState::Idle
     }
     fn get_sim_status(&self) -> SimStatus {
+        let has_modem = Path::new("/dev/cdc-wdm0").exists()
+            || Path::new("/dev/ttyUSB0").exists()
+            || Path::new("/dev/smd11").exists()
+            || Path::new("/dev/modem").exists();
         SimStatus {
             slot: 1,
-            is_ready: true,
-            carrier: "Linux Modem (oFono/ModemManager)".into(),
+            is_ready: has_modem,
+            carrier: if has_modem {
+                "Linux Modem (oFono/ModemManager)".into()
+            } else {
+                "No Modem Detected [SIMULATED]".into()
+            },
             phone_number: None,
         }
     }
@@ -261,19 +312,51 @@ impl TelephonyHal for LinuxTelephony {
 pub struct LinuxCamera;
 
 impl CameraHal for LinuxCamera {
-    fn open(&mut self, _camera_id: u32) -> Result<(), HalError> {
+    fn open(&mut self, camera_id: u32) -> Result<(), HalError> {
+        let dev = format!("/dev/video{}", camera_id);
+        if !Path::new(&dev).exists() {
+            return Err(HalError::DeviceNotFound(format!(
+                "Linux V4L2 camera device {} not found",
+                dev
+            )));
+        }
         Ok(())
     }
     fn capture_frame(&mut self) -> Result<Vec<u8>, HalError> {
+        if !Path::new("/dev/video0").exists() {
+            return Err(HalError::BackendUnavailable(
+                "No Linux V4L2 camera capture device (/dev/video0) available".into(),
+            ));
+        }
         Ok(vec![0xFF, 0xD8, 0xFF, 0xE0])
     }
     fn start_preview(&mut self) -> Result<(), HalError> {
+        if !Path::new("/dev/video0").exists() {
+            return Err(HalError::BackendUnavailable(
+                "Linux V4L2 camera preview device not available".into(),
+            ));
+        }
         Ok(())
     }
     fn stop_preview(&mut self) -> Result<(), HalError> {
         Ok(())
     }
-    fn set_torch(&mut self, _on: bool) -> Result<(), HalError> {
+    fn set_torch(&mut self, on: bool) -> Result<(), HalError> {
+        let flash_dir = Path::new("/sys/class/leds");
+        if flash_dir.exists() {
+            if let Ok(entries) = fs::read_dir(flash_dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.contains("torch") || name.contains("flash") {
+                        let _ = fs::write(entry.path().join("brightness"), if on { "1" } else { "0" });
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        if on {
+            return Err(HalError::UnsupportedOperation("No flash/torch LED node found in /sys/class/leds".into()));
+        }
         Ok(())
     }
 }
@@ -288,9 +371,19 @@ impl AudioHal for LinuxAudio {
         80
     }
     fn play_stream(&mut self, _pcm_samples: &[i16]) -> Result<(), HalError> {
+        if !Path::new("/proc/asound").exists() && !Path::new("/dev/snd").exists() {
+            return Err(HalError::BackendUnavailable(
+                "ALSA sound card (/proc/asound or /dev/snd) not available".into(),
+            ));
+        }
         Ok(())
     }
     fn record_stream(&mut self, buffer: &mut [i16]) -> Result<usize, HalError> {
+        if !Path::new("/proc/asound").exists() && !Path::new("/dev/snd").exists() {
+            return Err(HalError::BackendUnavailable(
+                "ALSA recording capture device not available".into(),
+            ));
+        }
         buffer.fill(0);
         Ok(buffer.len())
     }
@@ -320,18 +413,63 @@ pub struct LinuxSensors;
 
 impl SensorHal for LinuxSensors {
     fn get_accelerometer(&self) -> (f32, f32, f32) {
-        (0.0, 9.81, 0.0)
+        (0.0, 0.0, 0.0)
     }
     fn get_gyroscope(&self) -> (f32, f32, f32) {
         (0.0, 0.0, 0.0)
     }
     fn get_ambient_light(&self) -> f32 {
-        200.0
+        0.0
     }
     fn get_proximity(&self) -> bool {
         false
     }
     fn get_gps_coordinates(&self) -> Option<(f64, f64, f32)> {
         None
+    }
+}
+
+#[cfg(test)]
+mod linux_backend_tests {
+    use super::*;
+
+    #[test]
+    fn test_linux_telephony_honest_error_when_modem_absent() {
+        let mut tel = LinuxTelephony;
+        let sim = tel.get_sim_status();
+        assert!(!sim.is_ready);
+        assert!(sim.carrier.contains("[SIMULATED]"));
+        assert!(tel.dial("+1234567890").is_err());
+        assert!(tel.send_sms("+1234567890", "test").is_err());
+    }
+
+    #[test]
+    fn test_linux_camera_honest_error_when_v4l2_absent() {
+        let mut cam = LinuxCamera;
+        assert!(cam.open(0).is_err());
+        assert!(cam.capture_frame().is_err());
+        assert!(cam.start_preview().is_err());
+    }
+
+    #[test]
+    fn test_linux_audio_honest_error_when_alsa_absent() {
+        let mut audio = LinuxAudio;
+        assert_eq!(audio.get_master_volume(), 80);
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert!(audio.play_stream(&[1, 2, 3]).is_err());
+            let mut buf = [0i16; 64];
+            assert!(audio.record_stream(&mut buf).is_err());
+        }
+    }
+
+    #[test]
+    fn test_linux_sensors_honest_zero_fallbacks() {
+        let sensors = LinuxSensors;
+        assert_eq!(sensors.get_accelerometer(), (0.0, 0.0, 0.0));
+        assert_eq!(sensors.get_gyroscope(), (0.0, 0.0, 0.0));
+        assert_eq!(sensors.get_ambient_light(), 0.0);
+        assert!(!sensors.get_proximity());
+        assert_eq!(sensors.get_gps_coordinates(), None);
     }
 }

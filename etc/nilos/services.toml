@@ -1,4 +1,11 @@
-# etc/nilos/services.toml — NilOS Core Service Topology
+# etc/nilos/services.toml — OnuronOS Core Service Topology (Schema Version 1)
+#
+# Canonical inventory of system daemons supervised by nilinit (PID 1).
+# Complies with Roadmap Section 34.1: versioned schema, distinct responsibilities,
+# socket activation paths, and restart policies.
+
+version = 1
+
 [[services]]
 name = "nild"
 exec = "/usr/bin/nild"
@@ -32,6 +39,46 @@ restart = "always"
 [[services]]
 name = "nilshell"
 exec = "/usr/bin/nilshell"
+restart = "always"
+
+[[services]]
+name = "inputd"
+exec = "/usr/bin/inputd"
+restart = "always"
+socket_activation = "/run/nilos/input.sock"
+
+[[services]]
+name = "telephonyd"
+exec = "/usr/bin/telephonyd"
+restart = "always"
+socket_activation = "/run/nilos/telephony.sock"
+
+[[services]]
+name = "camerad"
+exec = "/usr/bin/camerad"
+restart = "always"
+socket_activation = "/run/nilos/camera.sock"
+
+[[services]]
+name = "btd"
+exec = "/usr/bin/btd"
+restart = "always"
+socket_activation = "/run/nilos/bt.sock"
+
+[[services]]
+name = "nilupd"
+exec = "/usr/bin/nilupd"
+restart = "always"
+socket_activation = "/run/nilos/update.sock"
+
+[[services]]
+name = "thermald"
+exec = "/usr/bin/thermald"
+restart = "always"
+
+[[services]]
+name = "nilwdt"
+exec = "/usr/bin/nilwdt"
 restart = "always"
 
 [[services]]

@@ -17,7 +17,16 @@ import argparse
 import hashlib
 import os
 import struct
+import sys
 from typing import Dict, Any, Tuple
+
+try:
+    import target_registry
+except ImportError:
+    try:
+        from . import target_registry
+    except (ImportError, ValueError):
+        target_registry = None
 
 BOOT_MAGIC = b"ANDROID!"
 BOOT_MAGIC_SIZE = 8
@@ -413,12 +422,45 @@ DEVICE_PROFILES = {
 }
 
 
+def get_profile(name: str) -> Dict[str, Any]:
+    """
+    Get profile definition for target device.
+    Prefers target definitions from targets/<canonical>/target.toml via target_registry,
+    falling back to DEVICE_PROFILES.
+    """
+    if target_registry:
+        try:
+            canonical = target_registry.resolve_target(name, warn=False)
+            target_cfg = target_registry.load_target(canonical, warn=False)
+            bcfg = target_cfg.get("bootimg", {})
+            dcfg = target_cfg.get("device", {})
+            tcfg = target_cfg.get("target", {})
+
+            if bcfg:
+                base_raw = bcfg.get("base", "0x00000000")
+                base_val = int(base_raw, 0) if isinstance(base_raw, str) else int(base_raw)
+                return {
+                    "board": dcfg.get("fastboot_product") or dcfg.get("codename") or tcfg.get("id") or name,
+                    "header_version": int(bcfg.get("header_version", 2)),
+                    "pagesize": int(bcfg.get("page_size", 4096)),
+                    "base": base_val,
+                    "cmdline": bcfg.get("cmdline", "console=ttyMSM0,115200 root=/dev/ram0 rw init=/init"),
+                }
+        except Exception:
+            pass
+
+    if name in DEVICE_PROFILES:
+        return DEVICE_PROFILES[name]
+
+    raise ValueError(f"Unknown target profile '{name}'.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="OnuronOS Android Boot Image Utility")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     create_p = subparsers.add_parser("create", help="Create a boot.img")
-    create_p.add_argument("--profile", choices=list(DEVICE_PROFILES.keys()), help="Target device hardware profile (e.g. fajita, enchilada, generic-arm64)")
+    create_p.add_argument("--profile", help="Target device hardware profile (e.g. fajita, enchilada, oneplus-fajita, generic-arm64)")
     create_p.add_argument("--kernel", required=True, help="Path to kernel zImage/Image.gz")
     create_p.add_argument("--ramdisk", required=True, help="Path to ramdisk/initramfs cpio.gz")
     create_p.add_argument("--dtb", help="Path to device tree blob (.dtb)")
@@ -442,17 +484,44 @@ def main():
 
     if args.command == "create":
         if args.profile:
-            prof = DEVICE_PROFILES[args.profile]
-            if args.board == "onuron-arm64":
-                args.board = prof["board"]
-            if args.pagesize == DEFAULT_PAGE_SIZE:
-                args.pagesize = prof["pagesize"]
-            if args.base == DEFAULT_BASE:
-                args.base = prof["base"]
-            if args.cmdline == "console=ttyMSM0,115200 root=/dev/ram0 rw init=/init":
+            prof = get_profile(args.profile)
+
+            # Fail-closed on conflicting explicit arguments (Section 30.1)
+            raw_argv = sys.argv[1:]
+
+            def has_explicit_flag(flag: str) -> bool:
+                return any(arg == flag or arg.startswith(flag + "=") for arg in raw_argv)
+
+            if has_explicit_flag("--pagesize") and args.pagesize != prof["pagesize"]:
+                raise ValueError(
+                    f"Conflicting argument --pagesize {args.pagesize} conflicts with profile '{args.profile}' "
+                    f"pagesize ({prof['pagesize']}). Remove conflicting explicit override."
+                )
+
+            if has_explicit_flag("--base") and args.base != prof["base"]:
+                raise ValueError(
+                    f"Conflicting argument --base {hex(args.base)} conflicts with profile '{args.profile}' "
+                    f"base ({hex(prof['base'])}). Remove conflicting explicit override."
+                )
+
+            if has_explicit_flag("--header-version") and args.header_version != prof["header_version"]:
+                raise ValueError(
+                    f"Conflicting argument --header-version {args.header_version} conflicts with profile '{args.profile}' "
+                    f"header_version ({prof['header_version']}). Remove conflicting explicit override."
+                )
+
+            if has_explicit_flag("--board") and args.board != prof["board"]:
+                raise ValueError(
+                    f"Conflicting argument --board '{args.board}' conflicts with profile '{args.profile}' "
+                    f"board ('{prof['board']}'). Remove conflicting explicit override."
+                )
+
+            args.board = prof["board"]
+            args.pagesize = prof["pagesize"]
+            args.base = prof["base"]
+            args.header_version = prof["header_version"]
+            if not has_explicit_flag("--cmdline"):
                 args.cmdline = prof["cmdline"]
-            if args.header_version == 2:
-                args.header_version = prof["header_version"]
         with open(args.kernel, "rb") as f:
             k_bytes = f.read()
         with open(args.ramdisk, "rb") as f:

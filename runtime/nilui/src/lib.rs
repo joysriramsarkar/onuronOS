@@ -29,6 +29,43 @@ pub enum Element {
     Stack { children: Vec<Element> },
 }
 
+impl From<&alap::Component> for Element {
+    fn from(comp: &alap::Component) -> Self {
+        match comp {
+            alap::Component::Text { content, .. } => Element::Text {
+                content: content.clone(),
+            },
+            alap::Component::Button { label, id, .. } => {
+                let mut hash: u32 = 0;
+                for b in id.bytes() {
+                    hash = hash.wrapping_mul(31).wrapping_add(b as u32);
+                }
+                Element::Button {
+                    label: label.clone(),
+                    on_click_id: hash,
+                }
+            }
+            alap::Component::TextField { placeholder, value, .. } => Element::Input {
+                placeholder: placeholder.clone(),
+                text: value.clone(),
+            },
+            alap::Component::Column { children, .. } => Element::Column {
+                children: children.iter().map(Element::from).collect(),
+            },
+            alap::Component::Row { children, .. } => Element::Row {
+                children: children.iter().map(Element::from).collect(),
+            },
+            alap::Component::Spacer { .. } => Element::Column { children: vec![] },
+            alap::Component::List { children, .. } => Element::Column {
+                children: children.iter().map(Element::from).collect(),
+            },
+            _ => Element::Text {
+                content: format!("[Component: {:?}]", comp),
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Ev {
     Click(u32),

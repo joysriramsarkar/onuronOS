@@ -102,7 +102,40 @@ impl Supervisor {
         }
     }
 
-    /// Checks whether the specified services are running AND their readiness socket/file (if specified) is present.
+/// Probes a service socket or readiness marker, using canonical framed IPC Ping/Pong on Unix sockets.
+#[cfg(unix)]
+pub fn probe_socket_alive(sock_path: &std::path::Path) -> bool {
+    use std::os::unix::fs::FileTypeExt;
+    use std::os::unix::net::UnixStream;
+    use nilprotocol::{Frame, MessageType};
+
+    if let Ok(meta) = std::fs::metadata(sock_path) {
+        if meta.file_type().is_socket() {
+            if let Ok(mut stream) = UnixStream::connect(sock_path) {
+                let _ = stream.set_read_timeout(Some(Duration::from_millis(150)));
+                let _ = stream.set_write_timeout(Some(Duration::from_millis(150)));
+                let ping_frame = Frame::new(MessageType::Ping, 1, Vec::new());
+                if ping_frame.write_to(&mut stream).is_ok() {
+                    if let Ok(resp) = Frame::read_from(&mut stream) {
+                        return resp.message_type == u16::from(MessageType::Pong)
+                            || resp.message_type == u16::from(MessageType::ServiceStatusResponse);
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+        return true;
+    }
+    false
+}
+
+#[cfg(not(unix))]
+pub fn probe_socket_alive(sock_path: &std::path::Path) -> bool {
+    sock_path.exists()
+}
+
+    /// Checks whether the specified services are running AND their readiness socket/file (if specified) is present and responding.
     pub fn check_readiness<'a>(
         &self,
         service_probes: &[(&'a str, Option<&std::path::Path>)],
@@ -114,7 +147,7 @@ impl Supervisor {
                 continue;
             }
             if let Some(sock_path) = sock_opt {
-                if !sock_path.exists() {
+                if !sock_path.exists() || !Self::probe_socket_alive(sock_path) {
                     not_ready.push(name);
                 }
             }

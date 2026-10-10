@@ -53,6 +53,7 @@ mod tests {
 
     #[test]
     fn test_host_display_s25() {
+        let _guard = crate::jni_bridge::test_lock();
         use nilhal::traits::DisplayHal;
         let display = AndroidHostDisplay::new();
         assert_eq!(display.get_dimensions(), (1080, 2340));

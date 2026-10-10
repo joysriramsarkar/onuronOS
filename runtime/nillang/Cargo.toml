@@ -7,6 +7,8 @@ description = "NilLang compiler, parser and execution engine for OnuronOS native
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+alap = { path = "../../alap" }
+nilui = { path = "../nilui" }
 
 [[bin]]
 name = "nilc"

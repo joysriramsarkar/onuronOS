@@ -29,6 +29,7 @@ pub struct TelephonyManager {
     pub active_calls: Vec<TelephonyCallPayload>,
     pub sms_inbox: Vec<TelephonySmsPayload>,
     pub sms_outbox: Vec<TelephonySmsPayload>,
+    pub is_hardware: bool,
     next_call_seq: u64,
     next_sms_id: u64,
 }
@@ -47,11 +48,12 @@ impl TelephonyManager {
             carrier,
             phone_number: Some("+8801700000000".to_string()),
             signal_bars: 4,
-            radio_state: "ready".to_string(),
-            network_type: "VoLTE".to_string(),
+            radio_state: if found { "ready".to_string() } else { "simulated".to_string() },
+            network_type: if found { "VoLTE".to_string() } else { "Simulated".to_string() },
             active_calls: Vec::new(),
             sms_inbox: Vec::new(),
             sms_outbox: Vec::new(),
+            is_hardware: found,
             next_call_seq: 1,
             next_sms_id: 100,
         };
@@ -119,7 +121,7 @@ impl TelephonyManager {
         // Clean virtual fallback
         (
             false,
-            "Onuron Mobile (VoLTE Ready)".to_string(),
+            "Simulated Baseband [SIMULATED]".to_string(),
             "/dev/null".to_string(),
         )
     }
@@ -137,8 +139,12 @@ impl TelephonyManager {
         }
     }
 
+    pub fn is_radio_ready(&self) -> bool {
+        self.sim_ready && (self.radio_state == "ready" || self.radio_state == "simulated")
+    }
+
     pub fn dial(&mut self, number: &str) -> Result<TelephonyCallPayload, String> {
-        if !self.sim_ready || self.radio_state != "ready" {
+        if !self.is_radio_ready() {
             return Err("Radio not ready or SIM missing".to_string());
         }
 
@@ -176,7 +182,7 @@ impl TelephonyManager {
         recipient: &str,
         message: &str,
     ) -> Result<TelephonySmsPayload, String> {
-        if !self.sim_ready || self.radio_state != "ready" {
+        if !self.is_radio_ready() {
             return Err("Radio not ready or SIM missing".to_string());
         }
 
@@ -354,6 +360,29 @@ pub fn handle_client_frame(manager: &mut TelephonyManager, frame: &Frame) -> Fra
             ),
         },
         MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, Vec::new()),
+        MessageType::ServiceStatusRequest => {
+            let payload = nilprotocol::ServiceStatusPayload {
+                service_name: "telephonyd".to_string(),
+                is_ready: true,
+                is_simulated: !manager.sim_ready || manager.radio_state == "simulated",
+                backend_name: if manager.radio_state == "simulated" {
+                    "simulated-baseband".to_string()
+                } else {
+                    "cellular-modem".to_string()
+                },
+                uptime_secs: 0,
+                request_count: 1,
+                last_error: None,
+            };
+            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
+                .unwrap_or_else(|_| {
+                    Frame::new(
+                        MessageType::ErrorResponse,
+                        frame.request_id,
+                        b"encode error".to_vec(),
+                    )
+                })
+        }
         _ => Frame::new(
             MessageType::ErrorResponse,
             frame.request_id,
@@ -428,6 +457,7 @@ fn main() {
         });
     }
 
+    let _ = nilsd::notify_ready("telephonyd", Some(TELEPHONY_SOCK_PATH));
     println!("[telephonyd] Cellular telephony service ready.");
 
     loop {
@@ -521,6 +551,14 @@ mod tests {
         let sms_resp = process_at_command(&mut mgr, "AT+CMGS=\"+18005550199\"");
         assert!(sms_resp.starts_with("+CMGS:"));
         assert!(sms_resp.ends_with("OK\r\n"));
+
+        // ServiceStatusRequest
+        let status_req = Frame::new(MessageType::ServiceStatusRequest, 88, vec![]);
+        let status_resp = handle_client_frame(&mut mgr, &status_req);
+        assert_eq!(status_resp.message_type, u16::from(MessageType::ServiceStatusResponse));
+        let status: nilprotocol::ServiceStatusPayload = status_resp.parse_json().unwrap();
+        assert_eq!(status.service_name, "telephonyd");
+        assert!(status.is_ready);
     }
 }
 

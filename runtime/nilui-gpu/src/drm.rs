@@ -87,24 +87,44 @@ pub struct DrmDevice {
 }
 
 impl DrmDevice {
+    /// Explicitly open a DRM hardware device node (e.g. /dev/dri/card0).
+    /// Fails with a structured error if the device node is missing or cannot be opened.
+    pub fn open(path: &str, preferred_mode: Option<DrmMode>) -> Result<Self, String> {
+        let mode = preferred_mode.unwrap_or_default();
+        if !Path::new(path).exists() {
+            return Err(format!("DRM device not found: {}", path));
+        }
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .map_err(|e| format!("Failed to open DRM device {}: {}", path, e))?;
+
+        Ok(Self {
+            card_path: path.to_string(),
+            mode,
+            is_hardware: true,
+            _file: Some(file),
+        })
+    }
+
+    /// Open hardware DRM device if available and readable/writable, otherwise
+    /// fall back cleanly to a software dumb buffer marked `is_hardware = false`.
     pub fn open_or_virtual(preferred_mode: Option<DrmMode>) -> Self {
         let mode = preferred_mode.unwrap_or_default();
 
-        let (card_path, file, is_hw) = if Path::new(DEFAULT_DRM_CARD).exists() {
-            let f = OpenOptions::new().read(true).write(true).open(DEFAULT_DRM_CARD).ok();
-            (DEFAULT_DRM_CARD.to_string(), f, true)
-        } else if Path::new(SECONDARY_DRM_CARD).exists() {
-            let f = OpenOptions::new().read(true).write(true).open(SECONDARY_DRM_CARD).ok();
-            (SECONDARY_DRM_CARD.to_string(), f, true)
-        } else {
-            ("virtual:software_dumb_buffer".to_string(), None, false)
-        };
+        if let Ok(dev) = Self::open(DEFAULT_DRM_CARD, Some(mode)) {
+            return dev;
+        }
+        if let Ok(dev) = Self::open(SECONDARY_DRM_CARD, Some(mode)) {
+            return dev;
+        }
 
         Self {
-            card_path,
+            card_path: "virtual:software_dumb_buffer".to_string(),
             mode,
-            is_hardware: is_hw,
-            _file: file,
+            is_hardware: false,
+            _file: None,
         }
     }
 
@@ -112,14 +132,28 @@ impl DrmDevice {
         DumbBuffer::new(self.mode.width, self.mode.height, fb_id)
     }
 
-    pub fn set_crtc(&self, _fb_id: u32) -> Result<(), String> {
+    pub fn set_crtc(&self, fb_id: u32) -> Result<(), String> {
+        if fb_id == 0 {
+            return Err("Invalid framebuffer ID: 0".to_string());
+        }
         // On Linux hardware this calls drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &connector, 1, &mode)
         Ok(())
     }
 
-    pub fn page_flip(&self, _fb_id: u32) -> Result<(), String> {
-        // On Linux hardware this calls drmModePageFlip(fd, crtc_id, fb_id, DRM_MODE_PAGE_FLIP_EVENT, user_data)
-        Ok(())
+    pub fn page_flip(&self, fb_id: u32) -> Result<(), String> {
+        if fb_id == 0 {
+            return Err("Invalid framebuffer ID: 0 (page flip rejected)".to_string());
+        }
+        if self.is_hardware {
+            if self._file.is_none() {
+                return Err("DRM hardware device file descriptor is invalid or closed".to_string());
+            }
+            // On Linux hardware this calls drmModePageFlip(fd, crtc_id, fb_id, DRM_MODE_PAGE_FLIP_EVENT, user_data)
+            Ok(())
+        } else {
+            // Virtual software dumb buffer: frame accepted
+            Ok(())
+        }
     }
 }
 
@@ -158,5 +192,17 @@ mod tests {
         let buf = dev.allocate_dumb_buffer(42);
         assert_eq!(buf.fb_id, 42);
         assert_eq!(buf.width, 720);
+
+        // Page flip on valid buffer
+        assert!(dev.page_flip(42).is_ok());
+
+        // Page flip on invalid zero fb_id rejected
+        assert!(dev.page_flip(0).is_err());
+    }
+
+    #[test]
+    fn test_drm_device_open_missing_fails() {
+        let res = DrmDevice::open("/dev/nonexistent/card99", None);
+        assert!(res.is_err());
     }
 }

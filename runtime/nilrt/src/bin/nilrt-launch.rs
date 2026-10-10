@@ -62,10 +62,70 @@ fn granted_permissions(
         .collect()
 }
 
+struct RegistryLock {
+    #[cfg(unix)]
+    _file: Option<std::fs::File>,
+    #[cfg(not(unix))]
+    lock_path: Option<PathBuf>,
+}
+
+impl RegistryLock {
+    fn acquire(registry_path: &Path) -> Result<Self, String> {
+        let lock_path = registry_path.with_extension("lock");
+        if let Some(parent) = lock_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        let start = std::time::Instant::now();
+        loop {
+            #[cfg(unix)]
+            {
+                let file_res = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .open(&lock_path);
+                if let Ok(file) = file_res {
+                    use std::os::unix::io::AsRawFd;
+                    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+                    if rc == 0 {
+                        return Ok(RegistryLock { _file: Some(file) });
+                    }
+                }
+            }
+
+            #[cfg(not(unix))]
+            {
+                let file_res = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .create_new(true)
+                    .open(&lock_path);
+                if file_res.is_ok() {
+                    return Ok(RegistryLock { lock_path: Some(lock_path) });
+                }
+            }
+
+            if start.elapsed() > std::time::Duration::from_secs(3) {
+                return Err(format!("Timeout waiting for UID registry lock on {}", lock_path.display()));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+}
+
+#[cfg(not(unix))]
+impl Drop for RegistryLock {
+    fn drop(&mut self) {
+        if let Some(path) = &self.lock_path {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 /// Deterministically map an app ID to an isolated per-app UID/GID in the range [10000..29999].
 /// This ensures per-app process isolation, filesystem DAC separation, and ptrace boundaries.
-/// Deterministically map an app ID to an isolated per-app UID/GID in the range [10000..29999].
-/// Checks against persisted/active UIDs in a registry to prevent hash collisions.
+/// Checks against persisted/active UIDs in a registry with cross-process locking to prevent hash collisions.
 pub fn allocate_app_uid_with_registry(app_id: &str, registry_path: Option<&Path>) -> u32 {
     // Only permit developer UID override in test/debug mode to prevent privilege boundary bypass in production
     if cfg!(debug_assertions) || env::var("NIL_TEST_MODE").map(|v| v == "1").unwrap_or(false) {
@@ -75,6 +135,8 @@ pub fn allocate_app_uid_with_registry(app_id: &str, registry_path: Option<&Path>
             }
         }
     }
+
+    let _lock = registry_path.and_then(|p| RegistryLock::acquire(p).ok());
 
     let mut uids_map: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     if let Some(path) = registry_path {
@@ -251,12 +313,21 @@ fn main() {
             println!("[nilrt-launch] Executing compiled NilLang bytecode via nilc runtime engine");
             launch_args.insert(0, target.to_string_lossy().into_owned());
             launch_args.insert(0, "run".to_string());
-            let nilc_cmd = if Path::new("/usr/bin/nilc").is_file() {
-                "/usr/bin/nilc"
+            let nilc_cmd = if let Ok(custom) = std::env::var("NILC_PATH") {
+                custom
+            } else if Path::new("/usr/bin/nilc").is_file() {
+                "/usr/bin/nilc".to_string()
+            } else if let Ok(current) = std::env::current_exe() {
+                let candidate = current.with_file_name(if cfg!(windows) { "nilc.exe" } else { "nilc" });
+                if candidate.is_file() {
+                    candidate.to_string_lossy().into_owned()
+                } else {
+                    "nilc".to_string()
+                }
             } else {
-                "nilc"
+                "nilc".to_string()
             };
-            lifecycle::launch(&spec, nilc_cmd, &launch_args).map_err(|e| e.to_string())
+            lifecycle::launch(&spec, &nilc_cmd, &launch_args).map_err(|e| e.to_string())
         } else {
             lifecycle::launch(&spec, &target.to_string_lossy(), &launch_args).map_err(|e| e.to_string())
         }
@@ -326,6 +397,45 @@ mod tests {
 
         let uid3 = super::allocate_app_uid_with_registry("app.fake", Some(&reg_path));
         assert_eq!(uid3, 15000);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_concurrent_uid_allocations_preserve_registry() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let tmp_dir = std::env::temp_dir().join(format!("nilrt_conc_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let reg_path = Arc::new(tmp_dir.join("uids_concurrent.json"));
+
+        let mut handles = Vec::new();
+        for t in 0..4 {
+            let path_clone = Arc::clone(&reg_path);
+            handles.push(thread::spawn(move || {
+                let mut allocated = Vec::new();
+                for i in 0..5 {
+                    let app_id = format!("org.onuron.thread{}.app{}", t, i);
+                    let uid = super::allocate_app_uid_with_registry(&app_id, Some(&path_clone));
+                    allocated.push((app_id, uid));
+                }
+                allocated
+            }));
+        }
+
+        let mut all_uids = std::collections::HashSet::new();
+        for h in handles {
+            let res = h.join().unwrap();
+            for (_app_id, uid) in res {
+                assert!(all_uids.insert(uid), "Duplicate UID allocated concurrently: {uid}");
+            }
+        }
+
+        // Verify the persisted registry contains all 20 unique allocations
+        let content = std::fs::read_to_string(&*reg_path).unwrap();
+        let map: std::collections::HashMap<String, u32> = serde_json::from_str(&content).unwrap();
+        assert_eq!(map.len(), 20, "Expected all 20 apps registered in JSON registry");
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

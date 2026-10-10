@@ -69,6 +69,20 @@ pub fn handle_ipc_request(
     let msg_type = MessageType::from(frame.message_type);
     match msg_type {
         MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
+        MessageType::ServiceStatusRequest => {
+            let unlocked = is_unlocked(record_path, master_path);
+            let payload = nilprotocol::ServiceStatusPayload {
+                service_name: "nilkeyd".to_string(),
+                is_ready: true,
+                is_simulated: false,
+                backend_name: "fscrypt-aes256gcm".to_string(),
+                uptime_secs: 0,
+                request_count: 1,
+                last_error: if unlocked { None } else { Some("locked".to_string()) },
+            };
+            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
+                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+        }
         MessageType::KeyGetStatus => {
             let unlocked = is_unlocked(record_path, master_path);
             let fp = read_record(record_path).ok().map(|r| r.device_secret_fingerprint);
@@ -879,5 +893,13 @@ mod tests {
         let info2: KeyStatusInfo = serde_json::from_slice(&stat_resp2.payload).unwrap();
         assert!(info2.unlocked);
         assert!(info2.master_key_present);
+
+        // 4. ServiceStatusRequest
+        let svc_req = Frame::new(MessageType::ServiceStatusRequest, 3, vec![]);
+        let svc_resp = handle_ipc_request(&svc_req, &record_path, &master_path);
+        assert_eq!(svc_resp.message_type, u16::from(MessageType::ServiceStatusResponse));
+        let svc_info: nilprotocol::ServiceStatusPayload = svc_resp.parse_json().unwrap();
+        assert_eq!(svc_info.service_name, "nilkeyd");
+        assert!(svc_info.is_ready);
     }
 }

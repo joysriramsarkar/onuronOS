@@ -8,6 +8,12 @@ pub struct QemuDisplay {
     brightness: u8,
 }
 
+impl Default for QemuDisplay {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QemuDisplay {
     pub fn new() -> Self {
         Self {
@@ -40,6 +46,12 @@ impl DisplayHal for QemuDisplay {
 
 pub struct QemuInput {
     queue: Vec<HalInputEvent>,
+}
+
+impl Default for QemuInput {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QemuInput {
@@ -75,7 +87,7 @@ impl NetworkHal for QemuNetwork {
     fn scan_wifi(&mut self) -> Result<Vec<WifiApInfo>, HalError> {
         Ok(vec![
             WifiApInfo {
-                ssid: "QEMU-Virtual-WiFi".into(),
+                ssid: "QEMU-Virtual-WiFi [SIMULATED]".into(),
                 bssid: "52:54:00:12:34:56".into(),
                 signal_level: -45,
                 security: "WPA2-PSK".into(),
@@ -93,6 +105,12 @@ impl NetworkHal for QemuNetwork {
 pub struct QemuPower {
     battery: HalBatteryInfo,
     perf_mode: PerformanceMode,
+}
+
+impl Default for QemuPower {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QemuPower {
@@ -134,6 +152,12 @@ pub struct QemuTelephony {
     call_state: CallState,
 }
 
+impl Default for QemuTelephony {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QemuTelephony {
     pub fn new() -> Self {
         Self {
@@ -168,7 +192,7 @@ impl TelephonyHal for QemuTelephony {
         SimStatus {
             slot: 1,
             is_ready: true,
-            carrier: "QEMU-Virtual-SIM".into(),
+            carrier: "QEMU Virtual SIM [SIMULATED]".into(),
             phone_number: Some("+15550001".into()),
         }
     }
@@ -176,6 +200,12 @@ impl TelephonyHal for QemuTelephony {
 
 pub struct QemuCamera {
     torch_on: bool,
+}
+
+impl Default for QemuCamera {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QemuCamera {
@@ -206,6 +236,12 @@ impl CameraHal for QemuCamera {
 
 pub struct QemuAudio {
     volume: u8,
+}
+
+impl Default for QemuAudio {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QemuAudio {
@@ -246,7 +282,7 @@ impl BluetoothHal for QemuBluetooth {
     fn get_paired_devices(&self) -> Vec<BluetoothDeviceEntry> {
         vec![
             BluetoothDeviceEntry {
-                name: "QEMU Virtual Buds".into(),
+                name: "QEMU Virtual Buds [SIMULATED]".into(),
                 address: "AA:BB:CC:DD:EE:01".into(),
                 is_connected: true,
             }

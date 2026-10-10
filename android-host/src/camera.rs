@@ -23,11 +23,20 @@ const VALID_BASELINE_JPEG: &[u8] = &[
     0xFF, 0xD9, // EOI (End of Image)
 ];
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct CapturedFrameMetadata {
+    pub data: Vec<u8>,
+    pub is_simulated: bool,
+    pub source: &'static str,
+    pub frame_counter: u64,
+}
+
 pub struct AndroidHostCamera {
     active_camera_id: Option<u32>,
     torch_state: bool,
     is_preview_active: bool,
     captured_frame_count: u64,
+    last_frame_simulated: bool,
 }
 
 impl AndroidHostCamera {
@@ -37,6 +46,7 @@ impl AndroidHostCamera {
             torch_state: false,
             is_preview_active: false,
             captured_frame_count: 0,
+            last_frame_simulated: false,
         }
     }
 
@@ -59,6 +69,66 @@ impl AndroidHostCamera {
     pub fn captured_count(&self) -> u64 {
         self.captured_frame_count
     }
+
+    pub fn is_last_frame_simulated(&self) -> bool {
+        self.last_frame_simulated
+    }
+
+    /// Captures a frame and returns comprehensive provenance metadata (real vs simulated)
+    pub fn capture_frame_detailed(&mut self) -> Result<CapturedFrameMetadata, HalError> {
+        let cam_id = self.active_camera_id.ok_or_else(|| {
+            HalError::DeviceNotFound("No active camera opened. Call open() first.".into())
+        })?;
+
+        // 1. Notify host bridge to trigger high-resolution sensor exposure
+        jni_bridge::enqueue_guest_command(GuestToHostCommand::CapturePhoto {
+            camera_id: cam_id,
+        });
+
+        // 2. If a real frame was pushed by Camera2 ImageReader over JNI, return it
+        if let Some(host_frame) = jni_bridge::pop_camera_frame() {
+            if host_frame.len() >= 4 && host_frame[0] == 0xFF && host_frame[1] == 0xD8 {
+                self.captured_frame_count += 1;
+                self.last_frame_simulated = false;
+                return Ok(CapturedFrameMetadata {
+                    data: host_frame,
+                    is_simulated: false,
+                    source: "android_camera2_host",
+                    frame_counter: self.captured_frame_count,
+                });
+            }
+        }
+
+        // 3. Otherwise return a structurally valid, fully-formed baseline JPEG with verified SOI/EOI
+        // Marked explicitly as simulated test pattern to prevent false production claims
+        self.captured_frame_count += 1;
+        self.last_frame_simulated = true;
+        let mut jpeg = VALID_BASELINE_JPEG.to_vec();
+        // Dynamically stamp the frame counter in the APP0 comment or padding
+        if jpeg.len() > 20 {
+            jpeg[18] = (self.captured_frame_count & 0xFF) as u8;
+        }
+        Ok(CapturedFrameMetadata {
+            data: jpeg,
+            is_simulated: true,
+            source: "test_pattern_simulated",
+            frame_counter: self.captured_frame_count,
+        })
+    }
+
+    /// Strict real frame capture: fails if host camera has not provided a real sensor frame.
+    /// Rejects test pattern fallback.
+    pub fn capture_real_frame_strict(&mut self) -> Result<Vec<u8>, HalError> {
+        let detailed = self.capture_frame_detailed()?;
+        if detailed.is_simulated {
+            Err(HalError::BackendUnavailable(
+                "Real camera frame unavailable from host sensor; test pattern fallback rejected in strict mode"
+                    .into(),
+            ))
+        } else {
+            Ok(detailed.data)
+        }
+    }
 }
 
 impl Default for AndroidHostCamera {
@@ -76,31 +146,7 @@ impl CameraHal for AndroidHostCamera {
     }
 
     fn capture_frame(&mut self) -> Result<Vec<u8>, HalError> {
-        let cam_id = self.active_camera_id.ok_or_else(|| {
-            HalError::DeviceNotFound("No active camera opened. Call open() first.".into())
-        })?;
-
-        // 1. Notify host bridge to trigger high-resolution sensor exposure
-        jni_bridge::enqueue_guest_command(GuestToHostCommand::CapturePhoto {
-            camera_id: cam_id,
-        });
-
-        // 2. If a real frame was pushed by Camera2 ImageReader over JNI, return it
-        if let Some(host_frame) = jni_bridge::pop_camera_frame() {
-            if host_frame.len() >= 4 && host_frame[0] == 0xFF && host_frame[1] == 0xD8 {
-                self.captured_frame_count += 1;
-                return Ok(host_frame);
-            }
-        }
-
-        // 3. Otherwise return a structurally valid, fully-formed baseline JPEG with verified SOI/EOI
-        self.captured_frame_count += 1;
-        let mut jpeg = VALID_BASELINE_JPEG.to_vec();
-        // Dynamically stamp the frame counter in the APP0 comment or padding
-        if jpeg.len() > 20 {
-            jpeg[18] = (self.captured_frame_count & 0xFF) as u8;
-        }
-        Ok(jpeg)
+        self.capture_frame_detailed().map(|m| m.data)
     }
 
     fn start_preview(&mut self) -> Result<(), HalError> {
@@ -149,19 +195,28 @@ mod tests {
         assert!(camera.start_preview().is_ok());
         assert!(camera.is_preview_running());
 
-        // Capture valid JPEG frame
+        // Capture valid JPEG frame (fallback test pattern -> simulated)
         let frame = camera.capture_frame().expect("Capture should succeed");
         assert!(frame.len() >= 100);
         assert_eq!(frame[0], 0xFF);
         assert_eq!(frame[1], 0xD8); // SOI
         assert_eq!(frame[frame.len() - 2], 0xFF);
         assert_eq!(frame[frame.len() - 1], 0xD9); // EOI
+        assert!(camera.is_last_frame_simulated(), "Fallback pattern must be flagged as simulated");
+
+        // Strict capture fails on simulated fallback
+        assert!(camera.capture_real_frame_strict().is_err());
 
         // Ingest real host frame
         let custom_jpeg = vec![0xFF, 0xD8, 0xAA, 0xBB, 0xFF, 0xD9];
         jni_bridge::push_camera_frame(custom_jpeg.clone());
-        let ingested = camera.capture_frame().expect("Host frame should be returned");
-        assert_eq!(ingested, custom_jpeg);
+
+        // Detailed capture returns real provenance
+        let detailed = camera.capture_frame_detailed().expect("Host frame should be returned");
+        assert_eq!(detailed.data, custom_jpeg);
+        assert!(!detailed.is_simulated);
+        assert_eq!(detailed.source, "android_camera2_host");
+        assert!(!camera.is_last_frame_simulated(), "Real Camera2 frame must NOT be flagged as simulated");
 
         // Torch control
         assert!(camera.set_torch(true).is_ok());

@@ -189,7 +189,11 @@ public class OnuronBridgeService extends Service {
         return null;
     }
 
-    private void startCommandDispatcher() {
+    private synchronized void startCommandDispatcher() {
+        if (commandDispatcherThread != null && commandDispatcherThread.isAlive()) {
+            Log.i(TAG, "Command dispatcher worker thread already active");
+            return;
+        }
         isRunning = true;
         commandDispatcherThread = new Thread(() -> {
             Log.i(TAG, "Command dispatcher worker thread active");
@@ -315,7 +319,7 @@ public class OnuronBridgeService extends Service {
                 Log.w(TAG, "Unhandled or unrecognised guest command action: " + action);
             }
         } catch (Throwable t) {
-            Log.e(TAG, "Failed to parse guest command JSON: " + json, t);
+            Log.e(TAG, "Failed to parse guest command JSON (payload redacted for privacy)", t);
         }
     }
 
@@ -329,6 +333,10 @@ public class OnuronBridgeService extends Service {
         isRunning = false;
         if (commandDispatcherThread != null) {
             commandDispatcherThread.interrupt();
+            try {
+                commandDispatcherThread.join(500);
+            } catch (InterruptedException ignored) {}
+            commandDispatcherThread = null;
         }
 
         if (batteryReceiver != null) {

@@ -166,6 +166,24 @@ def build_real_image(path, size_mb: int = DISK_SIZE_MB, populate_dir=None):
     return path
 
 
+def check_existing_image_validity(path: str, expected_size_mb: int = DISK_SIZE_MB) -> bool:
+    """Validate that existing file has correct size and ext superblock magic (0xEF53)."""
+    expected_bytes = expected_size_mb * 1024 * 1024
+    if not os.path.exists(path) or os.path.getsize(path) != expected_bytes:
+        return False
+    try:
+        with open(path, "rb") as f:
+            # ext2 superblock magic is at offset 1024 + 56
+            f.seek(1024 + 56)
+            magic_bytes = f.read(2)
+            if len(magic_bytes) == 2:
+                magic = struct.unpack("<H", magic_bytes)[0]
+                return magic == EXT2_MAGIC
+    except Exception:
+        return False
+    return False
+
+
 def create_disk_image(path: str = DISK_PATH, mode: str = "auto",
                       size_mb: int = DISK_SIZE_MB,
                       populate_dir=None, force: bool = False):
@@ -176,9 +194,15 @@ def create_disk_image(path: str = DISK_PATH, mode: str = "auto",
         "real"     — require mke2fs (raises otherwise);
         "synthetic"— always use the pure-Python image.
     """
-    if not force and os.path.exists(path) and os.path.getsize(path) == size_mb * 1024 * 1024:
-        print(f"[OK] Disk image already exists: {path} ({size_mb} MB)")
-        return path
+    expected_bytes = size_mb * 1024 * 1024
+    if not force and os.path.exists(path):
+        if check_existing_image_validity(path, size_mb):
+            print(f"[OK] Valid ext filesystem image already exists: {path} ({size_mb} MB)")
+            return path
+        elif os.path.getsize(path) != expected_bytes:
+            print(f"[WARN] Existing disk image {path} size mismatch (expected {size_mb} MB). Recreating with force.")
+        else:
+            print(f"[WARN] Existing disk image {path} lacks valid ext superblock magic. Recreating with force.")
 
     use_real = mode == "real" or (
         mode == "auto" and mke2fs_path() is not None and debugfs_path() is not None

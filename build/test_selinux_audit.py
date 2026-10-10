@@ -51,6 +51,18 @@ class SelinuxAuditTests(unittest.TestCase):
             if os.path.exists(bad_file):
                 os.remove(bad_file)
 
+    def test_selinux_build_strict_mode_fails_if_secilc_missing(self):
+        bash_bin = find_bash()
+        if not bash_bin:
+            self.skipTest("bash not available")
+        import shutil
+        if shutil.which("secilc"):
+            self.skipTest("secilc is installed on host")
+        build_sh = os.path.join(TOP, "security", "selinux", "build.sh")
+        res = subprocess.run([bash_bin, build_sh, "--strict"], cwd=TOP, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertNotEqual(res.returncode, 0, "build.sh --strict must fail when secilc is missing")
+        self.assertIn("FATAL", res.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

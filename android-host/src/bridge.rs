@@ -100,7 +100,11 @@ pub enum GuestToHostCommand {
     },
 
     // Ping / Handshake
-    Handshake { runtime_version: String },
+    Handshake {
+        runtime_version: String,
+        #[serde(default)]
+        protocol_version: Option<u32>,
+    },
 }
 
 /// Response returned from Android Host for synchronous or correlated requests
@@ -109,6 +113,8 @@ pub struct BridgeResponse {
     pub success: bool,
     pub error: Option<String>,
     pub data: Option<serde_json::Value>,
+    #[serde(default)]
+    pub request_id: Option<String>,
 }
 
 impl BridgeResponse {
@@ -117,6 +123,16 @@ impl BridgeResponse {
             success: true,
             error: None,
             data,
+            request_id: None,
+        }
+    }
+
+    pub fn ok_with_id(request_id: Option<String>, data: Option<serde_json::Value>) -> Self {
+        Self {
+            success: true,
+            error: None,
+            data,
+            request_id,
         }
     }
 
@@ -125,6 +141,16 @@ impl BridgeResponse {
             success: false,
             error: Some(message.into()),
             data: None,
+            request_id: None,
+        }
+    }
+
+    pub fn err_with_id(request_id: Option<String>, message: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            error: Some(message.into()),
+            data: None,
+            request_id,
         }
     }
 }

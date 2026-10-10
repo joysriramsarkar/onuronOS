@@ -11,7 +11,7 @@ pub use compositor::{PixelBuffer, Rect};
 pub use drm::{DrmDevice, DrmMode, DumbBuffer};
 pub use present::{KmsPresenter, PresentationStats};
 pub use renderer::Renderer2D;
-pub use touch::{MobileScreen, SwipeGesture, TouchCompositor, TouchTarget};
+pub use touch::{AccessibilityRole, MobileScreen, SwipeGesture, TouchCompositor, TouchTarget};
 
 #[no_mangle]
 pub extern "C" fn nilgpu_init() -> *mut Renderer2D {

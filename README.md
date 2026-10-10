@@ -57,6 +57,12 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **S25 Hosted Mobile Runtime** | 🔵 Functional prototype | Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & JNI bridge (`android-host/`) |
 | **Operating Modes (1, 2, 3)** | 🟡 Experimental | Mode 1 (QEMU) working; Mode 2 (Galaxy S25 Hosted Lab) in progress; Mode 3 (Future Bare Metal Phone) not implemented |
 | **Status Bar (simulated indicators)** | 🟠 Stub / simulated | Battery, signal and clock indicators are demo values, marked `⚠SIM` on screen across the shell **[SIMULATED]** |
+| **Alap Framework (`alap`)** | 🔵 Functional prototype | Declarative mobile application framework (state reactivity, component graph, lifecycle hooks, router stack, typed system service contracts) adhering to ADR-0009 |
+| **Canonical Target Registry** | 🔵 Functional prototype | ADR-0002 canonical target registry and fail-closed flashing safety gates (`qemu-x86_64`, `qemu-aarch64`, `android-host-arm64`, `oneplus-fajita`) |
+| **Calculator App** | 🔵 Functional prototype | Basic arithmetic evaluator (precedence, parentheses, decimals) with interactive UI **[SIMULATED]** |
+| **Notes App** | 🟠 Stub / simulated | Demonstrates NilLang declarative note viewer with seeded demo notes **[SIMULATED]** |
+| **Music Player App** | 🟠 Stub / simulated | Demonstrates music player controls and playlist UI with simulated tracks **[SIMULATED]** |
+| **Camera Viewfinder App** | 🟠 Stub / simulated | Viewfinder UI and sensor specification display; simulated without live camerad frame stream **[SIMULATED]** |
 <!-- END GENERATED: maturity -->
 ---
 

@@ -177,6 +177,62 @@ class TestMkBootImg(unittest.TestCase):
             self.assertEqual(parsed["page_size"], 4096)
             self.assertIn("androidboot.hardware=qcom", parsed["cmdline"])
 
+    def test_cli_profile_conflicting_arg_fails(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            k_path = os.path.join(tmpdir, "Image.gz")
+            rd_path = os.path.join(tmpdir, "initramfs.cpio.gz")
+            out_img = os.path.join(tmpdir, "conflict_boot.img")
+
+            with open(k_path, "wb") as f:
+                f.write(b"SAMPLE_KERNEL" * 32)
+            with open(rd_path, "wb") as f:
+                f.write(b"SAMPLE_RAMDISK" * 64)
+
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    SCRIPT,
+                    "create",
+                    "--profile", "fajita",
+                    "--pagesize", "2048",  # Fajita profile specifies 4096
+                    "--kernel", k_path,
+                    "--ramdisk", rd_path,
+                    "-o", out_img,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("Conflicting argument --pagesize", res.stderr)
+
+    def test_cli_canonical_target_profile(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            k_path = os.path.join(tmpdir, "Image.gz")
+            rd_path = os.path.join(tmpdir, "initramfs.cpio.gz")
+            out_img = os.path.join(tmpdir, "canonical_boot.img")
+
+            with open(k_path, "wb") as f:
+                f.write(b"SAMPLE_KERNEL" * 32)
+            with open(rd_path, "wb") as f:
+                f.write(b"SAMPLE_RAMDISK" * 64)
+
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    SCRIPT,
+                    "create",
+                    "--profile", "oneplus-fajita",
+                    "--kernel", k_path,
+                    "--ramdisk", rd_path,
+                    "-o", out_img,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("[OK] Boot image generated", res.stdout)
+            self.assertTrue(os.path.exists(out_img))
+
 
 if __name__ == "__main__":
     unittest.main()

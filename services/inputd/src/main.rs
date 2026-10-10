@@ -65,9 +65,59 @@ pub enum InputEvent {
     KeyUp { code: u32, name: String },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScreenRotation {
+    Portrait,       // 0 deg
+    LandscapeLeft,  // 90 deg counter-clockwise
+    UpsideDown,     // 180 deg
+    LandscapeRight, // 270 deg (90 deg clockwise)
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TouchCalibration {
+    pub raw_min_x: f32,
+    pub raw_max_x: f32,
+    pub raw_min_y: f32,
+    pub raw_max_y: f32,
+    pub rotation: ScreenRotation,
+}
+
+impl Default for TouchCalibration {
+    fn default() -> Self {
+        Self {
+            raw_min_x: 0.0,
+            raw_max_x: 1080.0,
+            raw_min_y: 0.0,
+            raw_max_y: 2340.0,
+            rotation: ScreenRotation::Portrait,
+        }
+    }
+}
+
+impl TouchCalibration {
+    /// Maps raw hardware digitizer coordinates (e.g. 0..4095) to display coordinates
+    /// taking rotation (Portrait, LandscapeLeft, UpsideDown, LandscapeRight) into account.
+    pub fn transform(&self, raw_x: f32, raw_y: f32, screen_w: f32, screen_h: f32) -> (f32, f32) {
+        let x_span = (self.raw_max_x - self.raw_min_x).max(1.0);
+        let y_span = (self.raw_max_y - self.raw_min_y).max(1.0);
+
+        let norm_x = ((raw_x - self.raw_min_x) / x_span).clamp(0.0, 1.0);
+        let norm_y = ((raw_y - self.raw_min_y) / y_span).clamp(0.0, 1.0);
+
+        match self.rotation {
+            ScreenRotation::Portrait => (norm_x * screen_w, norm_y * screen_h),
+            ScreenRotation::LandscapeRight => (norm_y * screen_w, (1.0 - norm_x) * screen_h),
+            ScreenRotation::UpsideDown => ((1.0 - norm_x) * screen_w, (1.0 - norm_y) * screen_h),
+            ScreenRotation::LandscapeLeft => ((1.0 - norm_y) * screen_w, norm_x * screen_h),
+        }
+    }
+}
+
 #[derive(Default, Clone)]
 struct TouchSlot {
     tracking_id: i32,
+    raw_x: f32,
+    raw_y: f32,
     x: f32,
     y: f32,
     active: bool,
@@ -184,6 +234,7 @@ pub struct MultiTouchTracker {
     current_slot: u32,
     screen_width: f32,
     screen_height: f32,
+    calibration: TouchCalibration,
     gesture_engine: GestureRecognizer,
 }
 
@@ -194,8 +245,28 @@ impl MultiTouchTracker {
             current_slot: 0,
             screen_width: width,
             screen_height: height,
+            calibration: TouchCalibration {
+                raw_min_x: 0.0,
+                raw_max_x: width,
+                raw_min_y: 0.0,
+                raw_max_y: height,
+                rotation: ScreenRotation::Portrait,
+            },
             gesture_engine: GestureRecognizer::new(),
         }
+    }
+
+    pub fn set_calibration(&mut self, cal: TouchCalibration) {
+        self.calibration = cal;
+    }
+
+    pub fn set_rotation(&mut self, rotation: ScreenRotation) {
+        self.calibration.rotation = rotation;
+    }
+
+    pub fn set_screen_dimensions(&mut self, width: f32, height: f32) {
+        self.screen_width = width;
+        self.screen_height = height;
     }
 
     pub fn handle_abs(&mut self, code: u16, value: i32) -> Option<InputEvent> {
@@ -225,12 +296,12 @@ impl MultiTouchTracker {
                 None
             }
             ABS_MT_POSITION_X | ABS_X => {
-                slot.x = value as f32;
+                slot.raw_x = value as f32;
                 slot.dirty = true;
                 None
             }
             ABS_MT_POSITION_Y | ABS_Y => {
-                slot.y = value as f32;
+                slot.raw_y = value as f32;
                 slot.dirty = true;
                 None
             }
@@ -239,9 +310,14 @@ impl MultiTouchTracker {
     }
 
     pub fn handle_syn(&mut self) -> Option<InputEvent> {
+        let (w, h) = (self.screen_width, self.screen_height);
+        let cal = self.calibration.clone();
         let slot = self.slots.get_mut(&self.current_slot)?;
         if slot.dirty && slot.active {
             slot.dirty = false;
+            let (tx, ty) = cal.transform(slot.raw_x, slot.raw_y, w, h);
+            slot.x = tx;
+            slot.y = ty;
             self.gesture_engine.on_touch_down(slot.x, slot.y);
             Some(InputEvent::TouchDown {
                 id: self.current_slot,
@@ -294,6 +370,19 @@ pub fn handle_ipc_request(
     let msg_type = MessageType::from(frame.message_type);
     match msg_type {
         MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
+        MessageType::ServiceStatusRequest => {
+            let payload = nilprotocol::ServiceStatusPayload {
+                service_name: "inputd".to_string(),
+                is_ready: true,
+                is_simulated: false,
+                backend_name: "evdev-multitouch".to_string(),
+                uptime_secs: 0,
+                request_count: 1,
+                last_error: None,
+            };
+            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
+                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+        }
         MessageType::InputPollEvents => {
             let mut q = event_queue.lock().unwrap();
             let events: Vec<InputEvent> = q.drain(..).collect();
@@ -384,6 +473,7 @@ fn main() {
         });
     }
 
+    let _ = nilsd::notify_ready("inputd", Some("/run/onuron/input.sock"));
     println!("\x1b[1;32m[inputd] [  OK  ]\x1b[0m Input event & gesture processor active (/run/onuron/input.sock)");
 
     // Event broadcast loop
@@ -499,5 +589,70 @@ mod tests {
         let events2: Vec<InputEvent> = serde_json::from_slice(&batch_frame2.payload).unwrap();
         assert_eq!(events2.len(), 1);
         assert_eq!(events2[0], inject_ev);
+
+        // 5. ServiceStatusRequest
+        let status_frame = Frame::new(MessageType::ServiceStatusRequest, 5, vec![]);
+        let resp = handle_ipc_request(&status_frame, &tracker, &queue);
+        assert_eq!(resp.message_type, u16::from(MessageType::ServiceStatusResponse));
+        let status: nilprotocol::ServiceStatusPayload = resp.parse_json().unwrap();
+        assert_eq!(status.service_name, "inputd");
+        assert!(status.is_ready);
+    }
+
+    #[test]
+    fn test_touch_calibration_and_scaling() {
+        let mut tracker = MultiTouchTracker::new(1080.0, 2340.0);
+        // Hardware touch digitizer reports raw range 0..4095
+        tracker.set_calibration(TouchCalibration {
+            raw_min_x: 0.0,
+            raw_max_x: 4095.0,
+            raw_min_y: 0.0,
+            raw_max_y: 4095.0,
+            rotation: ScreenRotation::Portrait,
+        });
+
+        // Touch at half-way on hardware: 2047, 2047
+        tracker.handle_abs(ABS_MT_SLOT, 0);
+        tracker.handle_abs(ABS_MT_TRACKING_ID, 1);
+        tracker.handle_abs(ABS_MT_POSITION_X, 2047);
+        tracker.handle_abs(ABS_MT_POSITION_Y, 2047);
+
+        let event = tracker.handle_syn().expect("Expected TouchDown");
+        match event {
+            InputEvent::TouchDown { x, y, .. } => {
+                // Should scale to ~50% of 1080 (540) and ~50% of 2340 (1170)
+                assert!((x - 540.0).abs() < 2.0, "x was {}", x);
+                assert!((y - 1170.0).abs() < 2.0, "y was {}", y);
+            }
+            other => panic!("Expected TouchDown, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_screen_rotation_coordinate_transform() {
+        let mut tracker = MultiTouchTracker::new(1080.0, 2340.0);
+        tracker.set_calibration(TouchCalibration {
+            raw_min_x: 0.0,
+            raw_max_x: 1080.0,
+            raw_min_y: 0.0,
+            raw_max_y: 2340.0,
+            rotation: ScreenRotation::UpsideDown,
+        });
+
+        tracker.handle_abs(ABS_MT_SLOT, 0);
+        tracker.handle_abs(ABS_MT_TRACKING_ID, 2);
+        // Hardware reports top-left: 0, 0
+        tracker.handle_abs(ABS_MT_POSITION_X, 0);
+        tracker.handle_abs(ABS_MT_POSITION_Y, 0);
+
+        let event = tracker.handle_syn().expect("Expected TouchDown");
+        match event {
+            InputEvent::TouchDown { x, y, .. } => {
+                // In UpsideDown, top-left maps to bottom-right (1080, 2340)
+                assert_eq!(x, 1080.0);
+                assert_eq!(y, 2340.0);
+            }
+            other => panic!("Expected TouchDown, got {:?}", other),
+        }
     }
 }

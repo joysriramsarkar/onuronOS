@@ -180,6 +180,20 @@ pub fn handle_ipc_request(frame: &Frame) -> Frame {
     let msg_type = MessageType::from(frame.message_type);
     match msg_type {
         MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
+        MessageType::ServiceStatusRequest => {
+            let state = scan_network_interfaces();
+            let payload = nilprotocol::ServiceStatusPayload {
+                service_name: "netd".to_string(),
+                is_ready: true,
+                is_simulated: state.is_simulated,
+                backend_name: if state.is_simulated { "simulated".to_string() } else { "linux-sysfs".to_string() },
+                uptime_secs: 0,
+                request_count: 1,
+                last_error: None,
+            };
+            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
+                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+        }
         MessageType::NetGetState => {
             let state = scan_network_interfaces();
             let json = serde_json::to_vec(&state).unwrap_or_default();
@@ -253,6 +267,7 @@ fn main() {
         });
     }
 
+    let _ = nilsd::notify_ready("netd", Some("/run/onuron/net.sock"));
     println!("\x1b[1;32m[netd] [  OK  ]\x1b[0m Network manager active (/run/onuron/net.sock)");
 
     loop {
@@ -314,5 +329,13 @@ mod tests {
         let scan_frame = Frame::new(MessageType::NetScanWifi, 3, vec![]);
         let scan_resp = handle_ipc_request(&scan_frame);
         assert_eq!(scan_resp.message_type, u16::from(MessageType::NetStateInfo));
+
+        // 4. ServiceStatusRequest
+        let status_req = Frame::new(MessageType::ServiceStatusRequest, 4, vec![]);
+        let status_resp = handle_ipc_request(&status_req);
+        assert_eq!(status_resp.message_type, u16::from(MessageType::ServiceStatusResponse));
+        let payload: nilprotocol::ServiceStatusPayload = status_resp.parse_json().unwrap();
+        assert_eq!(payload.service_name, "netd");
+        assert!(payload.is_ready);
     }
 }

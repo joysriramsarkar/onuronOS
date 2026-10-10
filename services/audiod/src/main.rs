@@ -202,10 +202,15 @@ impl AudioServer {
     }
 
     pub fn get_status_payload(&self) -> AudioStatusPayload {
+        let sink_name = if self.hardware_detected {
+            self.active_route.as_str().to_string()
+        } else {
+            format!("{} [SIMULATED]", self.active_route.as_str())
+        };
         AudioStatusPayload {
             volume: self.effective_volume(),
             is_muted: self.is_muted,
-            sink_name: self.active_route.as_str().to_string(),
+            sink_name,
         }
     }
 }
@@ -215,6 +220,19 @@ pub fn handle_ipc_request(server: &mut AudioServer, frame: &Frame) -> Frame {
     match msg_type {
         MessageType::Ping => {
             Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec())
+        }
+        MessageType::ServiceStatusRequest => {
+            let payload = nilprotocol::ServiceStatusPayload {
+                service_name: "audiod".to_string(),
+                is_ready: true,
+                is_simulated: !server.hardware_detected,
+                backend_name: if server.hardware_detected { "alsa".to_string() } else { "simulated".to_string() },
+                uptime_secs: 0,
+                request_count: 1,
+                last_error: None,
+            };
+            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
+                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
         }
         MessageType::AudioGetStatus => {
             let payload = server.get_status_payload();
@@ -294,6 +312,7 @@ fn main() {
         println!("[audiod] Host simulation active: default volume {}%", server.lock().unwrap().volume);
     }
 
+    let _ = nilsd::notify_ready("audiod", Some("/run/onuron/audio.sock"));
     println!("[audiod] Service ready.");
     loop {
         std::thread::sleep(std::time::Duration::from_secs(60));
@@ -410,6 +429,17 @@ mod tests {
         assert_eq!(mobile_devs.len(), 3);
         assert_eq!(mobile_devs[2].device, 7);
         assert_eq!(mobile_devs[2].name, "VoiceMMode1 (*)");
+    }
+
+    #[test]
+    fn test_audiod_service_status_request() {
+        let mut server = AudioServer::new();
+        let frame = Frame::new(MessageType::ServiceStatusRequest, 99, vec![]);
+        let resp = handle_ipc_request(&mut server, &frame);
+        assert_eq!(resp.message_type, u16::from(MessageType::ServiceStatusResponse));
+        let status = resp.parse_json::<nilprotocol::ServiceStatusPayload>().unwrap();
+        assert_eq!(status.service_name, "audiod");
+        assert!(status.is_ready);
     }
 }
 

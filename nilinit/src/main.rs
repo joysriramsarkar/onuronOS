@@ -58,7 +58,29 @@ struct Service {
 
 #[derive(Deserialize)]
 struct Config {
+    #[serde(default)]
+    #[allow(dead_code)]
+    version: Option<u32>,
     services: Vec<Service>,
+}
+
+impl Config {
+    fn validate(&self) -> Result<(), String> {
+        let mut seen = std::collections::HashSet::new();
+        for s in &self.services {
+            let name = s.name.trim();
+            if name.is_empty() {
+                return Err("Service name cannot be empty".into());
+            }
+            if !seen.insert(name) {
+                return Err(format!("Duplicate service name: '{}'", name));
+            }
+            if s.exec.trim().is_empty() {
+                return Err(format!("Service '{}' has empty exec path", name));
+            }
+        }
+        Ok(())
+    }
 }
 
 fn kmsg(msg: &str) {
@@ -90,6 +112,8 @@ fn mount_early_fs() {
             ("devtmpfs", "/dev", "devtmpfs", 0),
             ("tmpfs", "/run", "tmpfs", 0),
             ("tmpfs", "/tmp", "tmpfs", 0),
+            ("cgroup2", "/sys/fs/cgroup", "cgroup2", 0),
+            ("selinuxfs", "/sys/fs/selinux", "selinuxfs", 0),
         ];
 
         for (src, target, fstype, flags) in mounts {
@@ -103,6 +127,7 @@ fn mount_early_fs() {
             );
         }
         let _ = fs::create_dir_all("/run/onuron");
+        let _ = fs::create_dir_all("/run/onuron/ready");
         let _ = fs::create_dir_all("/run/nilos"); // backward-compatibility alias
 
         // Attach stdout/stderr to console or ttyS0
@@ -227,12 +252,21 @@ fn load_selinux() {
         Ok(mut f) => match f.write_all(&policy) {
             Ok(_) => {
                 log_ok("SELinux binary policy successfully committed to kernel (/sys/fs/selinux/load)");
-                if let Ok(mut enforce_file) = OpenOptions::new().write(true).open("/sys/fs/selinux/enforce") {
+                let mut verified_enforcing = false;
+                let enforce_path = "/sys/fs/selinux/enforce";
+                if let Ok(mut enforce_file) = OpenOptions::new().write(true).open(enforce_path) {
                     if enforce_file.write_all(b"1").is_ok() {
-                        log_ok("SELinux policy active in enforcing mode (enforce=1)");
-                    } else {
-                        log_warn("Failed to set SELinux enforcing bit");
+                        // Read back to verify kernel accepted enforcing mode
+                        if let Ok(val) = fs::read_to_string(enforce_path) {
+                            if val.trim() == "1" {
+                                verified_enforcing = true;
+                                log_ok("SELinux policy active and verified in enforcing mode (enforce=1)");
+                            }
+                        }
                     }
+                }
+                if !verified_enforcing {
+                    log_warn("SELinux policy loaded, but enforce=1 verification failed");
                 }
             }
             Err(e) => {
@@ -246,8 +280,50 @@ fn load_selinux() {
 }
 
 fn setup_cgroups() {
-    let _ = fs::create_dir_all("/sys/fs/cgroup/onuron.slice");
-    let _ = fs::create_dir_all("/sys/fs/cgroup/nilos.slice");
+    let cgroup_root = std::path::Path::new("/sys/fs/cgroup");
+    let controllers_file = cgroup_root.join("cgroup.controllers");
+    let subtree_control = cgroup_root.join("cgroup.subtree_control");
+
+    let system_slice = cgroup_root.join("system.slice");
+    let onuron_slice = cgroup_root.join("onuron.slice");
+    let nilos_slice = cgroup_root.join("nilos.slice");
+
+    let _ = fs::create_dir_all(&system_slice);
+    let _ = fs::create_dir_all(&onuron_slice);
+    let _ = fs::create_dir_all(&nilos_slice);
+
+    if !controllers_file.exists() {
+        log_info("cgroups v2 controllers file not present (kernel restricted or virtual)");
+        return;
+    }
+
+    if let Ok(controllers_text) = fs::read_to_string(&controllers_file) {
+        let available: Vec<&str> = controllers_text.split_whitespace().collect();
+        let targets = ["cpu", "memory", "pids", "io"];
+        let to_enable: Vec<String> = targets
+            .iter()
+            .filter(|t| available.contains(t))
+            .map(|t| format!("+{}", t))
+            .collect();
+
+        if !to_enable.is_empty() {
+            let enable_cmd = to_enable.join(" ");
+            let _ = fs::write(&subtree_control, &enable_cmd);
+            let onuron_subtree = onuron_slice.join("cgroup.subtree_control");
+            let _ = fs::write(&onuron_subtree, &enable_cmd);
+
+            let active = fs::read_to_string(&subtree_control).unwrap_or_default();
+            let clean_active = active.trim();
+            if !clean_active.is_empty() {
+                log_ok(&format!(
+                    "cgroups v2 controllers verified active: [{}] (system.slice, onuron.slice)",
+                    clean_active
+                ));
+                return;
+            }
+        }
+    }
+
     log_ok("Cgroups v2 control group initialized (/sys/fs/cgroup/onuron.slice)");
 }
 
@@ -316,8 +392,14 @@ fn main() {
 
     let config_str = fs::read_to_string("/etc/nilos/services.toml")
         .unwrap_or_else(|_| include_str!("../../etc/nilos/services.toml").to_string());
-    let config: Config = match toml::from_str(&config_str) {
-        Ok(c) => c,
+    let config: Config = match toml::from_str::<Config>(&config_str) {
+        Ok(c) => match c.validate() {
+            Ok(()) => c,
+            Err(err) => {
+                kmsg(&format!("\x1b[1;31m[ FATAL ]\x1b[0m Invalid services.toml schema: {}", err));
+                loop { thread::sleep(Duration::from_secs(60)); }
+            }
+        },
         Err(e) => {
             kmsg(&format!("\x1b[1;31m[ FATAL ]\x1b[0m Could not parse services.toml: {}", e));
             loop { thread::sleep(Duration::from_secs(60)); }
@@ -361,6 +443,22 @@ fn main() {
             true
         }
     };
+
+    // Core services readiness probes (socket existence and service liveness)
+    let readiness_probes: [(&str, Option<&std::path::Path>); 7] = [
+        ("nild", None),
+        ("nilkeyd", Some(std::path::Path::new("/run/nilos/keyd.sock"))),
+        ("nilbus", None),
+        ("netd", Some(std::path::Path::new("/run/onuron/net.sock"))),
+        ("audiod", Some(std::path::Path::new("/run/onuron/audio.sock"))),
+        ("powerd", Some(std::path::Path::new("/run/onuron/power.sock"))),
+        ("nilshell", None),
+    ];
+    if let Err(not_ready) = supervisor.check_readiness(&readiness_probes) {
+        log_info(&format!("Service socket binding pending or initialized on-demand: {:?}", not_ready));
+    } else {
+        log_ok("Core service sockets verified ready");
+    }
 
     if boot_failed {
         kmsg("\x1b[1;31m[ FATAL ]\x1b[0m Onuron OS boot failed: core services not operational");
@@ -417,5 +515,43 @@ fn main() {
         }
 
         thread::sleep(Duration::from_millis(500));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_embedded_services_config_is_valid() {
+        let config_str = include_str!("../../etc/nilos/services.toml");
+        let config: Config = toml::from_str(config_str).expect("Embedded services.toml must be valid TOML");
+        assert!(config.validate().is_ok(), "Embedded services.toml must pass schema validation");
+        assert!(config.services.len() >= 7, "Must contain all core mobile daemons");
+    }
+
+    #[test]
+    fn test_services_validation_rejects_duplicates_and_empty() {
+        let duplicate_toml = r#"
+            [[services]]
+            name = "nild"
+            exec = "/usr/bin/nild"
+
+            [[services]]
+            name = "nild"
+            exec = "/usr/bin/nild_other"
+        "#;
+        let config: Config = toml::from_str(duplicate_toml).unwrap();
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("Duplicate service name: 'nild'"));
+
+        let empty_exec_toml = r#"
+            [[services]]
+            name = "powerd"
+            exec = "   "
+        "#;
+        let config2: Config = toml::from_str(empty_exec_toml).unwrap();
+        let err2 = config2.validate().unwrap_err();
+        assert!(err2.contains("empty exec path"));
     }
 }

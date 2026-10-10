@@ -269,9 +269,39 @@ pub fn spawn_sandboxed(
             format!("[nilrt:sandbox] failed to start {}: {e}", config.app_id),
         )
     })?;
+    let cgroup_dir = attach_child_cgroup(&config.app_id, child.id());
     let status = child.wait()?;
+    if let Some(cg) = cgroup_dir {
+        let _ = crate::cgroup::cleanup_app_cgroup(&cg);
+    }
     println!("[nilrt:sandbox] {} exited with {status}", config.app_id);
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn attach_child_cgroup(app_id: &str, pid: u32) -> Option<std::path::PathBuf> {
+    let cgroup_root = std::path::Path::new("/sys/fs/cgroup");
+    if !cgroup_root.exists() {
+        return None;
+    }
+    let limits = crate::cgroup::CgroupLimits::default();
+    match crate::cgroup::create_app_cgroup(cgroup_root, "onuron.slice", app_id, &limits) {
+        Ok(dir) => {
+            if let Err(e) = crate::cgroup::attach_pid_to_cgroup(&dir, pid) {
+                eprintln!("[nilrt:sandbox] cgroup attach notice: {e}");
+            } else {
+                println!(
+                    "[nilrt:sandbox] Attached PID {pid} to cgroup {}",
+                    dir.display()
+                );
+            }
+            Some(dir)
+        }
+        Err(e) => {
+            eprintln!("[nilrt:sandbox] cgroup setup notice: {e}");
+            None
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -301,7 +331,11 @@ fn spawn_unprivileged(
             format!("[nilrt:sandbox] failed to start {}: {e}", config.app_id),
         )
     })?;
+    let cgroup_dir = attach_child_cgroup(&config.app_id, child.id());
     let status = child.wait()?;
+    if let Some(cg) = cgroup_dir {
+        let _ = crate::cgroup::cleanup_app_cgroup(&cg);
+    }
     println!("[nilrt:sandbox] {} exited with {status}", config.app_id);
     Ok(())
 }
@@ -332,6 +366,12 @@ fn run_in_sandbox(config: &SandboxConfig) -> std::io::Result<()> {
 
     if let Some(ctx) = &config.selinux_context {
         if let Err(e) = crate::selinux::setexeccon(ctx) {
+            if config.strict_permissions {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!("[nilrt:sandbox] could not set mandatory SELinux context {ctx}: {e}"),
+                ));
+            }
             eprintln!("[nilrt:sandbox] Warning: could not set SELinux context {ctx}: {e}");
         }
     }

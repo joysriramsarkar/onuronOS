@@ -90,19 +90,57 @@ fn test_end_to_end_native_app_pipeline() {
     let installed_bin = installed_app_dir.join(&manifest.exec);
     assert!(installed_bin.is_file(), "Installed binary must exist");
 
-    let _spec = nilrt::lifecycle::LaunchSpec {
+    let app_data_dir = tmp.path().join("data").join("org.onuron.hello");
+    let spec = nilrt::lifecycle::LaunchSpec {
         app_id: "org.onuron.hello".to_string(),
         rootfs: installed_app_dir.join("root").to_string_lossy().into_owned(),
-        data_dir: tmp.path().join("data").join("org.onuron.hello").to_string_lossy().into_owned(),
+        data_dir: app_data_dir.to_string_lossy().into_owned(),
         uid: 10042,
         gid: 10042,
         permissions: vec!["network".to_string()],
         strict_permissions: false,
     };
 
-    // Load and run the installed binary payload directly through NilVM
+    // Point NILC_PATH to the cargo-built nilc binary
+    let nilc_bin = env!("CARGO_BIN_EXE_nilc");
+    std::env::set_var("NILC_PATH", nilc_bin);
+
+    // Launch installed application through nilrt lifecycle (staging guard, data dir, cgroups, sandbox runner)
+    let launch_res = nilrt::lifecycle::launch_installed(
+        &app_root,
+        &spec,
+        &["--tap".to_string(), "btn_launch".to_string()],
+    );
+    assert!(
+        launch_res.is_ok(),
+        "Sandboxed launch_installed must succeed: {:?}",
+        launch_res
+    );
+    assert!(app_data_dir.is_dir(), "Private app data directory must be created");
+
+    // 8. Verify reactive state and Alap / NilUI rendering pipeline
     let installed_bytes = fs::read(&installed_bin).expect("read installed bytecode");
-    let loaded_vm = nillang::load_package(&installed_bytes).expect("execute in vm");
-    let final_scene = loaded_vm.render_scene().expect("rendered scene");
-    assert!(final_scene.contains("Welcome to OnuronOS Native Runtime"));
+    let mut loaded_vm = nillang::load_package(&installed_bytes).expect("execute in vm");
+
+    // Initial state
+    assert_eq!(loaded_vm.get_state("status"), Some("Active"));
+    let initial_component = loaded_vm.to_alap_component().expect("convert to alap");
+    assert_eq!(initial_component.node_count(), 4);
+
+    // Simulate reactive event modifying state
+    loaded_vm.update_state("status", "Launched");
+    assert_eq!(loaded_vm.get_state("status"), Some("Launched"));
+
+    let post_component = loaded_vm.to_alap_component().expect("convert to alap post-event");
+    assert_eq!(post_component.node_count(), 4);
+
+    // Render component onto headless Software Framebuffer backend
+    let mut fb = nilui::SoftwareFramebufferBackend::new(400, 600);
+    let (rendered_w, rendered_h) = nilui::render_component_to_backend(&mut fb, &post_component, 10, 10);
+    assert!(rendered_w > 10, "Frame width must be non-zero");
+    assert!(rendered_h > 10, "Frame height must be non-zero");
+
+    // Check pixels were painted onto the framebuffer
+    let painted_pixels = fb.buffer().iter().filter(|&&p| p != 0xFF0A0E17).count();
+    assert!(painted_pixels > 0, "Alap component must paint UI onto NilUI framebuffer");
 }

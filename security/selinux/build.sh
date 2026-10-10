@@ -10,5 +10,10 @@ if command -v secilc >/dev/null 2>&1; then
   secilc -o "$ROOTFS/etc/selinux/targeted/policy/policy.33" "$TOP/policy/"*.cil
   echo "[OK] Policy compiled."
 else
-  echo "[WARN] secilc not installed on host. Policy syntax verified."
+  if [ "${STRICT_SELINUX:-0}" = "1" ] || [ "${1:-}" = "--strict" ]; then
+    echo "[FATAL] secilc not found on host and strict SELinux policy compilation is required." >&2
+    exit 1
+  else
+    echo "[WARN] secilc not installed on host. Policy syntax verified."
+  fi
 fi

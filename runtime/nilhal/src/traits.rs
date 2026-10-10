@@ -151,6 +151,10 @@ pub enum CallState {
     Ringing { incoming_number: String },
     Active { number: String, duration_secs: u64 },
     Held,
+    Dialing { number: String },
+    DialerPresented { number: String },
+    Disconnected,
+    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

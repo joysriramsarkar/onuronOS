@@ -6,6 +6,8 @@ use std::fs::{self};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
+mod i18n;
+mod notes;
 mod pin;
 mod simulated;
 
@@ -30,6 +32,7 @@ const PIN_FILE:    &str = "/data/nilos/pin_hash";
 const USER_CONF:   &str = "/data/nilos/user.conf";
 const CONTACTS_DIR:&str = "/data/contacts";
 const SMS_DIR:     &str = "/data/sms";
+const NOTES_FILE:  &str = "/data/notes/notes.json";
 
 // ─── Screen Enum ──────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, PartialEq)]
@@ -85,6 +88,8 @@ struct AppState {
     calc_val: String,
     music_playing: bool,
     music_track: usize,
+    notes: Vec<notes::NoteItem>,
+    notes_path: std::path::PathBuf,
 }
 
 impl AppState {
@@ -98,6 +103,9 @@ impl AppState {
             .unwrap_or_default()
             .trim()
             .to_string();
+
+        let notes_path = std::path::PathBuf::from(NOTES_FILE);
+        let notes = notes::load_notes(&notes_path);
 
         let mut sms_threads = vec![
             ("NilOS System".into(), "fscrypt v2 storage activated.".into(), "12:44".into()),
@@ -162,6 +170,8 @@ impl AppState {
             calc_val: "0".into(),
             music_playing: false,
             music_track: 0,
+            notes,
+            notes_path,
         }
     }
 
@@ -259,7 +269,7 @@ fn get_network_display(state: &AppState) -> (String, String) {
             if let Some(true) = real_eth {
                 "🌐 Eth".to_string()
             } else if state.wifi_enabled {
-                "📶 Wi-Fi".to_string()
+                "📶 Wi-Fi (sim)".to_string()
             } else {
                 "✕ Wi-Fi".to_string()
             }
@@ -272,10 +282,10 @@ fn get_network_display(state: &AppState) -> (String, String) {
         None => {
             if state.cellular_enabled {
                 match state.signal_bars {
-                    4 => "▂▄▆█ 5G".to_string(),
-                    3 => "▂▄▆_ 5G".to_string(),
-                    2 => "▂▄__ 4G".to_string(),
-                    1 => "▂___ 3G".to_string(),
+                    4 => "▂▄▆█ (sim)".to_string(),
+                    3 => "▂▄▆_ (sim)".to_string(),
+                    2 => "▂▄__ (sim)".to_string(),
+                    1 => "▂___ (sim)".to_string(),
                     _ => "____ No Svc".to_string(),
                 }
             } else {
@@ -599,24 +609,34 @@ fn draw_settings_section(sink: &mut Sink, section: usize, state: &AppState) {
             sink.println(&format!("  Wi-Fi:       [{}]  (Type 'toggle wifi' or 'wifi' to toggle)", if state.wifi_enabled { "ON" } else { "OFF" }));
             sink.println(&format!("  Mobile Data: [{}]  (Type 'toggle data' or 'data' to toggle)", if state.cellular_enabled { "ON" } else { "OFF" }));
             sink.println(&format!("  Signal:      [{}/4 Bars] (Type 'signal 1'-'signal 4' to adjust)", state.signal_bars));
-            sink.println("  Bluetooth:   [READY] (btd daemon socket: /run/nilos/bt.sock)");
-            sink.println("  Telephony:   [READY] (telephonyd VoLTE socket: /run/nilos/telephony.sock)");
-            sink.println("  SoftBus:     [ON]   Control socket: /run/nilos/bus.sock");
+            sink.println(&format!("  Bluetooth:   [btd socket: {}]", get_socket_status("/run/nilos/bt.sock")));
+            sink.println(&format!("  Telephony:   [telephonyd socket: {}]", get_socket_status("/run/nilos/telephony.sock")));
+            sink.println(&format!("  SoftBus:     [bus socket: {}]", get_socket_status("/run/nilos/bus.sock")));
         }
         1 => {
-            sink.println("  Sound Output:    [Speaker (ALSA PCM Default)]");
+            let sound_sink = if Path::new("/proc/asound/cards").is_file() {
+                "Speaker (ALSA PCM Hardware)"
+            } else {
+                "Speaker (ALSA PCM Virtual [SIMULATED])"
+            };
+            sink.println(&format!("  Sound Output:    [{}]", sound_sink));
             sink.println("  Master Volume:   [75%] (Duck: Active on calls/notifications)");
-            sink.println("  Audio Daemon:    [/run/onuron/audio.sock active]");
+            sink.println(&format!("  Audio Daemon:    [socket: {}]", get_socket_status("/run/nilos/audio.sock")));
         }
         2 => {
-            sink.println("  Compositor:      DRM/KMS Direct (/dev/dri/card0)");
+            let drm_status = if Path::new("/dev/dri/card0").exists() {
+                "DRM/KMS Direct (/dev/dri/card0) [HARDWARE]".to_string()
+            } else {
+                format!("DRM/KMS Direct (Software Fallback) {}", simulated::badge())
+            };
+            sink.println(&format!("  Compositor:      {}", drm_status));
             sink.println("  Refresh Rate:    120Hz (Dynamic tear-free triple buffering)");
-            sink.println("  Touch Input:     evdev Multi-Touch (/run/nilos/input.sock)");
+            sink.println(&format!("  Touch Input:     [socket: {}]", get_socket_status("/run/nilos/input.sock")));
         }
         3 => {
             sink.println("  PIN Lock:        [ENABLED]");
-            sink.println(&format!("  SELinux Policy:  Enforcing (policy.33)  {}", simulated::badge()));
-            sink.println(&format!("  fscrypt v2:      Active (nilkeyd manages keystore)  {}", simulated::badge()));
+            sink.println(&format!("  SELinux Policy:  {}", get_selinux_status()));
+            sink.println(&format!("  fscrypt v2:      {}", get_fscrypt_status()));
             sink.println(&format!("  Namespace Sand:  Enabled for all apps via nilrt  {}", simulated::badge()));
             sink.println(&format!("  Telemetry:       ZERO — no data leaves device  {}", simulated::badge()));
         }
@@ -636,7 +656,35 @@ fn draw_settings_section(sink: &mut Sink, section: usize, state: &AppState) {
     }
     sink.println("");
     sink.println(&format!("  {}Press 'back' to return to Settings, 'home' for launcher{}", FG_YELLOW, R));
-    sink.print(&format!("  {}> {}", FG_CYAN, R));
+}
+
+fn get_socket_status(path: &str) -> String {
+    if Path::new(path).exists() {
+        "Active (Live Daemon Socket)".into()
+    } else {
+        format!("Offline / Simulated {}", simulated::badge())
+    }
+}
+
+fn get_selinux_status() -> String {
+    if let Ok(val) = fs::read_to_string("/sys/fs/selinux/enforce") {
+        match val.trim() {
+            "1" => "Enforcing (Live Kernel Query)".into(),
+            "0" => "Permissive (Live Kernel Query)".into(),
+            _ => "Unknown (Kernel Query Error)".into(),
+        }
+    } else {
+        format!("Simulated (Unverified Kernel State) {}", simulated::badge())
+    }
+}
+
+fn get_fscrypt_status() -> String {
+    let p = Path::new("/data/.fscrypt");
+    if p.exists() {
+        "Active (fscrypt v2 keyring policy mounted)".into()
+    } else {
+        format!("Simulated (Unverified Storage Policy) {}", simulated::badge())
+    }
 }
 
 fn find_binary(bin_name: &str) -> std::path::PathBuf {
@@ -741,47 +789,53 @@ fn draw_nilpkg(sink: &mut Sink) {
 // ─── SoftBus App ─────────────────────────────────────────────────────────────
 fn draw_softbus(sink: &mut Sink) {
     sink.print(CL);
-    sink.println(&format!("{}  🔄 SoftBus — Distributed Peer-to-Peer Device Mesh  {}{}", FG_CYAN, simulated::badge(), R));
+    sink.println(&format!("{}  🔄 SoftBus — Distributed Peer Mesh Engine  {}{}", FG_CYAN, simulated::badge(), R));
     sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
     sink.println("");
-    sink.println(&format!("  {}Discovered Nearby Devices (BLE + Wi-Fi Aware + mDNS):{}", FG_WHITE, R));
+
+    let sock = Path::new("/run/nilos/bus.sock");
+    if sock.exists() {
+        sink.println(&format!("  {}Control Socket: /run/nilos/bus.sock [ACTIVE]{}", FG_GREEN, R));
+        sink.println("  mDNS-SD Discovery: Running on local network (QUIC TLS 1.3)");
+        sink.println("  Discovered Peers:  No active authenticated physical peers found");
+    } else {
+        sink.println(&format!("  {}Peer Discovery State: Daemon Offline (/run/nilos/bus.sock missing){}", FG_YELLOW, R));
+        sink.println(&format!("  {}Demonstration Device Catalog {}:{}", FG_WHITE, simulated::badge(), R));
+        sink.println("");
+        sink.println(&format!("  {}● [DEMO] NilPad-Pro-X1{}", FG_GRAY, R));
+        sink.println("    Status: Simulated Peer  •  Latency: ~2ms");
+        sink.println("    Caps:   Display Sharing, Unified Clipboard, File Handoff");
+        sink.println("");
+        sink.println(&format!("  {}● [DEMO] NilBook-Ultra{}", FG_GRAY, R));
+        sink.println("    Status: Simulated Peer (QUIC Stream Scaffold)");
+        sink.println("    Caps:   Camera Relay, Shared Notifications");
+        sink.println("");
+        sink.println(&format!("  {}● [DEMO] NilVision-Display-65{}", FG_GRAY, R));
+        sink.println("    Status: Simulated Peer Available Nearby");
+        sink.println("    Caps:   4K 60Hz Wireless Desktop");
+    }
     sink.println("");
-    sink.println(&format!("  {}● NilPad-Pro-X1{}", FG_GREEN, R));
-    sink.println("    Status: Connected  •  Latency: 2ms");
-    sink.println("    Caps:   Display Sharing, Unified Clipboard, File Handoff");
-    sink.println("");
-    sink.println(&format!("  {}● NilBook-Ultra{}", FG_GREEN, R));
-    sink.println("    Status: Paired (QUIC Stream Active)");
-    sink.println("    Caps:   Camera Relay, Shared Notifications");
-    sink.println("");
-    sink.println(&format!("  {}● NilVision-Display-65{}", FG_YELLOW, R));
-    sink.println("    Status: Available nearby");
-    sink.println("    Caps:   4K 60Hz Wireless Desktop");
-    sink.println("");
-    sink.println(&format!("  {}Control Socket: /run/nilos/bus.sock (TLS 1.3 Ed25519){}", FG_GRAY, R));
-    sink.println("");
-    sink.println(&format!("  {}Commands: 'cast', 'sync', 'pair <n>', 'home', 'back'{}", FG_YELLOW, R));
+    sink.println(&format!("  {}Commands: 'scan', 'pair', 'home', 'back'{}", FG_YELLOW, R));
     sink.print(&format!("  {}> {}", FG_CYAN, R));
 }
 
 // ─── Android App ─────────────────────────────────────────────────────────────
 fn draw_android(sink: &mut Sink) {
     sink.print(CL);
-    sink.println(&format!("{}  🤖 Android Compatibility Layer — LXC / Waydroid  {}{}", FG_YELLOW, simulated::badge(), R));
+    sink.println(&format!("{}  🤖 Android Compatibility Layer (Track C) — Status: STUB  {}{}", FG_YELLOW, simulated::badge(), R));
     sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
     sink.println("");
-    sink.println(&format!("  {}Container Status:{}", FG_WHITE, R));
-    sink.println("  • Container Engine:  LXC (Unprivileged Namespace)");
-    sink.println("  • AOSP Version:      AOSP 14 (Headless Userspace)");
-    sink.println("  • binder-shim:       Ready (Intent Translation Bridge)");
-    sink.println("  • Graphics Bridge:   Wayland wl_surface passthrough");
-    sink.println("  • Google Services:   microG UnifiedPush + Location");
-    sink.println("  • Hardware IDs:      Masked (Anti-Fingerprinting)");
+    sink.println(&format!("  {}Subsystem Architecture Boundary:{}", FG_WHITE, R));
+    sink.println("  • Container Engine:  LXC [STUB — No container process running]");
+    sink.println("  • Userspace Status:  Planned (Track C) — not part of native platform spine");
+    sink.println("  • Architecture Note: Samsung S25 Track B is an isolated hosted preview,");
+    sink.println("                       NOT an embedded Android container runtime.");
+    sink.println("  • binder-shim:       Stub / Architectural prototype");
+    sink.println("  • Graphics Passthru: Wayland wl_surface proxy (Planned)");
     sink.println("");
-    sink.println(&format!("  {}Runtime Socket: /run/nilos/android.sock{}", FG_GRAY, R));
-    sink.println(&format!("  {}Phase 4 deployment — container ready for app sideload{}", FG_GRAY, R));
+    sink.println(&format!("  {}IPC Socket: /run/nilos/android.sock (Inactive){}", FG_GRAY, R));
     sink.println("");
-    sink.println(&format!("  {}Commands: 'status', 'start', 'stop', 'home', 'back'{}", FG_YELLOW, R));
+    sink.println(&format!("  {}Commands: 'status', 'start', 'home', 'back'{}", FG_YELLOW, R));
     sink.print(&format!("  {}> {}", FG_CYAN, R));
 }
 
@@ -799,29 +853,190 @@ fn draw_terminal(sink: &mut Sink, state: &AppState) {
 }
 
 fn eval_simple_math(expr: &str) -> Result<String, ()> {
-    let clean: String = expr.chars().filter(|c| !c.is_whitespace()).collect();
-    for op in ['+', '-', '*', '/'] {
-        if let Some(pos) = clean.rfind(op) {
-            if pos > 0 {
-                let left = &clean[..pos];
-                let right = &clean[pos + 1..];
-                if let (Ok(a), Ok(b)) = (left.parse::<f64>(), right.parse::<f64>()) {
-                    let res = match op {
-                        '+' => a + b,
-                        '-' => a - b,
-                        '*' => a * b,
-                        '/' => if b == 0.0 { return Err(()); } else { a / b },
-                        _ => return Err(()),
-                    };
-                    return Ok(if res.fract() == 0.0 { format!("{}", res as i64) } else { format!("{:.2}", res) });
+    let normalized = i18n::to_ascii_digits(expr);
+    let chars: Vec<char> = normalized.chars().filter(|c| !c.is_whitespace()).collect();
+    if chars.is_empty() {
+        return Err(());
+    }
+
+    #[derive(Debug, PartialEq, Clone)]
+    enum Token {
+        Num(f64),
+        Plus,
+        Minus,
+        Mul,
+        Div,
+        LParen,
+        RParen,
+    }
+
+    let mut tokens = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '+' => { tokens.push(Token::Plus); i += 1; }
+            '-' => { tokens.push(Token::Minus); i += 1; }
+            '*' => { tokens.push(Token::Mul); i += 1; }
+            '/' => { tokens.push(Token::Div); i += 1; }
+            '(' => { tokens.push(Token::LParen); i += 1; }
+            ')' => { tokens.push(Token::RParen); i += 1; }
+            c if c.is_ascii_digit() || c == '.' => {
+                let start = i;
+                while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                    i += 1;
                 }
+                let s: String = chars[start..i].iter().collect();
+                let num = s.parse::<f64>().map_err(|_| ())?;
+                tokens.push(Token::Num(num));
+            }
+            _ => return Err(()),
+        }
+    }
+
+    struct Parser {
+        tokens: Vec<Token>,
+        pos: usize,
+    }
+
+    impl Parser {
+        fn parse_expr(&mut self) -> Result<f64, ()> {
+            let mut left = self.parse_term()?;
+            while self.pos < self.tokens.len() {
+                match self.tokens[self.pos] {
+                    Token::Plus => {
+                        self.pos += 1;
+                        let right = self.parse_term()?;
+                        left += right;
+                    }
+                    Token::Minus => {
+                        self.pos += 1;
+                        let right = self.parse_term()?;
+                        left -= right;
+                    }
+                    _ => break,
+                }
+            }
+            Ok(left)
+        }
+
+        fn parse_term(&mut self) -> Result<f64, ()> {
+            let mut left = self.parse_factor()?;
+            while self.pos < self.tokens.len() {
+                match self.tokens[self.pos] {
+                    Token::Mul => {
+                        self.pos += 1;
+                        let right = self.parse_factor()?;
+                        left *= right;
+                    }
+                    Token::Div => {
+                        self.pos += 1;
+                        let right = self.parse_factor()?;
+                        if right == 0.0 {
+                            return Err(());
+                        }
+                        left /= right;
+                    }
+                    _ => break,
+                }
+            }
+            Ok(left)
+        }
+
+        fn parse_factor(&mut self) -> Result<f64, ()> {
+            if self.pos >= self.tokens.len() {
+                return Err(());
+            }
+            match &self.tokens[self.pos] {
+                Token::Plus => {
+                    self.pos += 1;
+                    self.parse_factor()
+                }
+                Token::Minus => {
+                    self.pos += 1;
+                    let val = self.parse_factor()?;
+                    Ok(-val)
+                }
+                Token::Num(n) => {
+                    let val = *n;
+                    self.pos += 1;
+                    Ok(val)
+                }
+                Token::LParen => {
+                    self.pos += 1;
+                    let val = self.parse_expr()?;
+                    if self.pos < self.tokens.len() && self.tokens[self.pos] == Token::RParen {
+                        self.pos += 1;
+                        Ok(val)
+                    } else {
+                        Err(())
+                    }
+                }
+                _ => Err(()),
             }
         }
     }
-    if let Ok(n) = clean.parse::<f64>() {
-        return Ok(format!("{}", n));
+
+    let mut parser = Parser { tokens, pos: 0 };
+    let res = parser.parse_expr()?;
+    if parser.pos != parser.tokens.len() || res.is_nan() || res.is_infinite() {
+        return Err(());
     }
-    Err(())
+
+    if res.fract() == 0.0 && res >= (i64::MIN as f64) && res <= (i64::MAX as f64) {
+        Ok(format!("{}", res as i64))
+    } else {
+        let s = format!("{:.4}", res);
+        let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+        Ok(trimmed.to_string())
+    }
+}
+
+fn normalize_terminal_path(cwd: &str, target: &str) -> String {
+    let raw = if target == "~" || target.is_empty() {
+        "/data".to_string()
+    } else if target.starts_with('/') {
+        target.to_string()
+    } else if cwd == "/" {
+        format!("/{}", target)
+    } else {
+        format!("{}/{}", cwd, target)
+    };
+
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in raw.split('/') {
+        match seg {
+            "" | "." => continue,
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+
+    if parts.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", parts.join("/"))
+    }
+}
+
+fn validate_terminal_dir(path: &str) -> Result<(), String> {
+    let p = Path::new(path);
+    if p.exists() {
+        if p.is_dir() {
+            Ok(())
+        } else {
+            Err(format!("cd: not a directory: {}", path))
+        }
+    } else {
+        // Fallback for well-known canonical system root mount points if not mounted on host
+        let allowed_roots = ["/", "/data", "/etc", "/tmp", "/run", "/proc", "/sys"];
+        if allowed_roots.contains(&path) {
+            Ok(())
+        } else {
+            Err(format!("cd: no such file or directory: {}", path))
+        }
+    }
 }
 
 fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
@@ -835,37 +1050,19 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
             format!("Commands: cd <dir>, pwd, ls [dir], cat <file>, python, calc <expr>, notes, music, camera, services, mem, disk, net, ps, bt, modem, audio, clear, uname, reboot, home  {}", simulated::badge())
         }
         "pwd" => state.term_cwd.clone(),
-        _ if trimmed == "cd" || trimmed == "cd ~" => {
+        "cd" | "cd ~" => {
             state.term_cwd = "/data".into();
-            format!("Changed directory to {}", state.term_cwd)
-        }
-        _ if trimmed == "cd .." => {
-            let p = Path::new(&state.term_cwd);
-            if let Some(parent) = p.parent() {
-                let parent_str = parent.to_string_lossy().to_string();
-                state.term_cwd = if parent_str.is_empty() { "/".to_string() } else { parent_str };
-            }
             format!("Changed directory to {}", state.term_cwd)
         }
         _ if trimmed.starts_with("cd ") => {
             let target = trimmed.trim_start_matches("cd ").trim();
-            if target == ".." {
-                let p = Path::new(&state.term_cwd);
-                if let Some(parent) = p.parent() {
-                    let parent_str = parent.to_string_lossy().to_string();
-                    state.term_cwd = if parent_str.is_empty() { "/".to_string() } else { parent_str };
+            let resolved = normalize_terminal_path(&state.term_cwd, target);
+            match validate_terminal_dir(&resolved) {
+                Ok(()) => {
+                    state.term_cwd = resolved;
+                    format!("Changed directory to {}", state.term_cwd)
                 }
-                format!("Changed directory to {}", state.term_cwd)
-            } else {
-                let resolved = if target.starts_with('/') {
-                    target.to_string()
-                } else if state.term_cwd == "/" {
-                    format!("/{}", target)
-                } else {
-                    format!("{}/{}", state.term_cwd, target)
-                };
-                state.term_cwd = resolved.clone();
-                format!("Changed directory to {}", state.term_cwd)
+                Err(err_msg) => err_msg,
             }
         }
         "ls" => {
@@ -884,15 +1081,10 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
             }
         }
         "python" | "python3" => {
-            format!("Python 3.12.2 (Onuron Embedded / Alap Bridge)\nType 'python -c \"<code>\"' to evaluate expressions.")
+            "python: Full Python runtime is not embedded in OnuronOS minimal mobile userland. For arithmetic calculations, use 'calc <expr>'.".to_string()
         }
-        _ if trimmed.starts_with("python -c ") => {
-            let expr = trimmed.trim_start_matches("python -c ").trim().trim_matches('"').trim_matches('\'');
-            if let Ok(res) = eval_simple_math(expr) {
-                format!(">>> {}\n{}", expr, res)
-            } else {
-                format!(">>> {}\n<executed successfully>", expr)
-            }
+        _ if trimmed.starts_with("python ") || trimmed.starts_with("python3 ") || trimmed.starts_with("python -c") => {
+            "python: Full Python runtime is not embedded in OnuronOS minimal mobile userland. For arithmetic calculations, use 'calc <expr>'.".to_string()
         }
         _ if trimmed.starts_with("calc ") => {
             let expr = trimmed.trim_start_matches("calc ").trim();
@@ -903,7 +1095,11 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
             }
         }
         "notes" => {
-            "📝 NilLang Notes (notes-app-nilLang):\n  1. [গাইড] স্বাগতম নীলাং নোটবুক-এ! (High)\n  2. [কাজ] দৈনিক কাজের পরিকল্পনা (High)\n  3. [সিস্টেম] অনুরণ ওএস আর্কিটেকচার (Normal)".to_string()
+            let mut out = String::from("📝 NilLang Notes (notes-app-nilLang):\n");
+            for n in &state.notes {
+                out.push_str(&format!("  {}. [{}] {} ({})\n", n.id, n.tag, n.title, n.priority));
+            }
+            out
         }
         "music" => {
             "🎵 Music Streaming (music-streaming-nilLang):\n  ▶ Cyber Bangla 2040 (NilOS Theme) [03:50]\n  • Onuron Ambient Waves [04:12]\n  • Snapdragon 8 Elite Groove [02:45]\n  • Alap Reactive Symphony [05:01]".to_string()
@@ -1071,22 +1267,33 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
             }
         }
         _ if trimmed.starts_with("ls ") => {
-            let path = trimmed.trim_start_matches("ls ").trim();
-            match fs::read_dir(path) {
+            let target = trimmed.trim_start_matches("ls ").trim();
+            let resolved = normalize_terminal_path(&state.term_cwd, target);
+            match fs::read_dir(&resolved) {
                 Ok(entries) => {
-                    let mut out = format!("Contents of {}:\n", path);
+                    let mut out = format!("Contents of {}:\n", target);
                     for e in entries.flatten() {
                         let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
                         out.push_str(&format!("  {}{}\n", e.file_name().to_string_lossy(), if is_dir { "/" } else { "" }));
                     }
                     out
                 }
-                Err(e) => format!("ls: {}: {}", path, e),
+                Err(e) => format!("ls: {}: {}", target, e),
             }
         }
         _ if trimmed.starts_with("cat ") => {
-            let path = trimmed.trim_start_matches("cat ").trim();
-            fs::read_to_string(path).unwrap_or_else(|e| format!("cat: {}: {}", path, e))
+            let target = trimmed.trim_start_matches("cat ").trim();
+            let resolved = normalize_terminal_path(&state.term_cwd, target);
+            let p = Path::new(&resolved);
+            if p.exists() {
+                if p.is_file() {
+                    fs::read_to_string(p).unwrap_or_else(|e| format!("cat: {}: {}", target, e))
+                } else {
+                    format!("cat: {}: is a directory", target)
+                }
+            } else {
+                format!("cat: {}: no such file or directory", target)
+            }
         }
         "" => String::new(),
         _ => format!("nilos: command not found: {}", cmd),
@@ -1123,26 +1330,25 @@ fn draw_calculator(sink: &mut Sink, state: &AppState) {
 }
 
 // ─── Notes App ────────────────────────────────────────────────────────────────
-fn draw_notes(sink: &mut Sink) {
+fn draw_notes(sink: &mut Sink, state: &AppState) {
     sink.print(CL);
     sink.println(&format!("{}  📝 NilLang Notes — Alap Notebook  {}{}", FG_YELLOW, simulated::badge(), R));
     sink.println(&format!("{}  ──────────────────────────────────────────{}", FG_GRAY, R));
     sink.println("");
     sink.println("  Recent Notes (Synced via SoftBus & Encrypted Storage):");
     sink.println("");
-    sink.println(&format!("  {}[1] 📌 স্বাগতম নীলাং নোটবুক-এ!{}", FG_WHITE, R));
-    sink.println(&format!("      {}ট্যাগ: গাইড • প্রায়োরিটি: High • তারিখ: ১০ অক্টো{}", FG_CYAN, R));
-    sink.println(&format!("      {}নীলাং ভাষায় তৈরি আধুনিক নোট অ্যাপ্লিকেশন। সম্পূর্ণ নিরাপদ ও দ্রুত।{}", FG_GRAY, R));
-    sink.println("");
-    sink.println(&format!("  {}[2] 📌 দৈনিক কাজের পরিকল্পনা{}", FG_WHITE, R));
-    sink.println(&format!("      {}ট্যাগ: কাজ • প্রায়োরিটি: High • তারিখ: ১০ অক্টো{}", FG_YELLOW, R));
-    sink.println(&format!("      {}বিল্ড ও টেস্ট ভ্যালিডেশন সমাপ্ত করা, S25 রানটাইম যাচাই করা ও গিট পুশ।{}", FG_GRAY, R));
-    sink.println("");
-    sink.println(&format!("  {}[3] 📌 অনুরণ ওএস আর্কিটেকচার{}", FG_WHITE, R));
-    sink.println(&format!("      {}ট্যাগ: সিস্টেম • প্রায়োরিটি: Normal • তারিখ: ০৯ অক্টো{}", FG_GREEN, R));
-    sink.println(&format!("      {}Linux LTS → nilinit → NilHAL → Onuron daemons → nilrt → NilUI/Alap।{}", FG_GRAY, R));
-    sink.println("");
-    sink.println(&format!("  {}Commands: 'new', 'home', 'back'{}", FG_YELLOW, R));
+    for note in &state.notes {
+        let tag_color = match note.priority.as_str() {
+            "High" => FG_YELLOW,
+            "Normal" => FG_GREEN,
+            _ => FG_CYAN,
+        };
+        sink.println(&format!("  {}[{}] 📌 {}{}", FG_WHITE, note.id, note.title, R));
+        sink.println(&format!("      {}ট্যাগ: {} • প্রায়োরিটি: {} • তারিখ: {}{}", tag_color, note.tag, note.priority, note.date, R));
+        sink.println(&format!("      {}{}{}", FG_GRAY, note.body, R));
+        sink.println("");
+    }
+    sink.println(&format!("  {}Commands: 'new <title> | <body>', 'del <id>', 'home', 'back'{}", FG_YELLOW, R));
     sink.print(&format!("  {}> {}", FG_CYAN, R));
 }
 
@@ -1265,7 +1471,7 @@ fn main() {
             Screen::AppAndroid     => draw_android(&mut sink),
             Screen::AppTerminal    => draw_terminal(&mut sink, &state),
             Screen::AppCalculator  => draw_calculator(&mut sink, &state),
-            Screen::AppNotes       => draw_notes(&mut sink),
+            Screen::AppNotes       => draw_notes(&mut sink, &state),
             Screen::AppMusic       => draw_music(&mut sink, &state),
             Screen::AppCamera      => draw_camera(&mut sink),
             Screen::NotificationShade => draw_notifications(&mut sink, &state),
@@ -1528,8 +1734,30 @@ fn main() {
                 }
             }
 
-            // ── SoftBus / Android / Notifications ─────────────────────────────
-            Screen::AppSoftBus | Screen::AppAndroid | Screen::NotificationShade => {
+            // ── SoftBus ───────────────────────────────────────────────────────
+            Screen::AppSoftBus => {
+                if cmd == "home" || cmd == "back" {
+                    screen = Screen::Home;
+                } else if cmd == "scan" || cmd == "pair" || cmd.starts_with("pair ") || cmd == "cast" || cmd == "sync" {
+                    sink.println("\n  [SIMULATED] Peer pairing requires active SoftBus daemon (/run/nilos/bus.sock) and verified Ed25519 identity handshake.");
+                    sink.print("  Press Enter...");
+                    read_line();
+                }
+            }
+
+            // ── Android Compatibility ─────────────────────────────────────────
+            Screen::AppAndroid => {
+                if cmd == "home" || cmd == "back" {
+                    screen = Screen::Home;
+                } else if cmd == "start" || cmd == "status" || cmd == "stop" {
+                    sink.println("\n  [SIMULATED] Android compatibility container subsystem is currently a planned stub (see maturity.toml). Guest APK launch is not yet implemented.");
+                    sink.print("  Press Enter...");
+                    read_line();
+                }
+            }
+
+            // ── Notifications ─────────────────────────────────────────────────
+            Screen::NotificationShade => {
                 if cmd == "home" || cmd == "back" || cmd.is_empty() {
                     screen = Screen::Home;
                 }
@@ -1570,8 +1798,36 @@ fn main() {
 
             // ── Notes App ─────────────────────────────────────────────────────
             Screen::AppNotes => {
-                if cmd == "home" || cmd == "back" || cmd.is_empty() {
+                if cmd == "home" || cmd == "back" {
                     screen = Screen::Home;
+                } else if cmd.starts_with("new ") || cmd.starts_with("add ") {
+                    let content = if cmd.starts_with("new ") {
+                        cmd.trim_start_matches("new ").trim()
+                    } else {
+                        cmd.trim_start_matches("add ").trim()
+                    };
+                    let (title, body) = if let Some((t, b)) = content.split_once('|') {
+                        (t.trim().to_string(), b.trim().to_string())
+                    } else {
+                        (content.to_string(), "সংক্ষিপ্ত নোট".to_string())
+                    };
+                    let new_id = notes::add_note(&mut state.notes, title, body, "ব্যক্তিগত".into());
+                    let _ = notes::save_notes_atomic(&state.notes_path, &state.notes);
+                    sink.println(&format!("\n  {}✅ Note #{} saved to encrypted disk storage.{}", FG_GREEN, new_id, R));
+                } else if cmd.starts_with("del ") || cmd.starts_with("delete ") {
+                    let id_str = if cmd.starts_with("del ") {
+                        cmd.trim_start_matches("del ").trim()
+                    } else {
+                        cmd.trim_start_matches("delete ").trim()
+                    };
+                    if let Ok(id) = id_str.parse::<usize>() {
+                        if notes::delete_note(&mut state.notes, id) {
+                            let _ = notes::save_notes_atomic(&state.notes_path, &state.notes);
+                            sink.println(&format!("\n  {}🗑️ Note #{} deleted.{}", FG_YELLOW, id, R));
+                        } else {
+                            sink.println(&format!("\n  {}Note #{} not found.{}", FG_RED, id, R));
+                        }
+                    }
                 }
             }
 
@@ -1604,10 +1860,9 @@ fn main() {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_network_display_defaults() {
-        let state = AppState {
-            user_name: "TestUser".into(),
+    fn create_test_state(user_name: &str) -> AppState {
+        AppState {
+            user_name: user_name.into(),
             pin: String::new(),
             pending_pin: String::new(),
             pin_input: String::new(),
@@ -1627,7 +1882,14 @@ mod tests {
             calc_val: "0".into(),
             music_playing: false,
             music_track: 0,
-        };
+            notes: notes::default_notes(),
+            notes_path: std::path::PathBuf::from("/tmp/onuron_test_notes.json"),
+        }
+    }
+
+    #[test]
+    fn test_network_display_defaults() {
+        let state = create_test_state("TestUser");
 
         let (wifi, cell) = get_network_display(&state);
         assert!(!wifi.is_empty());
@@ -1639,34 +1901,126 @@ mod tests {
 
     #[test]
     fn test_network_display_airplane_mode() {
-        let state = AppState {
-            user_name: "OfflineUser".into(),
-            pin: String::new(),
-            pending_pin: String::new(),
-            pin_input: String::new(),
-            sms_threads: Vec::new(),
-            contacts: Vec::new(),
-            compose_to: String::new(),
-            compose_body: String::new(),
-            terminal_history: Vec::new(),
-            settings_cursor: 0,
-            files_path: "/data".into(),
-            pkg_cursor: 0,
-            call_number: String::new(),
-            wifi_enabled: false,
-            cellular_enabled: false,
-            signal_bars: 0,
-            term_cwd: "/data".into(),
-            calc_val: "0".into(),
-            music_playing: false,
-            music_track: 0,
-        };
+        let mut state = create_test_state("OfflineUser");
+        state.wifi_enabled = false;
+        state.cellular_enabled = false;
+        state.signal_bars = 0;
 
         let (wifi, cell) = get_network_display(&state);
-        // If no real sysfs cell interface is present, should fall back to Offline
         if !Path::new("/sys/class/net").exists() {
             assert_eq!(cell, "✈️ Offline");
             assert_eq!(wifi, "✕ Wi-Fi");
         }
+    }
+
+    #[test]
+    fn test_eval_simple_math_precedence_and_parentheses() {
+        assert_eq!(eval_simple_math("2 + 3 * 4").unwrap(), "14");
+        assert_eq!(eval_simple_math("(2 + 3) * 4").unwrap(), "20");
+        assert_eq!(eval_simple_math("100 / 4 - 5").unwrap(), "20");
+        assert_eq!(eval_simple_math("2.5 * 4").unwrap(), "10");
+        assert_eq!(eval_simple_math("-5 + 15").unwrap(), "10");
+        assert_eq!(eval_simple_math("(10 - 2) / (2 + 2)").unwrap(), "2");
+    }
+
+    #[test]
+    fn test_eval_simple_math_bengali_digits() {
+        assert_eq!(eval_simple_math("২৫ * ৪").unwrap(), "100");
+        assert_eq!(eval_simple_math("১০০ / ৫").unwrap(), "20");
+        assert_eq!(eval_simple_math("১০ + ৫ × ২").unwrap(), "20");
+        assert_eq!(eval_simple_math("(১২ − ২) / ৫").unwrap(), "2");
+    }
+
+    #[test]
+    fn test_eval_simple_math_negative_cases() {
+        assert!(eval_simple_math("10 / 0").is_err(), "Division by zero must fail");
+        assert!(eval_simple_math("").is_err(), "Empty expression must fail");
+        assert!(eval_simple_math("abc + 2").is_err(), "Malformed input must fail");
+        assert!(eval_simple_math("((2 + 3)").is_err(), "Unbalanced parentheses must fail");
+    }
+
+    #[test]
+    fn test_terminal_command_semantics() {
+        let mut sink = Sink::new();
+        let mut state = create_test_state("Tester");
+
+        handle_terminal_cmd(&mut sink, &mut state, "calc 25 * 4");
+        assert!(state.terminal_history.iter().any(|h| h.contains("100")));
+
+        handle_terminal_cmd(&mut sink, &mut state, "python -c \"import sys\"");
+        assert!(state.terminal_history.iter().any(|h| h.contains("Full Python runtime is not embedded")));
+
+        // Test math execution is not falsely claimed as Python output
+        handle_terminal_cmd(&mut sink, &mut state, "python -c \"2 + 2\"");
+        assert!(state.terminal_history.iter().any(|h| h.contains("Full Python runtime is not embedded")));
+    }
+
+    #[test]
+    fn test_terminal_cd_path_traversal_and_validation() {
+        let mut sink = Sink::new();
+        let mut state = create_test_state("Tester");
+        state.term_cwd = "/data".into();
+
+        // cd .. from /data resolves to /
+        handle_terminal_cmd(&mut sink, &mut state, "cd ..");
+        assert_eq!(state.term_cwd, "/");
+
+        // cd ../../../ clamps to / without escaping
+        handle_terminal_cmd(&mut sink, &mut state, "cd ../../..");
+        assert_eq!(state.term_cwd, "/");
+
+        // Attempting to cd to nonexistent directory fails and does NOT change term_cwd
+        handle_terminal_cmd(&mut sink, &mut state, "cd /nonexistent_system_dir_xyz");
+        assert!(state.terminal_history.iter().any(|h| h.contains("no such file or directory")));
+        assert_eq!(state.term_cwd, "/");
+
+        // cd ~ returns to /data
+        handle_terminal_cmd(&mut sink, &mut state, "cd ~");
+        assert_eq!(state.term_cwd, "/data");
+    }
+
+    #[test]
+    fn test_terminal_cat_validation() {
+        let mut sink = Sink::new();
+        let mut state = create_test_state("Tester");
+
+        handle_terminal_cmd(&mut sink, &mut state, "cat nonexistent_missing_file.log");
+        assert!(state.terminal_history.iter().any(|h| h.contains("no such file or directory")));
+    }
+
+    #[test]
+    fn test_settings_selinux_truthfulness() {
+        let status = get_selinux_status();
+        if !Path::new("/sys/fs/selinux/enforce").exists() {
+            assert!(status.contains("[SIMULATED]"));
+            assert!(status.contains("Unverified"));
+        }
+    }
+
+    #[test]
+    fn test_notes_interactive_creation_and_atomic_save() {
+        let temp_dir = std::env::temp_dir().join("onuron_shell_notes_test");
+        let notes_file = temp_dir.join("notes.json");
+        let _ = fs::remove_dir_all(&temp_dir);
+
+        let mut state = create_test_state("NotesUser");
+        state.notes_path = notes_file.clone();
+
+        let new_id = notes::add_note(
+            &mut state.notes,
+            "পরীক্ষামূলক নোট".into(),
+            "শেল ইউজার ইন্টারফেস থেকে সংরক্ষিত।".into(),
+            "সিস্টেম".into(),
+        );
+        assert_eq!(new_id, 4);
+
+        notes::save_notes_atomic(&state.notes_path, &state.notes).expect("Save must succeed");
+        assert!(notes_file.exists());
+
+        let loaded = notes::load_notes(&notes_file);
+        assert_eq!(loaded.len(), 4);
+        assert_eq!(loaded[3].title, "পরীক্ষামূলক নোট");
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

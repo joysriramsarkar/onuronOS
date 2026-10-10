@@ -8,7 +8,7 @@ pub use traits::*;
 pub use backends::{BackendType, qemu, linux, android, fake};
 
 use std::path::Path;
-use std::ffi::CStr;
+use std::ffi::{CStr, c_char};
 use libloading::{Library, Symbol};
 
 // ─── Runtime Environment Auto-Detection ───────────────────────────────────────
@@ -144,8 +144,8 @@ pub const NIL_HAL_API_VERSION: u32 = 3;
 pub struct NilHalModule {
     pub api_version: u32,
     pub hal_type: u32,
-    pub name: *const i8,
-    pub author: *const i8,
+    pub name: *const c_char,
+    pub author: *const c_char,
     pub init: Option<unsafe extern "C" fn() -> i32>,
     pub deinit: Option<unsafe extern "C" fn() -> i32>,
     pub reserved: [*mut std::ffi::c_void; 8],
@@ -157,6 +157,37 @@ pub struct HalDevice {
 }
 
 impl HalDevice {
+    /// Validates a raw module descriptor before binding.
+    ///
+    /// # Safety
+    /// Caller must ensure `module` points to a valid, readable `NilHalModule` if non-null.
+    pub unsafe fn validate_module(module: *const NilHalModule) -> Result<(), String> {
+        if module.is_null() {
+            return Err("HAL module descriptor is null".into());
+        }
+        if (*module).api_version != NIL_HAL_API_VERSION {
+            return Err(format!(
+                "HAL API version mismatch: expected {}, got {}",
+                NIL_HAL_API_VERSION,
+                (*module).api_version
+            ));
+        }
+        Ok(())
+    }
+
+    /// Read the module name safely from a module descriptor.
+    ///
+    /// # Safety
+    /// Caller must ensure `module` points to a valid, readable `NilHalModule` if non-null,
+    /// and that the `name` pointer (if non-null) points to a valid NUL-terminated C string.
+    pub unsafe fn read_module_name(module: *const NilHalModule) -> String {
+        if module.is_null() || (*module).name.is_null() {
+            "unknown".to_string()
+        } else {
+            CStr::from_ptr((*module).name).to_string_lossy().into_owned()
+        }
+    }
+
     pub fn load(name: &str) -> Result<Self, String> {
         let paths = [
             format!("/vendor/lib/nilhal/libnilhal_{}.so", name),
@@ -171,9 +202,7 @@ impl HalDevice {
                     let sym: Symbol<*const NilHalModule> = lib.get(b"NIL_HAL_MODULE_INFO\0")
                         .map_err(|e| e.to_string())?;
                     let module = *sym;
-                    if (*module).api_version != NIL_HAL_API_VERSION {
-                        return Err(format!("HAL API version mismatch: expected {}, got {}", NIL_HAL_API_VERSION, (*module).api_version));
-                    }
+                    Self::validate_module(module)?;
                     if let Some(init) = (*module).init {
                         if init() != 0 {
                             return Err("HAL init failed".into());
@@ -194,11 +223,7 @@ impl HalDevice {
 
     pub fn get_name(&self) -> String {
         unsafe {
-            if (*self.module).name.is_null() {
-                "unknown".to_string()
-            } else {
-                CStr::from_ptr((*self.module).name).to_string_lossy().into_owned()
-            }
+            Self::read_module_name(self.module)
         }
     }
 }
@@ -277,4 +302,67 @@ mod tests {
         assert_eq!(hal.audio.get_master_volume(), 75);
         assert!(hal.audio.play_stream(&[100, 200, -100]).is_ok());
     }
+
+    #[test]
+    fn test_hal_module_validation_and_safety() {
+        use std::ptr;
+
+        // 1. Null descriptor check
+        unsafe {
+            assert!(HalDevice::validate_module(ptr::null()).is_err());
+            assert_eq!(HalDevice::read_module_name(ptr::null()), "unknown");
+        }
+
+        // 2. Version mismatch check
+        let wrong_version_module = NilHalModule {
+            api_version: 999,
+            hal_type: 1,
+            name: b"mock_device\0".as_ptr() as *const c_char,
+            author: b"Onuron\0".as_ptr() as *const c_char,
+            init: None,
+            deinit: None,
+            reserved: [ptr::null_mut(); 8],
+        };
+        unsafe {
+            let res = HalDevice::validate_module(&wrong_version_module);
+            assert!(res.is_err());
+            assert!(res.unwrap_err().contains("version mismatch"));
+        }
+
+        // 3. Valid module descriptor check
+        let valid_module = NilHalModule {
+            api_version: NIL_HAL_API_VERSION,
+            hal_type: 1,
+            name: b"sensor_hub\0".as_ptr() as *const c_char,
+            author: b"Onuron Team\0".as_ptr() as *const c_char,
+            init: None,
+            deinit: None,
+            reserved: [ptr::null_mut(); 8],
+        };
+        unsafe {
+            assert!(HalDevice::validate_module(&valid_module).is_ok());
+            assert_eq!(HalDevice::read_module_name(&valid_module), "sensor_hub");
+        }
+
+        // 4. Null name pointer fallback
+        let null_name_module = NilHalModule {
+            api_version: NIL_HAL_API_VERSION,
+            hal_type: 1,
+            name: ptr::null(),
+            author: ptr::null(),
+            init: None,
+            deinit: None,
+            reserved: [ptr::null_mut(); 8],
+        };
+        unsafe {
+            assert_eq!(HalDevice::read_module_name(&null_name_module), "unknown");
+        }
+
+        // 5. Driver load not found error check
+        match HalDevice::load("nonexistent_device") {
+            Err(err) => assert!(err.contains("not found in search paths")),
+            Ok(_) => panic!("Expected nonexistent driver load to fail"),
+        }
+    }
 }
+

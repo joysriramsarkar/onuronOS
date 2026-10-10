@@ -20,22 +20,55 @@ pub enum SwipeGesture {
     Right,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessibilityRole {
+    Button,
+    Toggle,
+    Card,
+    Header,
+    NavigationItem,
+    Custom,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TouchTarget {
     pub rect: Rect,
     pub id: String,
     pub label: String,
     pub is_pressed: bool,
+    pub role: AccessibilityRole,
+    pub is_focused: bool,
 }
 
 impl TouchTarget {
+    /// Mobile touch target accessibility minimum: 48x48 dp
+    pub const MIN_TARGET_SIZE: u32 = 48;
+
     pub fn new(x: i32, y: i32, w: u32, h: u32, id: &str, label: &str) -> Self {
+        Self::with_role(x, y, w, h, id, label, AccessibilityRole::Button)
+    }
+
+    pub fn with_role(
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        id: &str,
+        label: &str,
+        role: AccessibilityRole,
+    ) -> Self {
         Self {
             rect: Rect { x, y, width: w, height: h },
             id: id.to_string(),
             label: label.to_string(),
             is_pressed: false,
+            role,
+            is_focused: false,
         }
+    }
+
+    pub fn has_accessible_size(&self) -> bool {
+        self.rect.width >= Self::MIN_TARGET_SIZE && self.rect.height >= Self::MIN_TARGET_SIZE
     }
 
     pub fn contains(&self, px: i32, py: i32) -> bool {
@@ -52,6 +85,7 @@ pub struct TouchCompositor {
     pub current_screen: MobileScreen,
     pub targets: Vec<TouchTarget>,
     pub active_touch: Option<(i32, i32)>,
+    pub focused_index: Option<usize>,
     pub wifi_enabled: bool,
     pub bluetooth_enabled: bool,
     pub battery_percent: u8,
@@ -66,10 +100,27 @@ impl TouchCompositor {
             current_screen: MobileScreen::Lockscreen,
             targets: Vec::new(),
             active_touch: None,
+            focused_index: None,
             wifi_enabled: true,
             bluetooth_enabled: true,
             battery_percent: 88,
             status_message: None,
+        }
+    }
+
+    /// Centralized action executor shared by touch clicks, keyboard D-pad, and accessibility
+    pub fn trigger_action(&mut self, action: &str) {
+        match action {
+            "btn_unlock" => self.current_screen = MobileScreen::Home,
+            "btn_lock" => self.current_screen = MobileScreen::Lockscreen,
+            "btn_toggle_wifi" => self.wifi_enabled = !self.wifi_enabled,
+            "btn_toggle_bt" => self.bluetooth_enabled = !self.bluetooth_enabled,
+            "btn_notifications" => self.current_screen = MobileScreen::Notifications,
+            "btn_settings" => self.current_screen = MobileScreen::Settings,
+            "btn_home" => self.current_screen = MobileScreen::Home,
+            other => {
+                self.status_message = Some(format!("Launched: {}", other));
+            }
         }
     }
 
@@ -78,9 +129,11 @@ impl TouchCompositor {
         self.active_touch = Some((x, y));
         let mut hit_id = None;
 
-        for target in &mut self.targets {
+        for (idx, target) in self.targets.iter_mut().enumerate() {
             if target.contains(x, y) {
                 target.is_pressed = true;
+                target.is_focused = true;
+                self.focused_index = Some(idx);
                 hit_id = Some(target.id.clone());
             } else {
                 target.is_pressed = false;
@@ -100,22 +153,57 @@ impl TouchCompositor {
         }
         self.active_touch = None;
 
-        // Handle standard global actions
         if let Some(ref action) = triggered {
-            match action.as_str() {
-                "btn_unlock" => self.current_screen = MobileScreen::Home,
-                "btn_lock" => self.current_screen = MobileScreen::Lockscreen,
-                "btn_toggle_wifi" => self.wifi_enabled = !self.wifi_enabled,
-                "btn_toggle_bt" => self.bluetooth_enabled = !self.bluetooth_enabled,
-                "btn_notifications" => self.current_screen = MobileScreen::Notifications,
-                "btn_settings" => self.current_screen = MobileScreen::Settings,
-                "btn_home" => self.current_screen = MobileScreen::Home,
-                other => {
-                    self.status_message = Some(format!("Launched: {}", other));
-                }
-            }
+            self.trigger_action(action);
         }
         triggered
+    }
+
+    /// Move focus to next interactive element (Keyboard Tab / D-pad Down/Right)
+    pub fn focus_next(&mut self) -> Option<String> {
+        if self.targets.is_empty() {
+            return None;
+        }
+        let next_idx = match self.focused_index {
+            Some(curr) => (curr + 1) % self.targets.len(),
+            None => 0,
+        };
+        self.set_focus_index(next_idx)
+    }
+
+    /// Move focus to previous interactive element (Shift+Tab / D-pad Up/Left)
+    pub fn focus_prev(&mut self) -> Option<String> {
+        if self.targets.is_empty() {
+            return None;
+        }
+        let prev_idx = match self.focused_index {
+            Some(0) | None => self.targets.len().saturating_sub(1),
+            Some(curr) => curr - 1,
+        };
+        self.set_focus_index(prev_idx)
+    }
+
+    fn set_focus_index(&mut self, idx: usize) -> Option<String> {
+        if idx >= self.targets.len() {
+            return None;
+        }
+        for (i, t) in self.targets.iter_mut().enumerate() {
+            t.is_focused = i == idx;
+        }
+        self.focused_index = Some(idx);
+        Some(self.targets[idx].id.clone())
+    }
+
+    /// Returns reference to currently focused element
+    pub fn focused_target(&self) -> Option<&TouchTarget> {
+        self.focused_index.and_then(|idx| self.targets.get(idx))
+    }
+
+    /// Activates currently focused element (Keyboard Enter / Space / Gamepad A)
+    pub fn activate_focused(&mut self) -> Option<String> {
+        let id = self.focused_target()?.id.clone();
+        self.trigger_action(&id);
+        Some(id)
     }
 
     /// Process high-level swipe gesture (e.g. from inputd)
@@ -400,5 +488,50 @@ mod tests {
         compositor.render_frame(&mut buf);
         assert!(compositor.targets.iter().any(|t| t.id == "btn_toggle_wifi"));
         assert!(compositor.targets.iter().any(|t| t.id == "btn_toggle_bt"));
+    }
+
+    #[test]
+    fn test_focus_navigation_and_activation() {
+        let mut compositor = TouchCompositor::new(720, 1440);
+        let mut buf = PixelBuffer::new(720, 1440);
+
+        // Render lockscreen -> establishes interactive targets
+        compositor.render_frame(&mut buf);
+        assert_eq!(compositor.current_screen, MobileScreen::Lockscreen);
+
+        // Move focus via keyboard / accessibility traversal
+        let focused_id = compositor.focus_next();
+        assert!(focused_id.is_some());
+        let target = compositor.focused_target().expect("Focused target exists");
+        assert_eq!(target.id, "btn_unlock");
+        assert!(target.is_focused);
+        assert!(target.has_accessible_size());
+        assert_eq!(target.role, AccessibilityRole::Button);
+
+        // Activate focused button (simulates Enter / Space / Accessibility Action)
+        let activated = compositor.activate_focused();
+        assert_eq!(activated, Some("btn_unlock".to_string()));
+        assert_eq!(compositor.current_screen, MobileScreen::Home);
+    }
+
+    #[test]
+    fn test_touch_target_accessibility_minimum_size() {
+        let mut compositor = TouchCompositor::new(720, 1440);
+        let mut buf = PixelBuffer::new(720, 1440);
+        compositor.current_screen = MobileScreen::Home;
+        compositor.render_frame(&mut buf);
+
+        // Verify all rendered touch targets adhere to mobile accessibility guidelines
+        for target in &compositor.targets {
+            assert!(
+                target.has_accessible_size(),
+                "Target {} size {}x{} below accessibility threshold of {}x{}",
+                target.id,
+                target.rect.width,
+                target.rect.height,
+                TouchTarget::MIN_TARGET_SIZE,
+                TouchTarget::MIN_TARGET_SIZE
+            );
+        }
     }
 }

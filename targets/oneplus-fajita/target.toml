@@ -1,0 +1,28 @@
+[target]
+id = "oneplus-fajita"
+display_name = "OnePlus 6T (fajita) Native Reference Phone"
+architecture = "aarch64"
+target_triple = "aarch64-unknown-linux-musl"
+image_format = "boot.img"
+output_dir = "out/oneplus-fajita"
+flashing_allowed = false
+
+[device]
+codename = "fajita"
+soc = "Qualcomm Snapdragon 845 (SDM845)"
+fastboot_product = "fajita"
+base_kernel = "linux-6.x-mainline-sdm845"
+dtb = "sdm845-oneplus-fajita.dtb"
+boot_partitions = ["boot_a", "boot_b"]
+system_partitions = ["system_a", "system_b"]
+vendor_partitions = ["vendor_a", "vendor_b"]
+userdata_partition = "userdata"
+
+[bootimg]
+header_version = 0
+base = "0x00000000"
+kernel_offset = "0x00008000"
+ramdisk_offset = "0x01000000"
+tags_offset = "0x00000100"
+page_size = 4096
+cmdline = "console=ttyMSM0,115200 earlycon=msm_geni_serial,0xa84000 androidboot.hardware=qcom"

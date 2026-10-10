@@ -9,6 +9,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "alap"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "alarmd"
 version = "0.1.0"
 dependencies = [
@@ -1175,6 +1183,7 @@ name = "nilinit"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "nilprotocol",
  "nilsd",
  "nix 0.27.1",
  "serde",
@@ -1199,9 +1208,11 @@ dependencies = [
 name = "nillang"
 version = "0.1.0"
 dependencies = [
+ "alap",
  "hex",
  "nilpkg",
  "nilrt",
+ "nilui",
  "serde",
  "serde_json",
  "tempfile",
@@ -1273,6 +1284,7 @@ version = "0.1.0"
 dependencies = [
  "nilpkg",
  "rand 0.8.8",
+ "serde",
  "serde_json",
  "sha2",
 ]
@@ -1325,6 +1337,7 @@ dependencies = [
 name = "nilui"
 version = "0.1.0"
 dependencies = [
+ "alap",
  "byteorder",
  "crc32fast",
  "serde",

@@ -77,6 +77,12 @@ pub struct UpdateManifest {
     /// Size of the new image in bytes.
     #[serde(default)]
     pub image_size: u64,
+    /// Hardware/target device profile identifier (e.g. "oneplus-fajita", "qemu-x86_64").
+    #[serde(default)]
+    pub target_device: String,
+    /// Monotonically increasing security rollback index (prevents downgrade attacks).
+    #[serde(default)]
+    pub rollback_index: u32,
     /// Hex-encoded Ed25519 signature over the canonical manifest (all fields
     /// except the two signature/key fields).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +123,10 @@ pub struct SlotMeta {
     pub version: String,
     #[serde(default)]
     pub image_sha256: String,
+    #[serde(default)]
+    pub target_device: String,
+    #[serde(default)]
+    pub rollback_index: u32,
 }
 
 /// The image the boot chain is currently running. In a full measured-boot
@@ -128,6 +138,10 @@ pub struct RunningState {
     pub slot: String,
     #[serde(default)]
     pub image_sha256: String,
+    #[serde(default)]
+    pub target_device: String,
+    #[serde(default)]
+    pub rollback_index: u32,
 }
 
 /// Journal written after the new image is staged but before the slot flip, so
@@ -142,6 +156,211 @@ struct PendingUpdate {
     version: String,
     #[serde(default)]
     image_sha256: String,
+}
+
+/// State of an individual boot slot according to the boot control system.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct BootSlotInfo {
+    pub slot: String,
+    pub is_active: bool,
+    pub is_successful: bool,
+    pub tries_remaining: u8,
+    pub is_bootable: bool,
+}
+
+/// Boot control status view.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct BootControlStatus {
+    pub current_slot: String,
+    pub fallback_slot: String,
+    pub is_simulated: bool,
+    pub backend_name: String,
+    pub slots: Vec<BootSlotInfo>,
+}
+
+/// Abstraction for platform boot-control operations.
+pub trait BootControl: Send + Sync {
+    fn get_current_slot(&self) -> Result<String, String>;
+    fn mark_boot_successful(&self) -> Result<(), String>;
+    fn set_active_boot_slot(&self, slot: &str) -> Result<(), String>;
+    fn record_boot_attempt(&self) -> Result<String, String>;
+    fn get_status(&self) -> Result<BootControlStatus, String>;
+    fn is_simulated(&self) -> bool;
+}
+
+const BOOT_CONTROL_FILE: &str = "boot_control.json";
+pub const DEFAULT_MAX_BOOT_TRIES: u8 = 3;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct BootControlState {
+    current_slot: String,
+    fallback_slot: String,
+    slots: std::collections::HashMap<String, BootSlotInfo>,
+}
+
+/// Simulated boot control implementation for testing and QEMU development.
+pub struct SimulatedBootControl {
+    path: std::path::PathBuf,
+    install_root: std::path::PathBuf,
+}
+
+impl SimulatedBootControl {
+    pub fn new(install_root: &std::path::Path) -> Self {
+        Self {
+            path: install_root.join(BOOT_CONTROL_FILE),
+            install_root: install_root.to_path_buf(),
+        }
+    }
+
+    fn read_or_init_state(&self) -> Result<BootControlState, String> {
+        if self.path.exists() {
+            let data = std::fs::read(&self.path).map_err(|e| e.to_string())?;
+            serde_json::from_slice(&data).map_err(|e| format!("Invalid boot_control.json: {e}"))
+        } else {
+            let active = read_active(&self.install_root).unwrap_or_else(|_| "A".to_string());
+            let other = if active == "A" { "B" } else { "A" };
+            let mut slots = std::collections::HashMap::new();
+            slots.insert(
+                active.clone(),
+                BootSlotInfo {
+                    slot: active.clone(),
+                    is_active: true,
+                    is_successful: true,
+                    tries_remaining: DEFAULT_MAX_BOOT_TRIES,
+                    is_bootable: true,
+                },
+            );
+            slots.insert(
+                other.to_string(),
+                BootSlotInfo {
+                    slot: other.to_string(),
+                    is_active: false,
+                    is_successful: false,
+                    tries_remaining: DEFAULT_MAX_BOOT_TRIES,
+                    is_bootable: false,
+                },
+            );
+            let state = BootControlState {
+                current_slot: active.clone(),
+                fallback_slot: active,
+                slots,
+            };
+            self.save_state(&state)?;
+            Ok(state)
+        }
+    }
+
+    fn save_state(&self, state: &BootControlState) -> Result<(), String> {
+        let bytes = serde_json::to_vec_pretty(state).map_err(|e| e.to_string())?;
+        write_file_atomic(&self.path, &bytes)?;
+        sync_dir(&self.install_root)
+    }
+}
+
+impl BootControl for SimulatedBootControl {
+    fn get_current_slot(&self) -> Result<String, String> {
+        let state = self.read_or_init_state()?;
+        Ok(state.current_slot)
+    }
+
+    fn mark_boot_successful(&self) -> Result<(), String> {
+        let mut state = self.read_or_init_state()?;
+        let curr = state.current_slot.clone();
+        if let Some(info) = state.slots.get_mut(&curr) {
+            info.is_successful = true;
+            info.tries_remaining = DEFAULT_MAX_BOOT_TRIES;
+            info.is_bootable = true;
+        }
+        state.fallback_slot = curr;
+        self.save_state(&state)
+    }
+
+    fn set_active_boot_slot(&self, slot: &str) -> Result<(), String> {
+        if !SLOTS.contains(&slot) {
+            return Err(format!("Unknown slot: {slot}"));
+        }
+        let mut state = self.read_or_init_state()?;
+        let prev = state.current_slot.clone();
+        state.fallback_slot = prev;
+        state.current_slot = slot.to_string();
+
+        for (name, info) in state.slots.iter_mut() {
+            if name == slot {
+                info.is_active = true;
+                info.is_successful = false;
+                info.tries_remaining = DEFAULT_MAX_BOOT_TRIES;
+                info.is_bootable = true;
+            } else {
+                info.is_active = false;
+            }
+        }
+        self.save_state(&state)
+    }
+
+    fn record_boot_attempt(&self) -> Result<String, String> {
+        let mut state = self.read_or_init_state()?;
+        let curr = state.current_slot.clone();
+        let fallback = state.fallback_slot.clone();
+
+        let need_rollback = if let Some(info) = state.slots.get_mut(&curr) {
+            if !info.is_successful {
+                if info.tries_remaining > 0 {
+                    info.tries_remaining -= 1;
+                }
+                if info.tries_remaining == 0 {
+                    info.is_bootable = false;
+                    info.is_active = false;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if need_rollback {
+            eprintln!(
+                "[nilupd:boot_control] Candidate slot {curr} failed boot limit! Automatic rollback to {fallback}"
+            );
+            state.current_slot = fallback.clone();
+            if let Some(fb_info) = state.slots.get_mut(&fallback) {
+                fb_info.is_active = true;
+            }
+            self.save_state(&state)?;
+            // Also synchronize active pointer
+            write_file_atomic(&self.install_root.join(ACTIVE_FILE), fallback.as_bytes())?;
+            return Err(format!(
+                "Candidate slot {curr} boot attempts exhausted (0 remaining). Rolled back to slot {fallback}"
+            ));
+        }
+
+        self.save_state(&state)?;
+        Ok(state.current_slot)
+    }
+
+    fn get_status(&self) -> Result<BootControlStatus, String> {
+        let state = self.read_or_init_state()?;
+        let mut slots_vec = Vec::new();
+        for slot in SLOTS {
+            if let Some(info) = state.slots.get(slot) {
+                slots_vec.push(info.clone());
+            }
+        }
+        Ok(BootControlStatus {
+            current_slot: state.current_slot,
+            fallback_slot: state.fallback_slot,
+            is_simulated: true,
+            backend_name: "SimulatedBootControl (QEMU / Test Backend)".into(),
+            slots: slots_vec,
+        })
+    }
+
+    fn is_simulated(&self) -> bool {
+        true
+    }
 }
 
 /// Per-slot view for `nilupd status`.
@@ -160,6 +379,8 @@ pub struct Status {
     pub running_image_sha256: String,
     pub pending: bool,
     pub slots: Vec<SlotStatus>,
+    #[serde(default)]
+    pub boot_control: Option<BootControlStatus>,
 }
 
 /// Default install root for the system image. Development hosts keep it under
@@ -439,6 +660,8 @@ pub fn initialize_install_root(
     let meta = SlotMeta {
         version: "0.0.0".into(),
         image_sha256: hash.clone(),
+        target_device: String::new(),
+        rollback_index: 0,
     };
     write_file_atomic(
         &slot_meta_path(install_root, "A"),
@@ -447,12 +670,16 @@ pub fn initialize_install_root(
     let running = RunningState {
         slot: "A".into(),
         image_sha256: hash,
+        target_device: String::new(),
+        rollback_index: 0,
     };
     write_file_atomic(
         &install_root.join(RUNNING_FILE),
         &serde_json::to_vec(&running).map_err(|e| e.to_string())?,
     )?;
     write_file_atomic(&install_root.join(ACTIVE_FILE), b"A")?;
+    let boot_ctrl = SimulatedBootControl::new(install_root);
+    let _ = boot_ctrl.mark_boot_successful();
     sync_dir(install_root)
 }
 
@@ -483,6 +710,26 @@ fn prepare_update(
             running.image_sha256, manifest.current_image_sha256
         ));
     }
+
+    // Anti-rollback enforcement (Section 32.1)
+    if manifest.rollback_index < running.rollback_index {
+        return Err(format!(
+            "Anti-rollback violation: manifest rollback_index ({}) is less than running rollback_index ({}); downgrade rejected",
+            manifest.rollback_index, running.rollback_index
+        ));
+    }
+
+    // Target device match enforcement
+    if !manifest.target_device.is_empty()
+        && !running.target_device.is_empty()
+        && manifest.target_device != running.target_device
+    {
+        return Err(format!(
+            "Target device mismatch: update is built for '{}', but running device is '{}'",
+            manifest.target_device, running.target_device
+        ));
+    }
+
     Ok(manifest)
 }
 
@@ -539,9 +786,21 @@ fn commit_prepared(
     // 1. Make the staged image live in the inactive slot.
     std::fs::rename(&staging, &image)
         .map_err(|e| format!("Could not move staged image into slot {target}: {e}"))?;
+
+    // Read-back verification (Section 32.2 & 32.4)
+    let (readback_sha, _) = hash_file(&image)?;
+    if readback_sha != manifest.image_sha256 {
+        return Err(format!(
+            "Destination image read-back verification failed: expected {}, got {readback_sha}",
+            manifest.image_sha256
+        ));
+    }
+
     let meta = SlotMeta {
         version: manifest.version.clone(),
         image_sha256: manifest.image_sha256.clone(),
+        target_device: manifest.target_device.clone(),
+        rollback_index: manifest.rollback_index,
     };
     write_file_atomic(
         &slot_meta_path(install_root, &target),
@@ -553,17 +812,23 @@ fn commit_prepared(
     // 2. Point the active-slot marker at the new image via an atomic rename.
     write_file_atomic(&install_root.join(ACTIVE_FILE), target.as_bytes())?;
 
-    // 3. Record the running image (see module header: not TPM-measured).
+    // 3. Update boot control slot candidates.
+    let boot_ctrl = SimulatedBootControl::new(install_root);
+    let _ = boot_ctrl.set_active_boot_slot(&target);
+
+    // 4. Record the running image (see module header: not TPM-measured).
     let running = RunningState {
         slot: target.clone(),
         image_sha256: manifest.image_sha256.clone(),
+        target_device: manifest.target_device.clone(),
+        rollback_index: manifest.rollback_index,
     };
     write_file_atomic(
         &install_root.join(RUNNING_FILE),
         &serde_json::to_vec(&running).map_err(|e| e.to_string())?,
     )?;
 
-    // 4. The transaction is complete; drop the journal.
+    // 5. The transaction is complete; drop the journal.
     let _ = std::fs::remove_file(install_root.join(PENDING_FILE));
     sync_dir(install_root)
 }
@@ -636,11 +901,15 @@ pub fn rollback(install_root: &std::path::Path) -> Result<(), String> {
     let running = RunningState {
         slot: previous.to_string(),
         image_sha256: meta.image_sha256,
+        target_device: meta.target_device,
+        rollback_index: meta.rollback_index,
     };
     write_file_atomic(
         &install_root.join(RUNNING_FILE),
         &serde_json::to_vec(&running).map_err(|e| e.to_string())?,
     )?;
+    let boot_ctrl = SimulatedBootControl::new(install_root);
+    let _ = boot_ctrl.set_active_boot_slot(previous);
     sync_dir(install_root)?;
     eprintln!("[nilupd] Rolled back to slot {previous}");
     Ok(())
@@ -683,6 +952,8 @@ pub fn recover_pending(install_root: &std::path::Path) -> Result<(), String> {
                     let running = RunningState {
                         slot: pending.target_slot.clone(),
                         image_sha256: meta.image_sha256,
+                        target_device: meta.target_device,
+                        rollback_index: meta.rollback_index,
                     };
                     if let Ok(bytes) = serde_json::to_vec(&running) {
                         let _ = write_file_atomic(&install_root.join(RUNNING_FILE), &bytes);
@@ -720,12 +991,33 @@ pub fn status(install_root: &std::path::Path) -> Result<Status, String> {
             image_sha256: meta.map(|m| m.image_sha256),
         });
     }
+    let boot_ctrl = SimulatedBootControl::new(install_root);
+    let boot_control = boot_ctrl.get_status().ok();
     Ok(Status {
         active_slot,
         running_image_sha256: running.image_sha256,
         pending: install_root.join(PENDING_FILE).exists(),
         slots,
+        boot_control,
     })
+}
+
+/// Query the current boot-control status.
+pub fn boot_status(install_root: &std::path::Path) -> Result<BootControlStatus, String> {
+    let boot_ctrl = SimulatedBootControl::new(install_root);
+    boot_ctrl.get_status()
+}
+
+/// Confirm that the current slot booted successfully to prevent automated rollback.
+pub fn mark_boot_successful(install_root: &std::path::Path) -> Result<(), String> {
+    let boot_ctrl = SimulatedBootControl::new(install_root);
+    boot_ctrl.mark_boot_successful()
+}
+
+/// Record a boot attempt. If unverified tries are exhausted, automatically rolls back.
+pub fn record_boot_attempt(install_root: &std::path::Path) -> Result<String, String> {
+    let boot_ctrl = SimulatedBootControl::new(install_root);
+    boot_ctrl.record_boot_attempt()
 }
 
 /// Handle framed IPC requests for system update queries and triggers.
@@ -865,6 +1157,8 @@ mod tests {
             current_image_sha256: current_sha.into(),
             image_sha256: compute_sha256(image),
             image_size: image.len() as u64,
+            target_device: String::new(),
+            rollback_index: 0,
             signature_hex: None,
             public_key_hex: None,
         };
@@ -1046,5 +1340,148 @@ mod tests {
         let stat_resp2 = handle_ipc_request(&stat_req, &fx.install, &fx.keys);
         let s2: Status = serde_json::from_slice(&stat_resp2.payload).unwrap();
         assert_eq!(s2.active_slot, "A");
+    }
+
+    #[test]
+    fn test_anti_rollback_protection() {
+        let fx = fixture("anti_rollback");
+        let update = fx.root.join("update");
+
+        // Set running state with security version 5
+        let running = RunningState {
+            slot: "A".into(),
+            image_sha256: compute_sha256(&fx.initial),
+            target_device: String::new(),
+            rollback_index: 5,
+        };
+        std::fs::write(
+            fx.install.join(RUNNING_FILE),
+            serde_json::to_vec(&running).unwrap(),
+        ).unwrap();
+
+        // Create downgrade update with rollback_index 4
+        std::fs::create_dir_all(&update).unwrap();
+        let new_img = b"downgrade-image";
+        std::fs::write(update.join("image"), new_img).unwrap();
+        let mut manifest = UpdateManifest {
+            name: "onuron-system".into(),
+            version: "1.9.0".into(),
+            target_slot: "B".into(),
+            current_image_sha256: compute_sha256(&fx.initial),
+            image_sha256: compute_sha256(new_img),
+            image_size: new_img.len() as u64,
+            target_device: String::new(),
+            rollback_index: 4,
+            signature_hex: None,
+            public_key_hex: None,
+        };
+        sign_update(&mut manifest, &fx.signer);
+        std::fs::write(update.join("update.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        let err = apply_update(&update, &fx.install, &fx.keys).unwrap_err();
+        assert!(err.contains("Anti-rollback violation"), "Expected anti-rollback error, got: {err}");
+        assert_eq!(active(&fx), "A");
+    }
+
+    #[test]
+    fn test_target_device_mismatch() {
+        let fx = fixture("target_mismatch");
+        let update = fx.root.join("update");
+
+        // Running device is oneplus-fajita
+        let running = RunningState {
+            slot: "A".into(),
+            image_sha256: compute_sha256(&fx.initial),
+            target_device: "oneplus-fajita".into(),
+            rollback_index: 1,
+        };
+        std::fs::write(
+            fx.install.join(RUNNING_FILE),
+            serde_json::to_vec(&running).unwrap(),
+        ).unwrap();
+
+        // Update is built for qemu-x86_64
+        std::fs::create_dir_all(&update).unwrap();
+        let new_img = b"qemu-image";
+        std::fs::write(update.join("image"), new_img).unwrap();
+        let mut manifest = UpdateManifest {
+            name: "onuron-system".into(),
+            version: "2.0.0".into(),
+            target_slot: "B".into(),
+            current_image_sha256: compute_sha256(&fx.initial),
+            image_sha256: compute_sha256(new_img),
+            image_size: new_img.len() as u64,
+            target_device: "qemu-x86_64".into(),
+            rollback_index: 1,
+            signature_hex: None,
+            public_key_hex: None,
+        };
+        sign_update(&mut manifest, &fx.signer);
+        std::fs::write(update.join("update.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+
+        let err = apply_update(&update, &fx.install, &fx.keys).unwrap_err();
+        assert!(err.contains("Target device mismatch"), "Expected device mismatch error, got: {err}");
+        assert_eq!(active(&fx), "A");
+    }
+
+    #[test]
+    fn test_boot_control_retry_exhaustion_auto_rollback() {
+        let fx = fixture("boot_ctrl_rollback");
+        let update = fx.root.join("update");
+        let new_img = b"failing-candidate-image";
+        signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), new_img);
+        apply_update(&update, &fx.install, &fx.keys).unwrap();
+        assert_eq!(active(&fx), "B");
+
+        let bc = boot_status(&fx.install).unwrap();
+        assert_eq!(bc.current_slot, "B");
+        assert_eq!(bc.fallback_slot, "A");
+        let b_info = bc.slots.iter().find(|s| s.slot == "B").unwrap();
+        assert_eq!(b_info.tries_remaining, 3);
+        assert!(!b_info.is_successful);
+
+        // Attempt 1
+        let slot1 = record_boot_attempt(&fx.install).unwrap();
+        assert_eq!(slot1, "B");
+        let bc1 = boot_status(&fx.install).unwrap();
+        assert_eq!(bc1.slots.iter().find(|s| s.slot == "B").unwrap().tries_remaining, 2);
+
+        // Attempt 2
+        let slot2 = record_boot_attempt(&fx.install).unwrap();
+        assert_eq!(slot2, "B");
+        let bc2 = boot_status(&fx.install).unwrap();
+        assert_eq!(bc2.slots.iter().find(|s| s.slot == "B").unwrap().tries_remaining, 1);
+
+        // Attempt 3: Exhaustion triggers automatic rollback!
+        let err3 = record_boot_attempt(&fx.install).unwrap_err();
+        assert!(err3.contains("exhausted") && err3.contains("Rolled back to slot A"), "got: {err3}");
+
+        // Active slot must now be A
+        assert_eq!(active(&fx), "A");
+        let bc3 = boot_status(&fx.install).unwrap();
+        assert_eq!(bc3.current_slot, "A");
+        let b_info_after = bc3.slots.iter().find(|s| s.slot == "B").unwrap();
+        assert!(!b_info_after.is_bootable, "Failed slot B should be marked unbootable");
+    }
+
+    #[test]
+    fn test_boot_control_mark_success_persists() {
+        let fx = fixture("boot_ctrl_success");
+        let update = fx.root.join("update");
+        signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), b"good-candidate");
+        apply_update(&update, &fx.install, &fx.keys).unwrap();
+
+        mark_boot_successful(&fx.install).unwrap();
+        let bc = boot_status(&fx.install).unwrap();
+        let b_info = bc.slots.iter().find(|s| s.slot == "B").unwrap();
+        assert!(b_info.is_successful);
+        assert_eq!(b_info.tries_remaining, 3);
+        assert_eq!(bc.fallback_slot, "B");
+
+        // Subsequent boot attempt does not decrement tries
+        let slot = record_boot_attempt(&fx.install).unwrap();
+        assert_eq!(slot, "B");
+        let bc2 = boot_status(&fx.install).unwrap();
+        assert_eq!(bc2.slots.iter().find(|s| s.slot == "B").unwrap().tries_remaining, 3);
     }
 }

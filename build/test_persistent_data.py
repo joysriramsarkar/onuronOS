@@ -66,5 +66,27 @@ class MaterializeTests(unittest.TestCase):
                     self.assertEqual(f.read(), expected)
 
 
+class MkdiskValidityTests(unittest.TestCase):
+    def test_check_existing_image_validity(self):
+        import mkdisk
+        with tempfile.TemporaryDirectory() as tmp:
+            img_path = os.path.join(tmp, "test.img")
+
+            # 1. Nonexistent file
+            self.assertFalse(mkdisk.check_existing_image_validity(img_path, 1))
+
+            # 2. Corrupt / all-zero file
+            with open(img_path, "wb") as f:
+                f.write(b"\x00" * (1 * 1024 * 1024))
+            self.assertFalse(mkdisk.check_existing_image_validity(img_path, 1))
+
+            # 3. Valid synthetic ext2 image
+            mkdisk.build_synthetic_image(img_path, size_mb=1)
+            self.assertTrue(mkdisk.check_existing_image_validity(img_path, 1))
+
+            # 4. Wrong size check
+            self.assertFalse(mkdisk.check_existing_image_validity(img_path, 2))
+
+
 if __name__ == "__main__":
     unittest.main()

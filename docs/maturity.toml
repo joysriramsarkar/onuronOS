@@ -287,3 +287,49 @@ tier = "stub"
 details = "Battery, signal and clock indicators are demo values, marked `⚠SIM` on screen across the shell"
 evidence = ["shell/src/main.rs"]
 simulated = true
+
+[[entries]]
+name = "Alap Framework (`alap`)"
+tier = "functional-prototype"
+details = "Declarative mobile application framework (state reactivity, component graph, lifecycle hooks, router stack, typed system service contracts) adhering to ADR-0009"
+evidence = ["alap/src/lib.rs", "alap/src/component.rs", "alap/src/state.rs", "alap/src/lifecycle.rs", "alap/src/router.rs", "docs/adr/0009-alap-framework-role-and-boundaries.md"]
+simulated = false
+
+[[entries]]
+name = "Canonical Target Registry"
+tier = "functional-prototype"
+details = "ADR-0002 canonical target registry and fail-closed flashing safety gates (`qemu-x86_64`, `qemu-aarch64`, `android-host-arm64`, `oneplus-fajita`)"
+evidence = ["build/target_registry.py", "targets/qemu-x86_64/target.toml", "targets/qemu-aarch64/target.toml", "targets/oneplus-fajita/target.toml", "docs/adr/0002-target-identity-and-canonical-naming.md"]
+simulated = false
+
+[[entries]]
+name = "Calculator App"
+tier = "functional-prototype"
+details = "Basic arithmetic evaluator (precedence, parentheses, decimals) with interactive UI"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["calculator"]
+
+[[entries]]
+name = "Notes App"
+tier = "stub"
+details = "Demonstrates NilLang declarative note viewer with seeded demo notes"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["notes"]
+
+[[entries]]
+name = "Music Player App"
+tier = "stub"
+details = "Demonstrates music player controls and playlist UI with simulated tracks"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["music"]
+
+[[entries]]
+name = "Camera Viewfinder App"
+tier = "stub"
+details = "Viewfinder UI and sensor specification display; simulated without live camerad frame stream"
+evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+simulated = true
+ui_screens = ["camera"]

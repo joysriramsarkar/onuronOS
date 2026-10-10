@@ -14,14 +14,14 @@ public class NativeBridge {
 
     static {
         try {
-            System.loadLibrary("nilhal");
+            System.loadLibrary("android_host");
             isNativeLoaded = true;
-            Log.i(TAG, "libnilhal.so loaded successfully");
+            Log.i(TAG, "libandroid_host.so loaded successfully");
         } catch (Throwable t) {
             try {
-                System.loadLibrary("android_host");
+                System.loadLibrary("nilhal");
                 isNativeLoaded = true;
-                Log.i(TAG, "libandroid_host.so loaded successfully");
+                Log.i(TAG, "libnilhal.so loaded successfully");
             } catch (Throwable t2) {
                 Log.w(TAG, "Native library not bundled; running in pure hosted mobile mode: " + t2.getMessage());
                 isNativeLoaded = false;
@@ -34,11 +34,21 @@ public class NativeBridge {
             try {
                 return nativeGetProtocolVersion();
             } catch (Throwable t) {
-                Log.w(TAG, "nativeGetProtocolVersion failed", t);
-                return 1;
+                Log.e(TAG, "nativeGetProtocolVersion failed; ABI mismatch or symbol missing", t);
+                return -1;
             }
         }
-        return 0;
+        return 0; // Native bridge library offline
+    }
+
+    public static void onViewResized(int width, int height) {
+        if (isNativeLoaded) {
+            try {
+                nativeViewResized(width, height);
+            } catch (Throwable t) {
+                Log.e(TAG, "nativeViewResized failed", t);
+            }
+        }
     }
 
     public static void onSurfaceCreated(Surface surface) {
@@ -166,9 +176,34 @@ public class NativeBridge {
         return false;
     }
 
+    public static String getProtocolInfoJson() {
+        if (isNativeLoaded) {
+            try {
+                return nativeGetProtocolInfoJson();
+            } catch (Throwable t) {
+                Log.e(TAG, "nativeGetProtocolInfoJson failed", t);
+            }
+        }
+        return null;
+    }
+
+    public static boolean getLatestFrameDimensions(int[] outDims) {
+        if (isNativeLoaded && outDims != null && outDims.length >= 3) {
+            try {
+                return nativeGetLatestFrameDimensions(outDims, outDims.length) == 3;
+            } catch (Throwable t) {
+                Log.e(TAG, "nativeGetLatestFrameDimensions failed", t);
+            }
+        }
+        return false;
+    }
+
     private static native int nativeGetProtocolVersion();
+    private static native String nativeGetProtocolInfoJson();
+    private static native int nativeGetLatestFrameDimensions(int[] outDims, int maxLen);
     private static native void nativeSurfaceCreated(Surface surface);
     private static native void nativeSurfaceChanged(Surface surface, int width, int height);
+    private static native void nativeViewResized(int width, int height);
     private static native void nativeSurfaceDestroyed();
     private static native void nativeHostTouchEvent(int action, int pointerId, float x, float y, float pressure);
     private static native void nativeHostKeyEvent(int action, int keycode, char character);

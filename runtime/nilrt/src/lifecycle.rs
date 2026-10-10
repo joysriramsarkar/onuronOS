@@ -111,19 +111,41 @@ pub fn resolve_executable(
     if !is_valid_app_id(app_id) {
         return Err(format!("invalid app id: {app_id}"));
     }
-    let bin = app_root.join(app_id).join("bin").join(app_id);
-    if bin.is_file() {
-        Ok(bin)
-    } else {
-        #[cfg(target_os = "windows")]
-        {
-            let bin_exe = app_root.join(app_id).join("bin").join(format!("{app_id}.exe"));
-            if bin_exe.is_file() {
-                return Ok(bin_exe);
+    let app_dir = app_root.join(app_id);
+
+    // 1. Check if manifest.json specifies an explicit executable path
+    let manifest_path = app_dir.join("manifest.json");
+    if let Ok(text) = std::fs::read_to_string(&manifest_path) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(exec_rel) = val.get("exec").and_then(|v| v.as_str()) {
+                let candidate = app_dir.join(exec_rel);
+                if candidate.is_file() {
+                    return Ok(candidate);
+                }
             }
         }
-        Err(format!("no installed executable at {}", bin.display()))
     }
+
+    // 2. Default binary paths: bin/<app_id>
+    let bin = app_dir.join("bin").join(app_id);
+    if bin.is_file() {
+        return Ok(bin);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let bin_exe = app_dir.join("bin").join(format!("{app_id}.exe"));
+        if bin_exe.is_file() {
+            return Ok(bin_exe);
+        }
+    }
+
+    // 3. Compiled NilLang bytecode direct placement: <app_id>.nib
+    let nib_direct = app_dir.join(format!("{app_id}.nib"));
+    if nib_direct.is_file() {
+        return Ok(nib_direct);
+    }
+
+    Err(format!("no installed executable at {}", bin.display()))
 }
 
 /// Full launch path: create the data dir, arm the staging guard, resolve the
@@ -140,8 +162,42 @@ pub fn launch_installed(
     std::fs::create_dir_all(data_dir)
         .map_err(|e| format!("could not create data dir {}: {e}", data_dir.display()))?;
     let guard = LaunchGuard::begin(app_root, &spec.app_id).map_err(|e| e.to_string())?;
-    let exe = exe.to_string_lossy().into_owned();
-    let result = launch(spec, &exe, args).map_err(|e| e.to_string());
+
+    let is_nib = exe.extension().and_then(|s| s.to_str()) == Some("nib")
+        || std::fs::read(&exe)
+            .map(|bytes| {
+                bytes.starts_with(b"NILB")
+                    || bytes.starts_with(b"NIB1")
+                    || bytes.starts_with(br#"{"magic""#)
+            })
+            .unwrap_or(false);
+
+    let result = if is_nib {
+        let mut launch_args = args.to_vec();
+        launch_args.insert(0, exe.to_string_lossy().into_owned());
+        launch_args.insert(0, "run".to_string());
+
+        let nilc_cmd = if let Ok(custom) = std::env::var("NILC_PATH") {
+            custom
+        } else if std::path::Path::new("/usr/bin/nilc").is_file() {
+            "/usr/bin/nilc".to_string()
+        } else if let Ok(current) = std::env::current_exe() {
+            let candidate = current.with_file_name(if cfg!(windows) { "nilc.exe" } else { "nilc" });
+            if candidate.is_file() {
+                candidate.to_string_lossy().into_owned()
+            } else {
+                "nilc".to_string()
+            }
+        } else {
+            "nilc".to_string()
+        };
+
+        launch(spec, &nilc_cmd, &launch_args).map_err(|e| e.to_string())
+    } else {
+        let exe_str = exe.to_string_lossy().into_owned();
+        launch(spec, &exe_str, args).map_err(|e| e.to_string())
+    };
+
     guard.commit();
     result
 }

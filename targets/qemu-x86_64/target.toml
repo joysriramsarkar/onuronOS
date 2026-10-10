@@ -1,0 +1,26 @@
+[target]
+id = "qemu-x86_64"
+display_name = "QEMU x86_64 Virtual Reference"
+architecture = "x86_64"
+target_triple = "x86_64-unknown-linux-musl"
+image_format = "initramfs"
+output_dir = "out/qemu-x86_64"
+flashing_allowed = false
+
+[kernel]
+name = "vmlinuz-lts"
+url = "https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/netboot/vmlinuz-lts"
+sha256 = "aaa1c6732e5de0af5e497ca70ba654609bc3597b8eda103936368a61561f3cad"
+bootargs = "console=ttyS0 root=/dev/ram0 panic=1 quiet"
+
+[qemu]
+machine = "q35"
+cpu = "max"
+memory_mb = 1024
+serial = "stdio"
+display = "none"
+
+[storage]
+primary_disk = "data.img"
+filesystem = "ext4"
+mount_point = "/data"

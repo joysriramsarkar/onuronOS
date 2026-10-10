@@ -1,7 +1,6 @@
 // services/powerd/src/main.rs — Onuron OS Power Governor & Suspend/Wakelock Manager
 // Reads Linux sysfs (/sys/class/power_supply), manages wakelocks, and controls screen brightness/suspend.
 
-use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -34,8 +33,18 @@ impl Default for BatteryInfo {
     }
 }
 
+pub const MAX_WAKELOCK_DURATION: Duration = Duration::from_secs(30 * 60); // 30 minutes hard limit
+pub const DEFAULT_WAKELOCK_TIMEOUT: Duration = Duration::from_secs(10 * 60); // 10 minutes default auto-expire
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct WakelockEntry {
+    pub tag: String,
+    pub acquired_at: Instant,
+    pub expires_at: Instant,
+}
+
 pub struct PowerGovernor {
-    wakelocks: HashSet<String>,
+    wakelocks: std::collections::HashMap<String, WakelockEntry>,
     screen_timeout_secs: u64,
     last_user_activity: Instant,
     screen_on: bool,
@@ -45,7 +54,7 @@ pub struct PowerGovernor {
 impl PowerGovernor {
     pub fn new() -> Self {
         Self {
-            wakelocks: HashSet::new(),
+            wakelocks: std::collections::HashMap::new(),
             screen_timeout_secs: 60,
             last_user_activity: Instant::now(),
             screen_on: true,
@@ -54,19 +63,50 @@ impl PowerGovernor {
     }
 
     pub fn acquire_wakelock(&mut self, tag: &str) {
-        self.wakelocks.insert(tag.to_string());
+        self.acquire_wakelock_with_timeout(tag, DEFAULT_WAKELOCK_TIMEOUT);
+    }
+
+    pub fn acquire_wakelock_with_timeout(&mut self, tag: &str, requested_timeout: Duration) {
+        let duration = requested_timeout.min(MAX_WAKELOCK_DURATION);
+        let now = Instant::now();
+        let entry = WakelockEntry {
+            tag: tag.to_string(),
+            acquired_at: now,
+            expires_at: now + duration,
+        };
+        self.wakelocks.insert(tag.to_string(), entry);
     }
 
     pub fn release_wakelock(&mut self, tag: &str) -> bool {
-        self.wakelocks.remove(tag)
+        self.wakelocks.remove(tag).is_some()
     }
 
-    pub fn has_wakelocks(&self) -> bool {
+    pub fn evict_expired_wakelocks(&mut self) -> usize {
+        let now = Instant::now();
+        let before = self.wakelocks.len();
+        self.wakelocks.retain(|tag, entry| {
+            if entry.expires_at <= now {
+                eprintln!(
+                    "[powerd:governor] Evicting leaked/expired wakelock '{}' after {:?} (exceeded deadline)",
+                    tag,
+                    now.duration_since(entry.acquired_at)
+                );
+                false
+            } else {
+                true
+            }
+        });
+        before - self.wakelocks.len()
+    }
+
+    pub fn has_wakelocks(&mut self) -> bool {
+        self.evict_expired_wakelocks();
         !self.wakelocks.is_empty()
     }
 
-    pub fn active_wakelocks(&self) -> Vec<String> {
-        self.wakelocks.iter().cloned().collect()
+    pub fn active_wakelocks(&mut self) -> Vec<String> {
+        self.evict_expired_wakelocks();
+        self.wakelocks.keys().cloned().collect()
     }
 
     pub fn set_performance_mode(&mut self, mode: nilhal::traits::PerformanceMode) {
@@ -215,6 +255,20 @@ pub fn handle_ipc_request(frame: &Frame, governor: &Arc<Mutex<PowerGovernor>>) -
         MessageType::Ping => {
             Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec())
         }
+        MessageType::ServiceStatusRequest => {
+            let bat = read_sysfs_battery();
+            let payload = nilprotocol::ServiceStatusPayload {
+                service_name: "powerd".to_string(),
+                is_ready: true,
+                is_simulated: bat.is_simulated,
+                backend_name: if bat.is_simulated { "simulated".to_string() } else { "linux-power_supply".to_string() },
+                uptime_secs: 0,
+                request_count: 1,
+                last_error: None,
+            };
+            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
+                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+        }
         MessageType::PowerGetBattery => {
             let bat = read_sysfs_battery();
             let json = serde_json::to_vec(&bat).unwrap_or_default();
@@ -316,6 +370,7 @@ fn main() {
         });
     }
 
+    let _ = nilsd::notify_ready("powerd", Some("/run/onuron/power.sock"));
     println!("\x1b[1;32m[powerd] [  OK  ]\x1b[0m Power manager daemon active (/run/onuron/power.sock)");
 
     // Keep service alive
@@ -454,6 +509,41 @@ mod tests {
         assert_eq!(MessageType::from(resp.message_type), MessageType::Pong);
         assert_eq!(resp.payload, b"released");
         assert!(!gov.lock().unwrap().has_wakelocks());
+
+        // ServiceStatusRequest -> ServiceStatusResponse
+        let status_frame = Frame::new(MessageType::ServiceStatusRequest, 14, vec![]);
+        let resp = handle_ipc_request(&status_frame, &gov);
+        assert_eq!(MessageType::from(resp.message_type), MessageType::ServiceStatusResponse);
+        let status: nilprotocol::ServiceStatusPayload = resp.parse_json().unwrap();
+        assert_eq!(status.service_name, "powerd");
+        assert!(status.is_ready);
+    }
+
+    #[test]
+    fn test_wakelock_expiration_and_leak_eviction() {
+        let mut gov = PowerGovernor::new();
+        // Acquire short-lived wakelock
+        gov.acquire_wakelock_with_timeout("temp_task", Duration::from_millis(20));
+        assert!(gov.has_wakelocks());
+        assert_eq!(gov.active_wakelocks(), vec!["temp_task"]);
+
+        // Wait for it to expire
+        std::thread::sleep(Duration::from_millis(35));
+
+        // Expired wakelock is evicted automatically, unblocking idle timeout
+        assert!(!gov.has_wakelocks());
+        assert!(gov.active_wakelocks().is_empty());
+    }
+
+    #[test]
+    fn test_wakelock_max_duration_clamp() {
+        let mut gov = PowerGovernor::new();
+        // Request excessive 100-hour wakelock
+        gov.acquire_wakelock_with_timeout("leaky_app", Duration::from_secs(100 * 3600));
+
+        let entry = gov.wakelocks.get("leaky_app").unwrap();
+        let requested_deadline = entry.expires_at.duration_since(entry.acquired_at);
+        assert_eq!(requested_deadline, MAX_WAKELOCK_DURATION);
     }
 }
 

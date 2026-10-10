@@ -79,6 +79,9 @@ pub enum MessageType {
     Ping = 0x0001,
     Pong = 0x0002,
     ErrorResponse = 0x0003,
+    ServiceReady = 0x0004,
+    ServiceStatusRequest = 0x0005,
+    ServiceStatusResponse = 0x0006,
 
     // Power Service (0x0100 - 0x01FF)
     PowerGetBattery = 0x0101,
@@ -154,6 +157,9 @@ impl From<u16> for MessageType {
             0x0001 => MessageType::Ping,
             0x0002 => MessageType::Pong,
             0x0003 => MessageType::ErrorResponse,
+            0x0004 => MessageType::ServiceReady,
+            0x0005 => MessageType::ServiceStatusRequest,
+            0x0006 => MessageType::ServiceStatusResponse,
             0x0101 => MessageType::PowerGetBattery,
             0x0102 => MessageType::PowerBatteryInfo,
             0x0103 => MessageType::PowerAcquireWakelock,
@@ -209,6 +215,9 @@ impl From<MessageType> for u16 {
             MessageType::Ping => 0x0001,
             MessageType::Pong => 0x0002,
             MessageType::ErrorResponse => 0x0003,
+            MessageType::ServiceReady => 0x0004,
+            MessageType::ServiceStatusRequest => 0x0005,
+            MessageType::ServiceStatusResponse => 0x0006,
             MessageType::PowerGetBattery => 0x0101,
             MessageType::PowerBatteryInfo => 0x0102,
             MessageType::PowerAcquireWakelock => 0x0103,
@@ -556,6 +565,45 @@ pub struct TelephonyStatePayload {
     pub unread_sms_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceReadyPayload {
+    pub service_name: String,
+    pub pid: u32,
+    pub version: String,
+    pub socket_path: Option<String>,
+    pub timestamp_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceStatusPayload {
+    pub service_name: String,
+    pub is_ready: bool,
+    pub is_simulated: bool,
+    pub backend_name: String,
+    pub uptime_secs: u64,
+    pub request_count: u64,
+    pub last_error: Option<String>,
+}
+
+/// Query service status over a connected synchronous stream using canonical framed IPC.
+pub fn query_service_status<S: Read + Write>(
+    stream: &mut S,
+    request_id: u64,
+) -> Result<ServiceStatusPayload, IpcError> {
+    let req = Frame::new(MessageType::ServiceStatusRequest, request_id, Vec::new());
+    req.write_to(stream)?;
+    let resp = Frame::read_from(stream)?;
+    if resp.message_type == u16::from(MessageType::ServiceStatusResponse) {
+        resp.parse_json::<ServiceStatusPayload>()
+            .map_err(|e| IpcError::Serialization(e.to_string()))
+    } else {
+        Err(IpcError::Serialization(format!(
+            "Expected ServiceStatusResponse (0x0006), got 0x{:04x}",
+            resp.message_type
+        )))
+    }
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -696,5 +744,83 @@ mod tests {
         let frame = Frame::with_json(MessageType::CameraInfo, 2001, &payload).expect("frame with json");
         let parsed: CameraInfoPayload = frame.parse_json().expect("parse json");
         assert_eq!(parsed, payload);
+    }
+
+    #[test]
+    fn test_service_ready_and_status_roundtrip() {
+        let ready = ServiceReadyPayload {
+            service_name: "netd".to_string(),
+            pid: 1234,
+            version: "0.2.0".to_string(),
+            socket_path: Some("/run/onuron/net.sock".to_string()),
+            timestamp_ms: 1700000000,
+        };
+        let frame = Frame::with_json(MessageType::ServiceReady, 3001, &ready).expect("frame with json");
+        let decoded: ServiceReadyPayload = frame.parse_json().expect("parse json");
+        assert_eq!(decoded, ready);
+
+        let status = ServiceStatusPayload {
+            service_name: "audiod".to_string(),
+            is_ready: true,
+            is_simulated: false,
+            backend_name: "ALSA-hw".to_string(),
+            uptime_secs: 3600,
+            request_count: 512,
+            last_error: None,
+        };
+        let frame2 = Frame::with_json(MessageType::ServiceStatusResponse, 3002, &status).expect("frame with json");
+        let decoded2: ServiceStatusPayload = frame2.parse_json().expect("parse json");
+        assert_eq!(decoded2, status);
+    }
+
+    #[test]
+    fn test_query_service_status_roundtrip() {
+        struct MockStream {
+            rx: Cursor<Vec<u8>>,
+            tx: Vec<u8>,
+        }
+        impl Read for MockStream {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                self.rx.read(buf)
+            }
+        }
+        impl Write for MockStream {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.tx.write(buf)
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                self.tx.flush()
+            }
+        }
+
+        let expected_status = ServiceStatusPayload {
+            service_name: "powerd".to_string(),
+            is_ready: true,
+            is_simulated: false,
+            backend_name: "linux-power_supply".to_string(),
+            uptime_secs: 120,
+            request_count: 42,
+            last_error: None,
+        };
+
+        // Prepare server response frame in rx buffer
+        let resp_frame = Frame::with_json(MessageType::ServiceStatusResponse, 77, &expected_status)
+            .expect("resp frame");
+        let mut rx_bytes = Vec::new();
+        resp_frame.write_to(&mut rx_bytes).expect("write frame");
+
+        let mut stream = MockStream {
+            rx: Cursor::new(rx_bytes),
+            tx: Vec::new(),
+        };
+
+        let result = query_service_status(&mut stream, 77).expect("query status");
+        assert_eq!(result, expected_status);
+
+        // Verify that the request frame was written to tx
+        let mut tx_cursor = Cursor::new(stream.tx);
+        let req_frame = Frame::read_from(&mut tx_cursor).expect("read req");
+        assert_eq!(req_frame.message_type, u16::from(MessageType::ServiceStatusRequest));
+        assert_eq!(req_frame.request_id, 77);
     }
 }

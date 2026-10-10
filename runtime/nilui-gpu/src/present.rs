@@ -7,13 +7,16 @@ use std::time::{Duration, Instant};
 use crate::compositor::PixelBuffer;
 use crate::drm::{DrmDevice, DumbBuffer};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PresentationStats {
     pub frame_index: u64,
     pub slot: usize,
     pub frame_time_ms: f32,
     pub fps: f32,
     pub dropped_frames: u64,
+    pub is_hardware: bool,
+    pub page_flip_success: bool,
+    pub backend: &'static str,
 }
 
 pub struct KmsPresenter {
@@ -80,32 +83,79 @@ impl KmsPresenter {
         &mut self.slots[self.current_slot]
     }
 
-    /// Presents the current frame to the DRM/KMS subsystem
-    pub fn present_frame(&mut self) -> PresentationStats {
+    /// Presents the current frame to the DRM/KMS subsystem with structured error propagation.
+    /// Validates buffer lengths and propagates page flip failures from hardware ioctl.
+    pub fn try_present_frame(&mut self) -> Result<PresentationStats, String> {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_frame_time);
         self.last_frame_time = now;
 
-        // Copy rendered pixels into the hardware DumbBuffer
+        // Copy rendered pixels into the hardware DumbBuffer with boundary/stride validation
         let slot = self.current_slot;
         let rendered = &self.slots[slot];
         let hw_buf = &mut self.drm_buffers[slot];
+
+        if rendered.pixels.len() != hw_buf.pixels.len() {
+            return Err(format!(
+                "Framebuffer size mismatch: rendered buffer has {} pixels, DumbBuffer expects {}",
+                rendered.pixels.len(),
+                hw_buf.pixels.len()
+            ));
+        }
         hw_buf.pixels.copy_from_slice(&rendered.pixels);
 
-        // Perform hardware page flip
-        let _ = self.drm_device.page_flip(hw_buf.fb_id);
+        // Perform hardware page flip and propagate failure
+        self.drm_device.page_flip(hw_buf.fb_id)?;
 
         self.frame_counter += 1;
 
         let frame_time_ms = elapsed.as_secs_f32() * 1000.0;
         let fps = if frame_time_ms > 0.0 { 1000.0 / frame_time_ms } else { self.refresh_rate_hz as f32 };
 
-        PresentationStats {
+        Ok(PresentationStats {
             frame_index: self.frame_counter,
             slot,
             frame_time_ms,
             fps,
             dropped_frames: if elapsed > self.target_frame_duration * 2 { 1 } else { 0 },
+            is_hardware: self.drm_device.is_hardware,
+            page_flip_success: true,
+            backend: if self.drm_device.is_hardware {
+                "drm_kms_hardware"
+            } else {
+                "virtual_software_fallback"
+            },
+        })
+    }
+
+    /// Presents the current frame to the DRM/KMS subsystem.
+    /// Records page flip status and telemetry in the returned stats.
+    pub fn present_frame(&mut self) -> PresentationStats {
+        match self.try_present_frame() {
+            Ok(stats) => stats,
+            Err(e) => {
+                eprintln!("[KmsPresenter] Frame presentation error: {}", e);
+                let now = Instant::now();
+                let elapsed = now.duration_since(self.last_frame_time);
+                self.last_frame_time = now;
+                self.frame_counter += 1;
+                let frame_time_ms = elapsed.as_secs_f32() * 1000.0;
+                let fps = if frame_time_ms > 0.0 { 1000.0 / frame_time_ms } else { self.refresh_rate_hz as f32 };
+                PresentationStats {
+                    frame_index: self.frame_counter,
+                    slot: self.current_slot,
+                    frame_time_ms,
+                    fps,
+                    dropped_frames: 1,
+                    is_hardware: self.drm_device.is_hardware,
+                    page_flip_success: false,
+                    backend: if self.drm_device.is_hardware {
+                        "drm_kms_hardware"
+                    } else {
+                        "virtual_software_fallback"
+                    },
+                }
+            }
         }
     }
 }
@@ -144,6 +194,18 @@ mod tests {
         let stats = presenter.present_frame();
         assert_eq!(stats.slot, slot);
         assert_eq!(stats.frame_index, 1);
+        assert!(stats.page_flip_success);
+        assert_eq!(stats.backend, "virtual_software_fallback");
         assert_eq!(presenter.drm_buffers[slot].get_pixel(15, 15), 0xFF00FF00);
+    }
+
+    #[test]
+    fn test_try_present_frame_propagates_page_flip_error() {
+        let mut presenter = KmsPresenter::with_resolution(100, 100, 60);
+        // Set invalid fb_id to trigger page_flip failure
+        presenter.drm_buffers[0].fb_id = 0;
+        let res = presenter.try_present_frame();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("Invalid framebuffer ID: 0"));
     }
 }

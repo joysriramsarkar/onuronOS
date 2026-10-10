@@ -5,7 +5,8 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use nilupd::{
-    apply_update, get_install_root, rollback, status, verify_image,
+    apply_update, boot_status, get_install_root, mark_boot_successful, record_boot_attempt,
+    rollback, status, verify_image,
 };
 use nilpkg::get_key_dir;
 
@@ -18,6 +19,9 @@ fn print_help() {
     println!("  nilupd apply <update-dir>    — Verify and atomically apply to the inactive slot");
     println!("  nilupd rollback              — Flip back to the previously active slot");
     println!("  nilupd status                — Show the active slot and running image hash");
+    println!("  nilupd boot-status           — Show bootloader/boot-control slot state & tries remaining");
+    println!("  nilupd boot-mark-success     — Confirm current boot candidate successful (clears rollback)");
+    println!("  nilupd boot-attempt          — Record candidate boot attempt (tests auto-rollback limit)");
     println!("  nilupd daemon                — Recover any interrupted update, then run");
     println!("  nilupd help                  — Show this message");
     println!("=========================================================");
@@ -86,9 +90,47 @@ fn main() -> ExitCode {
                         }
                     );
                 }
+                if let Some(bc) = &s.boot_control {
+                    println!("[nilupd] Boot Control Backend: {} (simulated: {})", bc.backend_name, bc.is_simulated);
+                    println!("  current boot slot: {}, fallback: {}", bc.current_slot, bc.fallback_slot);
+                    for bs in &bc.slots {
+                        println!(
+                            "  slot {}: successful={}, tries_remaining={}, bootable={}",
+                            bs.slot, bs.is_successful, bs.tries_remaining, bs.is_bootable
+                        );
+                    }
+                }
                 ExitCode::SUCCESS
             }
             Err(e) => failure("Status", e),
+        },
+        "boot-status" => match boot_status(&get_install_root()) {
+            Ok(bc) => {
+                println!("[nilupd] Boot Control Backend: {}", bc.backend_name);
+                println!("  current slot: {}, fallback slot: {}", bc.current_slot, bc.fallback_slot);
+                for bs in &bc.slots {
+                    println!(
+                        "  slot {}: active={}, successful={}, tries_remaining={}, bootable={}",
+                        bs.slot, bs.is_active, bs.is_successful, bs.tries_remaining, bs.is_bootable
+                    );
+                }
+                ExitCode::SUCCESS
+            }
+            Err(e) => failure("Boot Status", e),
+        },
+        "boot-mark-success" => match mark_boot_successful(&get_install_root()) {
+            Ok(()) => {
+                println!("[nilupd] Boot marked successful. Rollback timer cleared.");
+                ExitCode::SUCCESS
+            }
+            Err(e) => failure("Mark Boot Successful", e),
+        },
+        "boot-attempt" => match record_boot_attempt(&get_install_root()) {
+            Ok(slot) => {
+                println!("[nilupd] Recorded boot attempt for slot {slot}. Boot succeeded.");
+                ExitCode::SUCCESS
+            }
+            Err(e) => failure("Boot Attempt", e),
         },
         "daemon" | "run" => {
             nilupd::run_daemon();

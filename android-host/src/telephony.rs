@@ -46,6 +46,8 @@ impl AndroidHostTelephony {
                         let num = match &self.call_state {
                             CallState::Ringing { incoming_number } => incoming_number.clone(),
                             CallState::Active { number, .. } => number.clone(),
+                            CallState::Dialing { number } => number.clone(),
+                            CallState::DialerPresented { number } => number.clone(),
                             _ => "Unknown".to_string(),
                         };
                         self.active_call_id = Some(call_id.clone());
@@ -113,9 +115,10 @@ impl TelephonyHal for AndroidHostTelephony {
             .unwrap_or(0);
         let call_id = format!("call_{}_{}", trimmed.replace(['+', '-', ' '], ""), now_ms);
 
-        self.call_state = CallState::Active {
+        // In hosted Android mode, dial triggers Intent.ACTION_DIAL which presents the host dialer.
+        // It does NOT establish an active call immediately until the host telephony callback fires.
+        self.call_state = CallState::DialerPresented {
             number: trimmed.to_string(),
-            duration_secs: 0,
         };
         self.active_call_id = Some(call_id.clone());
 
@@ -211,12 +214,22 @@ mod tests {
         // Empty number fails
         assert!(tel.dial("").is_err());
 
-        // Valid dial
+        // Valid dial: in hosted Android mode, dial presents the host dialer first
         let call_id = tel.dial("+919876543210").expect("Dial should succeed");
         assert!(call_id.starts_with("call_919876543210"));
         match tel.get_call_state() {
+            CallState::DialerPresented { number } => assert_eq!(number, "+919876543210"),
+            other => panic!("Expected dialer presented state, got {:?}", other),
+        }
+
+        // Host reports call became active via TelecomManager callback
+        tel.handle_host_event(&HostToGuestEvent::CallStateChanged {
+            call_id: call_id.clone(),
+            state: "ACTIVE".into(),
+        });
+        match tel.get_call_state() {
             CallState::Active { number, .. } => assert_eq!(number, "+919876543210"),
-            _ => panic!("Expected active call state"),
+            other => panic!("Expected active call state, got {:?}", other),
         }
 
         // Hangup

@@ -83,6 +83,8 @@ fn cmd_sign(args: &[String]) -> Result<(), String> {
     let mut version = "1.0.0".to_string();
     let mut target_slot = "B".to_string();
     let mut current_hash = String::new();
+    let mut target_device = String::new();
+    let mut rollback_index: u32 = 0;
 
     let mut i = 2;
     while i < args.len() {
@@ -113,6 +115,20 @@ fn cmd_sign(args: &[String]) -> Result<(), String> {
                 i += 1;
                 if let Some(h) = args.get(i) {
                     current_hash = h.clone();
+                }
+            }
+            "--device" => {
+                i += 1;
+                if let Some(d) = args.get(i) {
+                    target_device = d.clone();
+                }
+            }
+            "--rollback-index" => {
+                i += 1;
+                if let Some(r) = args.get(i) {
+                    rollback_index = r
+                        .parse::<u32>()
+                        .map_err(|e| format!("Invalid rollback index: {e}"))?;
                 }
             }
             other => return Err(format!("Unknown option '{other}'")),
@@ -157,6 +173,8 @@ fn cmd_sign(args: &[String]) -> Result<(), String> {
         current_image_sha256: current_hash,
         image_sha256,
         image_size,
+        target_device,
+        rollback_index,
         signature_hex: None,
         public_key_hex: None,
     };

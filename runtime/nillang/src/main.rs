@@ -79,11 +79,36 @@ fn main() {
                 fs::read(path).expect("read bytecode")
             };
 
-            let vm = nillang::load_package(&bytes).expect("load bytecode");
+            let mut vm = nillang::load_package(&bytes).expect("load bytecode");
             println!("[nilc] Executing native NilLang app: {}", vm.package.app_name);
             match vm.render_scene() {
                 Ok(scene) => println!("[nilc] Active Scene Render:\n{scene}"),
                 Err(e) => eprintln!("[nilc] Runtime Error: {e}"),
+            }
+
+            match vm.to_alap_component() {
+                Ok(comp) => {
+                    println!("[nilc] Alap Declarative Component: {} nodes", comp.node_count());
+                    let mut fb = nilui::SoftwareFramebufferBackend::new(400, 600);
+                    let (fw, fh) = nilui::render_component_to_backend(&mut fb, &comp, 20, 20);
+                    println!("[nilc] NilUI Framebuffer Render: bounds ({fw}x{fh})");
+                }
+                Err(e) => eprintln!("[nilc] Alap Component Warning: {e}"),
+            }
+
+            // Interactive event or state update simulation
+            let mut i = 3;
+            while i < args.len() {
+                if args[i] == "--tap" && i + 1 < args.len() {
+                    let tap_key = &args[i + 1];
+                    vm.update_state("status", "Launched");
+                    vm.update_state(tap_key, "Tapped");
+                    if let Ok(updated_scene) = vm.render_scene() {
+                        println!("[nilc] Post-Event Scene:\n{updated_scene}");
+                    }
+                    i += 1;
+                }
+                i += 1;
             }
         }
         _ => {

@@ -26,6 +26,10 @@ pub const SIMULATED_SCREENS: &[(&str, &str)] = &[
     ("android", "container status is placeholder text; no LXC container is started"),
     ("terminal", "`ps`, `services` and `net` output is fabricated"),
     ("notifications", "notification history is fabricated"),
+    ("calculator", "evaluates basic arithmetic expressions; scientific/CAS not implemented"),
+    ("notes", "ships with seeded sample notes; dynamic note sync/database simulated"),
+    ("music", "track list and playback status are simulated demo strings"),
+    ("camera", "viewfinder and sensor specs are simulated; live video stream requires camerad"),
 ];
 
 /// The badge token.
@@ -107,6 +111,10 @@ mod tests {
             crate::Screen::AppSoftBus,
             crate::Screen::AppAndroid,
             crate::Screen::AppTerminal,
+            crate::Screen::AppCalculator,
+            crate::Screen::AppNotes,
+            crate::Screen::AppMusic,
+            crate::Screen::AppCamera,
             crate::Screen::NotificationShade,
         ]
         .iter()

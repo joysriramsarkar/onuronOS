@@ -56,3 +56,46 @@ pub fn first_listener_or_bind(_fallback_path: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Notify supervisor and runtime that this service has initialized and is ready.
+///
+/// On Unix, if NOTIFY_SOCKET or ONURON_NOTIFY_SOCKET is present, a datagram notification
+/// is dispatched. Additionally, the readiness marker `/run/onuron/ready/<service_name>` is written.
+#[cfg(unix)]
+pub fn notify_ready(service_name: &str, sock_path: Option<&str>) -> std::io::Result<()> {
+    if let Ok(notify_socket) = env::var("NOTIFY_SOCKET").or_else(|_| env::var("ONURON_NOTIFY_SOCKET")) {
+        use std::os::unix::net::UnixDatagram;
+        if let Ok(socket) = UnixDatagram::unbound() {
+            let msg = format!("READY=1\nMAINPID={}\nSERVICE={}\n", std::process::id(), service_name);
+            let _ = socket.send_to(msg.as_bytes(), &notify_socket);
+        }
+    }
+
+    let ready_dir = std::path::Path::new("/run/onuron/ready");
+    let _ = std::fs::create_dir_all(ready_dir);
+    let ready_file = ready_dir.join(service_name);
+    let pid = std::process::id();
+    let sock = sock_path.unwrap_or("");
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let content = format!("pid={}\nsocket={}\ntimestamp_secs={}\n", pid, sock, timestamp);
+    std::fs::write(ready_file, content)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn notify_ready(_service_name: &str, _sock_path: Option<&str>) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_notify_ready_does_not_panic() {
+        assert!(notify_ready("test_daemon", Some("/run/onuron/test.sock")).is_ok());
+    }
+}
+

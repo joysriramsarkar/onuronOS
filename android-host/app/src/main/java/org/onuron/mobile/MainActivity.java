@@ -1397,7 +1397,21 @@ public class MainActivity extends Activity {
 
             y += dp(36);
 
+            String bridgeBadge;
+            int badgeColor;
+            if (!NativeBridge.isNativeLoaded) {
+                bridgeBadge = "[HOSTED / NATIVE BRIDGE OFFLINE]";
+                badgeColor = COLOR_AMBER;
+            } else if (NativeBridge.getProtocolVersion() == 1) {
+                bridgeBadge = "[HOSTED / NATIVE BRIDGE v1 ONLINE]";
+                badgeColor = COLOR_GREEN;
+            } else {
+                bridgeBadge = "[HOSTED / JNI ABI MISMATCH]";
+                badgeColor = COLOR_RED;
+            }
+
             SettingToggle[] toggles = {
+                    new SettingToggle("নেটিভ ব্রিজ রানটাইম (Native Bridge)", bridgeBadge, badgeColor, "toggle_bridge_info"),
                     new SettingToggle("ভাইব্রেশন ও হ্যাপটিক (Vibration)", vibratorEnabled ? "[ চালু ]" : "[ বন্ধ ]", vibratorEnabled ? COLOR_GREEN : getTextDimColor(), "toggle_vibration"),
                     new SettingToggle("ডার্ক মোড থিম (Theme)", darkMode ? "[ ডার্ক ]" : "[ লাইট ]", darkMode ? COLOR_GREEN : COLOR_AMBER, "toggle_dark"),
                     new SettingToggle("ওয়াইফাই নেটওয়ার্ক (Wi-Fi)", wifiEnabled ? "[ চালু • ৩/৩ ]" : "[ বন্ধ ]", wifiEnabled ? COLOR_CYAN : getTextDimColor(), "toggle_wifi"),
@@ -1925,7 +1939,7 @@ public class MainActivity extends Activity {
             canvas.drawText("Onuron OS সম্পর্কে (About)", dp(20), y + dp(20), paint);
 
             y += dp(36);
-            RectF card = new RectF(dp(20), y, w - dp(20), y + dp(210));
+            RectF card = new RectF(dp(20), y, w - dp(20), y + dp(250));
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(getSurfaceColor());
             canvas.drawRoundRect(card, dp(14), dp(14), paint);
@@ -1935,14 +1949,35 @@ public class MainActivity extends Activity {
             canvas.drawRoundRect(card, dp(14), dp(14), paint);
 
             paint.setStyle(Paint.Style.FILL);
-            paint.setTextSize(dp(12.5f));
-            paint.setFakeBoldText(false);
             paint.setTextAlign(Paint.Align.LEFT);
 
-            float ty = y + dp(30);
+            // Runtime Status Badge (Truth-in-status gate)
+            String bridgeBadge;
+            int badgeColor;
+            if (!NativeBridge.isNativeLoaded) {
+                bridgeBadge = "⚠️ [HOSTED / NATIVE BRIDGE OFFLINE]";
+                badgeColor = COLOR_AMBER;
+            } else if (NativeBridge.getProtocolVersion() == 1) {
+                bridgeBadge = "⚡ [HOSTED / NATIVE BRIDGE v1 ONLINE]";
+                badgeColor = COLOR_GREEN;
+            } else {
+                bridgeBadge = "❌ [HOSTED / JNI ABI MISMATCH]";
+                badgeColor = COLOR_RED;
+            }
+
+            paint.setColor(badgeColor);
+            paint.setTextSize(dp(13f));
+            paint.setFakeBoldText(true);
+            canvas.drawText(bridgeBadge, dp(34), y + dp(28), paint);
+
+            paint.setTextSize(dp(12.5f));
+            paint.setFakeBoldText(false);
+
+            float ty = y + dp(54);
             String[] lines = {
                     "📘 Onuron OS (অনুরণ ওএস) — v1.0.0-alpha",
-                    "• মেমরি-নিরাপদ Rust ইউজারস্পেস",
+                    "• Track B: Samsung S25 Hosted App Runtime",
+                    "• মেমরি-নিরাপদ Rust ইউজারস্পেস (libandroid_host.so)",
                     "• Alap রিঅ্যাক্টিভ মোবাইল UI ফ্রেমওয়ার্ক",
                     "• Samsung Galaxy S25 Snapdragon 8 Elite টেস্ট ল্যাব",
                     "• ১২০Hz ডায়নামিক AMOLED ২X অপ্টিমাইজড",
@@ -1953,7 +1988,7 @@ public class MainActivity extends Activity {
             for (String l : lines) {
                 paint.setColor(l.startsWith("📘") ? COLOR_CYAN : getTextMedColor());
                 canvas.drawText(l, dp(34), ty, paint);
-                ty += dp(24);
+                ty += dp(23);
             }
         }
 
@@ -2004,7 +2039,7 @@ public class MainActivity extends Activity {
         @Override
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
-            NativeBridge.onSurfaceChanged(null, w, h);
+            NativeBridge.onViewResized(w, h);
         }
 
         @Override
@@ -2094,6 +2129,7 @@ public class MainActivity extends Activity {
                     activity.setMessageInputVisible(false);
                     activity.hideBrowser();
                     break;
+                case "toggle_bridge_info":
                 case "app_about":
                 case "app_softbus":
                     screen = Screen.ABOUT;

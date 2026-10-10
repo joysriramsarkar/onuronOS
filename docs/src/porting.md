@@ -68,4 +68,4 @@ fastboot reboot
 ## 🔌 হার্ডওয়্যার ড্রাইভার ও ভেন্ডর ব্লব (Vendor Blobs)
 NilOS-এর **HAL আর্কিটেকচার** Android Treble দর্শন অনুসরণ করে:
 - ফোনের অরিজিনাল `/vendor` পার্টিশন অপরিবর্তিত থাকে।
-- NilOS-এর [runtime/nilhal](file:///c:/Users/joysr/Documents/OS/nilos/runtime/nilhal) লোডার **libhybris** ব্যবহার করে ভেন্ডর ড্রাইভারের (Adreno GPU, Camera HAL, Audio, Modem) সাথে কমিউনিকেট করে।
+- NilOS-এর [runtime/nilhal](../../runtime/nilhal) লোডার **libhybris** ব্যবহার করে ভেন্ডর ড্রাইভারের (Adreno GPU, Camera HAL, Audio, Modem) সাথে কমিউনিকেট করে।

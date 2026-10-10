@@ -24,16 +24,7 @@ jobs:
       - name: Workspace tests
         run: cargo test --workspace --all-targets
       - name: Build & harness unit tests
-        run: >
-          python3 -m unittest
-          build/test_mkinitramfs.py
-          build/test_mkbootimg.py
-          build/test_mkvbmeta.py
-          build/test_qemu_smoke.py
-          build/test_reproducible.py
-          build/test_persistent_data.py
-          build/test_gen_maturity.py
-          build/test_selinux_audit.py
+        run: python3 -m unittest discover -s build -p "test_*.py"
       - name: Workspace lint
         run: cargo clippy --workspace --all-targets -- -W clippy::all
       - name: Build Linux musl binaries

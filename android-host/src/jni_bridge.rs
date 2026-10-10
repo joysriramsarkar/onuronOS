@@ -10,6 +10,11 @@ use std::sync::Mutex;
 use crate::bridge::{GuestToHostCommand, HostToGuestEvent};
 use crate::input::AndroidHostInput;
 
+pub const MAX_COMMAND_QUEUE_CAPACITY: usize = 1024;
+pub const MAX_EVENT_QUEUE_CAPACITY: usize = 1024;
+pub const JNI_PROTOCOL_VERSION: i32 = 1;
+pub const MAX_EVENT_JSON_BYTES: usize = 1_048_576; // 1 MiB upper bound
+
 static BRIDGE_RUNNING: AtomicBool = AtomicBool::new(false);
 static SURFACE_WIDTH: AtomicU32 = AtomicU32::new(1080);
 static SURFACE_HEIGHT: AtomicU32 = AtomicU32::new(2340);
@@ -46,9 +51,12 @@ pub fn get_latest_frame() -> Option<Vec<u32>> {
 pub fn copy_latest_frame_to_slice(out: &mut [u32]) -> usize {
     if let Ok(lock) = GLOBAL_FRAME_BUFFER.lock() {
         if let Some(ref frame) = *lock {
-            let to_copy = frame.len().min(out.len());
-            out[..to_copy].copy_from_slice(&frame[..to_copy]);
-            return to_copy;
+            if out.len() < frame.len() {
+                // Reject undersized destination buffer to prevent sheared/corrupted partial display on Android Surface
+                return 0;
+            }
+            out[..frame.len()].copy_from_slice(frame);
+            return frame.len();
         }
     }
     0
@@ -59,9 +67,15 @@ pub fn get_frame_count() -> u64 {
 }
 
 // ─── Command Queue (Guest -> Host) ────────────────────────────────────────────
-pub fn enqueue_guest_command(cmd: GuestToHostCommand) {
+pub fn enqueue_guest_command(cmd: GuestToHostCommand) -> bool {
     if let Ok(mut lock) = GLOBAL_COMMAND_QUEUE.lock() {
+        if lock.len() >= MAX_COMMAND_QUEUE_CAPACITY {
+            lock.pop_front();
+        }
         lock.push_back(cmd);
+        true
+    } else {
+        false
     }
 }
 
@@ -82,12 +96,18 @@ pub fn pending_guest_command_count() -> usize {
 }
 
 // ─── Event Ingestion (Host -> Guest) ──────────────────────────────────────────
-pub fn push_host_event(event: HostToGuestEvent) {
+pub fn push_host_event(event: HostToGuestEvent) -> bool {
     with_global_input(|input| {
         input.ingest_host_event(event.clone());
     });
     if let Ok(mut lock) = GLOBAL_EVENT_QUEUE.lock() {
+        if lock.len() >= MAX_EVENT_QUEUE_CAPACITY {
+            lock.pop_front();
+        }
         lock.push_back(event);
+        true
+    } else {
+        false
     }
 }
 
@@ -227,7 +247,23 @@ pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeSurfaceDestro
     _class: *mut c_void,
 ) {
     BRIDGE_RUNNING.store(false, Ordering::SeqCst);
+    if let Ok(mut lock) = GLOBAL_FRAME_BUFFER.lock() {
+        *lock = None;
+    }
     println!("[native_bridge] Surface destroyed in host Android runtime");
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeViewResized(
+    _env: *mut c_void,
+    _class: *mut c_void,
+    width: i32,
+    height: i32,
+) {
+    if width > 0 && height > 0 {
+        SURFACE_WIDTH.store(width as u32, Ordering::Relaxed);
+        SURFACE_HEIGHT.store(height as u32, Ordering::Relaxed);
+    }
 }
 
 #[no_mangle]
@@ -292,7 +328,7 @@ pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeGetProtocolVe
     _env: *mut c_void,
     _class: *mut c_void,
 ) -> i32 {
-    1
+    JNI_PROTOCOL_VERSION
 }
 
 #[no_mangle]
@@ -400,13 +436,67 @@ pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativePushHostEvent
     if json_ptr.is_null() {
         return false;
     }
-    if let Ok(c_str) = CStr::from_ptr(json_ptr).to_str() {
-        if let Ok(event) = serde_json::from_str::<HostToGuestEvent>(c_str) {
-            push_host_event(event);
-            return true;
+    let c_str = CStr::from_ptr(json_ptr);
+    let bytes = c_str.to_bytes();
+    if bytes.is_empty() || bytes.len() > MAX_EVENT_JSON_BYTES {
+        return false;
+    }
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        if let Ok(event) = serde_json::from_str::<HostToGuestEvent>(s) {
+            return push_host_event(event);
         }
     }
     false
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeGetProtocolInfoJson(
+    _env: *mut c_void,
+    _class: *mut c_void,
+) -> *const c_char {
+    let info = serde_json::json!({
+        "protocol_version": JNI_PROTOCOL_VERSION,
+        "major": 1,
+        "minor": 1,
+        "max_command_queue": MAX_COMMAND_QUEUE_CAPACITY,
+        "max_event_queue": MAX_EVENT_QUEUE_CAPACITY,
+        "max_payload_bytes": MAX_EVENT_JSON_BYTES,
+        "supported_features": [
+            "display_frame",
+            "touch_input",
+            "audio_pcm",
+            "camera_jpeg",
+            "telephony_intents",
+            "connectivity_telemetry",
+            "sensor_events"
+        ],
+        "runtime_mode": "hosted_evaluation_s25",
+        "is_simulated": false
+    });
+    if let Ok(json) = serde_json::to_string(&info) {
+        if let Ok(c_str) = CString::new(json) {
+            return c_str.into_raw();
+        }
+    }
+    std::ptr::null()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeGetLatestFrameDimensions(
+    _env: *mut c_void,
+    _class: *mut c_void,
+    out_dims: *mut i32,
+    max_len: i32,
+) -> i32 {
+    if !out_dims.is_null() && max_len >= 3 {
+        let (w, h) = get_surface_dimensions();
+        let slice = std::slice::from_raw_parts_mut(out_dims, 3);
+        slice[0] = w as i32;
+        slice[1] = h as i32;
+        slice[2] = (w * h) as i32;
+        return 3;
+    }
+    0
 }
 
 #[cfg(test)]
@@ -505,5 +595,140 @@ mod tests {
         let n = pull_audio_record(&mut rec_buf);
         assert_eq!(n, 2);
         assert_eq!(&rec_buf[..n], &[50, 60]);
+    }
+
+    #[test]
+    fn test_bounded_command_and_event_queues() {
+        let _guard = test_lock();
+        while poll_guest_command().is_some() {}
+        while poll_host_event().is_some() {}
+
+        // Fill command queue beyond max capacity
+        for i in 0..(MAX_COMMAND_QUEUE_CAPACITY + 10) {
+            enqueue_guest_command(GuestToHostCommand::SetBrightness {
+                percent: (i % 100) as u8,
+            });
+        }
+        assert_eq!(pending_guest_command_count(), MAX_COMMAND_QUEUE_CAPACITY);
+
+        // Fill event queue beyond max capacity
+        for _ in 0..(MAX_EVENT_QUEUE_CAPACITY + 10) {
+            push_host_event(HostToGuestEvent::HostResume);
+        }
+        let mut event_count = 0;
+        while poll_host_event().is_some() {
+            event_count += 1;
+        }
+        assert_eq!(event_count, MAX_EVENT_QUEUE_CAPACITY);
+    }
+
+    #[test]
+    fn test_protocol_version_and_surface_destroy_clears_buffer() {
+        let _guard = test_lock();
+        unsafe {
+            assert_eq!(
+                Java_org_onuron_mobile_NativeBridge_nativeGetProtocolVersion(
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut()
+                ),
+                1
+            );
+
+            // Publish a frame
+            publish_display_frame(&[0xFF00FF00, 0xFF0000FF], 2, 1);
+            assert!(get_latest_frame().is_some());
+
+            // Destroy surface -> clears frame buffer immediately
+            Java_org_onuron_mobile_NativeBridge_nativeSurfaceDestroyed(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            assert!(get_latest_frame().is_none());
+            assert!(!is_bridge_active());
+
+            // Restore test dimensions
+            SURFACE_WIDTH.store(1080, Ordering::Relaxed);
+            SURFACE_HEIGHT.store(2340, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn test_frame_dimensions_and_undersized_buffer_rejected() {
+        let _guard = test_lock();
+        unsafe {
+            let mut dims = [0i32; 3];
+            let ret = Java_org_onuron_mobile_NativeBridge_nativeGetLatestFrameDimensions(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                dims.as_mut_ptr(),
+                3,
+            );
+            assert_eq!(ret, 3);
+            assert_eq!(dims[0], 1080);
+            assert_eq!(dims[1], 2340);
+            assert_eq!(dims[2], 1080 * 2340);
+
+            // Publish a 4-pixel frame
+            let pixels = [0xFF112233u32, 0xFF445566, 0xFF778899, 0xFFAABBCC];
+            publish_display_frame(&pixels, 2, 2);
+
+            // 1. Destination buffer that is too small must be rejected (returns 0)
+            let mut small_out = [0u32; 2];
+            assert_eq!(copy_latest_frame_to_slice(&mut small_out), 0);
+
+            // 2. Adequate destination buffer succeeds
+            let mut full_out = [0u32; 4];
+            assert_eq!(copy_latest_frame_to_slice(&mut full_out), 4);
+            assert_eq!(full_out, pixels);
+
+            // Restore test dimensions
+            SURFACE_WIDTH.store(1080, Ordering::Relaxed);
+            SURFACE_HEIGHT.store(2340, Ordering::Relaxed);
+        }
+    }
+
+    #[test]
+    fn test_protocol_info_json_and_bounded_event_json() {
+        let _guard = test_lock();
+        unsafe {
+            let ptr = Java_org_onuron_mobile_NativeBridge_nativeGetProtocolInfoJson(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            );
+            assert!(!ptr.is_null());
+            let c_str = CStr::from_ptr(ptr);
+            let json_str = c_str.to_str().expect("Valid UTF-8 JSON");
+            assert!(json_str.contains("\"protocol_version\":1"));
+            assert!(json_str.contains("\"supported_features\""));
+            assert!(json_str.contains("\"max_payload_bytes\":1048576"));
+            Java_org_onuron_mobile_NativeBridge_nativeFreeCommandString(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                ptr as *mut c_char,
+            );
+
+            // Test null pointer rejected
+            assert!(!Java_org_onuron_mobile_NativeBridge_nativePushHostEventJson(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            ));
+
+            // Test valid JSON event ingestion
+            let valid_json = CString::new("{\"type\":\"HostResume\"}").unwrap();
+            assert!(Java_org_onuron_mobile_NativeBridge_nativePushHostEventJson(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                valid_json.as_ptr(),
+            ));
+
+            // Test malformed JSON rejected
+            let bad_json = CString::new("{\"invalid\":123}").unwrap();
+            assert!(!Java_org_onuron_mobile_NativeBridge_nativePushHostEventJson(
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                bad_json.as_ptr(),
+            ));
+        }
     }
 }
