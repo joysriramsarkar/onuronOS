@@ -13,6 +13,7 @@ import io
 import shutil
 import struct
 import subprocess
+import tempfile
 import urllib.request
 import argparse
 import json
@@ -82,31 +83,38 @@ def provision_storage_modules(arch, rootfs_dir, out_dir):
             return
 
     try:
-        try:
-            from PySquashfsImage import SquashFsImage
-            with open(modloop_path, "rb") as f:
-                img = SquashFsImage(f)
-                for item in img.root.riter():
-                    if item.name in STORAGE_MODULE_NAMES:
-                        target = os.path.join(dest_dir, item.name)
-                        with open(target, "wb") as out:
-                            out.write(item.read_bytes())
-        except ImportError:
-            unsquashfs_bin = shutil.which("unsquashfs")
-            if unsquashfs_bin:
-                with tempfile.TemporaryDirectory() as tmp_sq:
-                    subprocess.run(
-                        [unsquashfs_bin, "-f", "-d", tmp_sq, modloop_path] + [f"*{m}" for m in STORAGE_MODULE_NAMES],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=False,
-                    )
-                    for root, _, files in os.walk(tmp_sq):
-                        for f in files:
-                            if f in STORAGE_MODULE_NAMES:
-                                shutil.copy(os.path.join(root, f), os.path.join(dest_dir, f))
-            else:
-                print("[WARN] Neither PySquashfsImage nor unsquashfs available; cannot unpack modloop-virt.")
+        unsquashfs_bin = shutil.which("unsquashfs")
+        if unsquashfs_bin:
+            with tempfile.TemporaryDirectory() as tmp_sq:
+                subprocess.run(
+                    [unsquashfs_bin, "-f", "-d", tmp_sq, modloop_path],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                for root, _, files in os.walk(tmp_sq):
+                    for f in files:
+                        if f in STORAGE_MODULE_NAMES:
+                            shutil.copy(os.path.join(root, f), os.path.join(dest_dir, f))
+        else:
+            try:
+                from PySquashfsImage import SquashFsImage
+                def _collect_entries(entry):
+                    if hasattr(entry, "iter"):
+                        for child in entry.iter():
+                            yield from _collect_entries(child)
+                    else:
+                        yield entry
+
+                with open(modloop_path, "rb") as f:
+                    img = SquashFsImage(f)
+                    for item in _collect_entries(img.root):
+                        if getattr(item, "name", "") in STORAGE_MODULE_NAMES:
+                            target = os.path.join(dest_dir, item.name)
+                            with open(target, "wb") as out:
+                                out.write(item.read_bytes())
+            except ImportError:
+                print("[WARN] Neither unsquashfs nor PySquashfsImage available; cannot unpack modloop-virt.")
     except Exception as exc:
         print(f"[WARN] Could not extract storage modules from {modloop_path}: {exc}")
 
