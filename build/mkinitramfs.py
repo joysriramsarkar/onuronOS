@@ -59,7 +59,15 @@ KERNEL_PATH = os.path.join(OUT, ARCH_CONFIGS["x86_64"]["kernel_name"])
 INITRD_PATH = os.path.join(OUT, "nilos-initramfs.cpio.gz")
 KERNEL_URL = ARCH_CONFIGS["x86_64"]["kernel_url"]
 
-STORAGE_MODULE_NAMES = ["virtio_blk.ko", "crc16.ko", "mbcache.ko", "jbd2.ko", "ext4.ko"]
+STORAGE_MODULE_NAMES = [
+    "virtio_blk.ko",
+    "crc32c_generic.ko",
+    "libcrc32c.ko",
+    "crc16.ko",
+    "mbcache.ko",
+    "jbd2.ko",
+    "ext4.ko",
+]
 
 
 def provision_storage_modules(arch, rootfs_dir, out_dir):

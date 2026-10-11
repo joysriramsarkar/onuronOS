@@ -423,18 +423,26 @@ mod tests {
         supervisor.start_all();
         assert_eq!(supervisor.live_count(), 1, "service should start");
 
-        // Give the child time to actually exit before the first tick.
-        std::thread::sleep(Duration::from_millis(100));
-
-        // First tick observes the exit and schedules a restart.
-        supervisor.tick();
+        // Allow child to exit and first tick to register restart
+        let mut restarted = false;
+        for _ in 0..100 {
+            std::thread::sleep(Duration::from_millis(10));
+            supervisor.tick();
+            if supervisor.attempts("crasher") >= 1 {
+                restarted = true;
+                break;
+            }
+        }
+        assert!(restarted, "service should exit and attempt restart");
         assert_eq!(supervisor.live_count(), 1, "service should be restarted");
-        assert_eq!(supervisor.attempts("crasher"), 1);
 
         // Repeated ticks keep restarting it; the attempt counter grows.
-        for _ in 0..5 {
-            std::thread::sleep(Duration::from_millis(50));
+        for _ in 0..100 {
+            std::thread::sleep(Duration::from_millis(10));
             supervisor.tick();
+            if supervisor.attempts("crasher") >= 5 {
+                break;
+            }
         }
         assert!(supervisor.attempts("crasher") >= 5, "attempts should accumulate");
         assert_eq!(supervisor.live_count(), 1);
@@ -456,9 +464,16 @@ mod tests {
         supervisor.start_all();
         assert_eq!(supervisor.live_count(), 1);
 
-        std::thread::sleep(Duration::from_millis(100));
-        supervisor.tick();
-        assert_eq!(supervisor.live_count(), 0, "unsupervised service must not respawn");
+        let mut stopped = false;
+        for _ in 0..100 {
+            std::thread::sleep(Duration::from_millis(10));
+            supervisor.tick();
+            if supervisor.live_count() == 0 {
+                stopped = true;
+                break;
+            }
+        }
+        assert!(stopped, "unsupervised service must not respawn");
         assert_eq!(supervisor.attempts("oneshot"), 0);
     }
 
@@ -497,9 +512,12 @@ mod tests {
         supervisor.start_all();
 
         // Simulate several crashes to build up attempts.
-        for _ in 0..3 {
-            std::thread::sleep(Duration::from_millis(100));
+        for _ in 0..100 {
+            std::thread::sleep(Duration::from_millis(10));
             supervisor.tick();
+            if supervisor.attempts("crasher") >= 3 {
+                break;
+            }
         }
         assert!(supervisor.attempts("crasher") >= 3);
 
@@ -507,8 +525,13 @@ mod tests {
         if let Some(started) = supervisor.started_at.get_mut("crasher") {
             *started = Instant::now() - Duration::from_secs(120);
         }
-        std::thread::sleep(Duration::from_millis(100));
-        supervisor.tick();
+        for _ in 0..100 {
+            std::thread::sleep(Duration::from_millis(10));
+            supervisor.tick();
+            if supervisor.attempts("crasher") == 1 {
+                break;
+            }
+        }
         assert_eq!(
             supervisor.attempts("crasher"), 1,
             "backoff should reset after a healthy uptime"

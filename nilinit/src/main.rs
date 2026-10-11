@@ -132,9 +132,9 @@ fn mount_early_fs() {
 
         // Attach stdout/stderr to console or ttyS0
         unsafe {
-            let mut fd = libc::open(b"/dev/console\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
+            let mut fd = libc::open(c"/dev/console".as_ptr(), libc::O_RDWR);
             if fd < 0 {
-                fd = libc::open(b"/dev/ttyS0\0".as_ptr() as *const libc::c_char, libc::O_RDWR);
+                fd = libc::open(c"/dev/ttyS0".as_ptr(), libc::O_RDWR);
             }
             if fd >= 0 {
                 libc::dup2(fd, 0);
@@ -155,9 +155,12 @@ fn load_kernel_modules() {
             return;
         }
 
-        // Required order: virtio_blk first for /dev/vda, then crc16, mbcache, jbd2, ext4
+        // Required order: virtio_blk first for /dev/vda, then crc32c crypto stack, crc16, mbcache, jbd2, ext4
         let module_order = [
             "virtio_blk.ko",
+            "crc32c_generic.ko",
+            "crc32c-intel.ko",
+            "libcrc32c.ko",
             "crc16.ko",
             "mbcache.ko",
             "jbd2.ko",
@@ -170,12 +173,11 @@ fn load_kernel_modules() {
                 if let Ok(file) = fs::File::open(&mod_path) {
                     use std::os::unix::io::AsRawFd;
                     let fd = file.as_raw_fd();
-                    let param = std::ffi::CString::new("").unwrap();
                     let ret = unsafe {
                         libc::syscall(
                             libc::SYS_finit_module,
                             fd,
-                            param.as_ptr(),
+                            c"".as_ptr(),
                             0 as libc::c_int,
                         )
                     };
