@@ -24,7 +24,7 @@ pub const SIMULATED_SCREENS: &[(&str, &str)] = &[
     ("nilpkg", "repository and installed-package lists are fabricated"),
     ("softbus", "discovered peer list is fabricated; no mDNS scan is running"),
     ("android", "container status is placeholder text; no LXC container is started"),
-    ("terminal", "`ps`, `services` and `net` output is fabricated"),
+    ("terminal", "`services`, `ps`, `net` fallbacks are simulated; `modem`, `audio`, `camera` have no hardware"),
     ("notifications", "notification history is fabricated"),
     ("calculator", "evaluates basic arithmetic expressions; scientific/CAS not implemented"),
     ("notes", "ships with seeded sample notes; dynamic note sync/database simulated"),

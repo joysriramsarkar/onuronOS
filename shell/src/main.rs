@@ -1047,7 +1047,29 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
     }
     let output = match trimmed {
         "help" => {
-            format!("Commands: cd <dir>, pwd, ls [dir], cat <file>, python, calc <expr>, notes, music, camera, services, mem, disk, net, ps, bt, modem, audio, clear, uname, reboot, home  {}", simulated::badge())
+            format!("Commands: cd <dir>, pwd, ls [dir], cat <file>, python, calc <expr>, notes, music, camera, services, mem, disk, net, ps, bt, modem, audio, clear, uname, reboot, home, --diag  {}", simulated::badge())
+        }
+        "--diag" => {
+            let mut out = String::from("Diagnostic: Real vs Simulated Commands\n");
+            out.push_str("────────────────────────────────────────\n");
+            // Real data sources
+            out.push_str("  [REAL]    mem      → /proc/meminfo (Linux)\n");
+            out.push_str("  [REAL]    net      → /sys/class/net (Linux sysfs)\n");
+            out.push_str("  [REAL]    ps       → /proc/*/comm (Linux)\n");
+            out.push_str("  [REAL]    bt       → /sys/class/bluetooth (Linux sysfs)\n");
+            out.push_str("  [REAL]    services → /run/nilos/*.sock + /proc\n");
+            out.push_str("  [REAL]    uname    → /proc/sys/kernel/osrelease\n");
+            out.push_str("  [REAL]    disk     → /data/nilos/oobe_done\n");
+            // Simulated / unavailable
+            out.push_str("  [SIM]     modem    → no cellular modem detected\n");
+            out.push_str("  [SIM]     audio    → no audio hardware detected\n");
+            out.push_str("  [SIM]     camera   → no camera hardware detected\n");
+            out.push_str("  [SIM]     services → fallback when no sockets/proc found\n");
+            out.push_str("  [SIM]     ps       → fallback when /proc not available\n");
+            out.push_str("  [SIM]     bt       → fallback when no sysfs bluetooth\n");
+            out.push_str("  [SIM]     disk     → layout estimated from partition table\n");
+            out.push_str("  [SIM]     uname    → fallback when /proc not available\n");
+            out
         }
         "pwd" => state.term_cwd.clone(),
         "cd" | "cd ~" => {
@@ -1150,6 +1172,7 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
                         out.push_str(&format!("  • {:<12} PID {:<5} ACTIVE\n", name, pid));
                     }
                 } else {
+                    out.push_str("  ⚠️  Service daemon status is simulated in this build.\n");
                     out.push_str(&format!("Supervised Mobile Daemons {}:\n", simulated::badge()));
                     for (name, pid) in &[("nilinit","1"),("powerd","101"),("inputd","102"),("netd","103"),("audiod","104"),("nilshell","105")] {
                         out.push_str(&format!("  • {:12} PID {:<5} DEMO\n", name, pid));
@@ -1174,45 +1197,29 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
                     }
                 }
             } else {
-                out.push_str("  • Virtual Adapter: hci0 [02:00:00:00:00:01]\n");
+                out.push_str("  bluetooth: no adapter detected (simulated environment)\n");
             }
-            out.push_str("  • State: Powered ON • Discovery: Ready\n");
             out.push_str("  • IPC Socket: /run/nilos/bt.sock\n");
             out
         }
         "modem" | "telephony" => {
-            let mut out = String::from("Cellular Telephony (telephonyd):\n");
-            out.push_str("  • SIM Status: Ready (Slot 1)\n");
-            out.push_str("  • Carrier: Onuron Mobile (VoLTE / 5G-NR)\n");
-            out.push_str(&format!("  • Signal Strength: {}/4 Bars\n", state.signal_bars));
-            out.push_str("  • Radio State: Ready • Emergency: 112/911 active\n");
-            out.push_str("  • IPC Socket: /run/nilos/telephony.sock\n");
-            out
+            "modem: no cellular modem detected (simulated environment)".to_string()
         }
         "audio" => {
-            let mut out = String::from("Audio Server & Mixer (audiod):\n");
-            out.push_str("  • Active Sink: Speaker (ALSA PCM Default)\n");
-            out.push_str("  • Master Volume: 75% • Mute: OFF\n");
-            out.push_str("  • Priority Routing: Emergency > Call > Alarm > Notif > Media\n");
-            out.push_str("  • IPC Sockets: /run/onuron/audio.sock, /run/nilos/audio.sock\n");
-            out
+            "audio: no audio hardware detected (simulated environment)".to_string()
         }
         "camera" => {
-            let mut out = String::from("Camera HAL Subsystem (camerad):\n");
-            out.push_str("  • Sensor 0: Primary Back (4032x3024 HDR) • Torch: Ready\n");
-            out.push_str("  • Sensor 1: Front Selfie (1920x1080 30fps)\n");
-            out.push_str("  • Pipeline: 120Hz Direct Buffer Stream\n");
-            out.push_str("  • IPC Socket: /run/nilos/camera.sock\n");
-            out
+            "camera: no camera hardware detected (simulated environment)".to_string()
         }
         "mem" => {
-            let avail = fs::read_to_string("/proc/meminfo")
-                .unwrap_or_else(|_| "MemTotal: 1024000 kB\nMemFree: 950000 kB\n".into());
-            format!("Memory Info:\n{}", avail)
+            match fs::read_to_string("/proc/meminfo") {
+                Ok(info) => format!("Memory Info:\n{}", info),
+                Err(_) => "mem: meminfo not available on this platform".to_string(),
+            }
         }
         "disk" => {
             format!(
-                "Storage:\n  /data  256 MB ext4  (virtual disk nilos.img)\n  /tmp   tmpfs (ephemeral)\n  /run   tmpfs (sockets & runtime)\n  OOBE:  {}\n  User:  {}",
+                "disk: layout estimated from partition table (simulated environment)\nStorage:\n  /data  256 MB ext4  (virtual disk nilos.img)\n  /tmp   tmpfs (ephemeral)\n  /run   tmpfs (sockets & runtime)\n  OOBE:  {}\n  User:  {}",
                 if Path::new(OOBE_DONE).exists() { "✅ Done" } else { "⏳ Pending" },
                 state.user_name
             )
@@ -1239,7 +1246,12 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
                 format!("Network {}:\n  eth0:  10.0.2.15/24 (QEMU NAT via -netdev user)\n  SoftBus: /run/nilos/bus.sock active\n  Wi-Fi:   disabled (no wpa_supplicant yet)", simulated::badge())
             }
         }
-        "uname" => "NilOS 1.0.0-alpha x86_64  Linux 6.6.110-lts  Rust Userspace".to_string(),
+        "uname" => {
+            match fs::read_to_string("/proc/sys/kernel/osrelease") {
+                Ok(rel) => format!("NilOS 1.0.0-alpha x86_64  Linux {}  Rust Userspace", rel.trim()),
+                Err(_) => "NilOS 1.0.0-alpha x86_64  Linux 6.6.110-lts (simulated)  Rust Userspace".to_string(),
+            }
+        }
         "ps" => {
             let mut procs = Vec::new();
             if let Ok(entries) = fs::read_dir("/proc") {
@@ -1263,7 +1275,7 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
                 }
                 out
             } else {
-                format!("PID  CMD {}\n  1   nilinit\n428   nild\n429   nilkeyd\n430   nilbus\n431   netd\n433   audiod\n434   powerd\n435   nilshell", simulated::badge())
+                format!("ps: process list not available on this platform {}\n  1   nilinit\n428   nild\n429   nilkeyd\n430   nilbus\n431   netd\n433   audiod\n434   powerd\n435   nilshell", simulated::badge())
             }
         }
         _ if trimmed.starts_with("ls ") => {
