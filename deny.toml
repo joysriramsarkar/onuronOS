@@ -1,0 +1,39 @@
+# Onuron OS dependency policy.
+#
+# `cargo deny check advisories` is a **release gate**, not a best-effort hint.
+# A known vulnerability, a yanked crate, or an *unreviewed* unmaintained crate
+# fails CI. The `ignore` list below is the complete set of unmaintained crates
+# we have reviewed and accepted; every entry names an owner and a re-review
+# date. Adding a new one is a deliberate review decision.
+#
+# Run locally:
+#   cargo install cargo-deny --locked
+#   cargo deny check advisories
+
+[advisories]
+version = 2
+yanked = "deny"
+# "all" = every unmaintained crate anywhere in the dependency graph, not only
+# direct dependencies, so a new transitive one cannot slip in unnoticed.
+unmaintained = "all"
+ignore = [
+    # rustls-pemfile: thin PEM wrapper, archived Aug 2025; upstream points to
+    # rustls-pki-types' `PemObject`. No safe upgrade yet; `nilbus` must migrate.
+    # Owner: onuronOS/networking. Re-review by: 2026-12-31.
+    "RUSTSEC-2025-0134",
+
+    # rustybuzz: text shaping, unmaintained; upstream suggests `harfrust`.
+    # Pulled in by `nilsim`'s font stack. Owner: onuronOS/ui.
+    # Re-review by: 2026-12-31.
+    "RUSTSEC-2026-0206",
+
+    # ttf-parser: font parsing, unmaintained; upstream suggests `skrifa`.
+    # Pulled in by `nilsim` (via rustybuzz and fontdue). Owner: onuronOS/ui.
+    # Re-review by: 2026-12-31.
+    "RUSTSEC-2026-0192",
+
+    # instant: time shim, unmaintained; pulled in by `minifb` (the simulated
+    # framebuffer used by `nilsim`). Only used in the host-side simulator, not
+    # on device. Owner: onuronOS/ui. Re-review by: 2026-12-31.
+    "RUSTSEC-2024-0384",
+]

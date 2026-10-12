@@ -183,6 +183,6 @@ Onuron OS can be built and booted in QEMU on Windows, Linux, or macOS:
 
 ## 📜 License & Open-Source Guarantee
 
-Onuron OS is distributed under the **[GNU General Public License v3.0 (GPLv3)](LICENSE)**.
+Onuron OS is distributed under the **[GNU Affero General Public License v3.0 (AGPLv3)](LICENSE)**.
 
-> **Copyleft Protection**: Anyone is free to use, modify, contribute to, and build derivative operating systems from Onuron OS, provided that all modifications and derivative systems remain **100% free and open-source under the GNU GPLv3 license**.
+> **Copyleft Protection**: Anyone is free to use, modify, contribute to, and build derivative operating systems from Onuron OS, provided that all modifications and derivative systems remain **100% free and open-source under the AGPLv3 license** — including when the software is offered to users over a network, in which case the corresponding source must be made available. Commercial use is permitted under these terms; see the ecosystem-wide policy at [onuron_project/docs/LICENSING.md](https://github.com/joysriramsarkar/onuron_project/blob/main/docs/LICENSING.md).

@@ -2,18 +2,20 @@
 
 > **Status:** Living document. Last updated after the recovery, package
 > retrieval, IPC-authorization, sandbox/permission, update-signing,
-> power/thermal, reproducibility, and app-lifecycle passes.
+> power/thermal, reproducibility, QEMU persistence, and app-lifecycle passes.
 >
 > **Honest summary:** Onuron OS is a functional prototype with real
 > cryptographic package verification (now including HTTPS retrieval and safe
 > extraction), a supervised init with a recovery path, a namespace sandbox with
 > a permission model, peer-credential IPC authorization, fscrypt-based
 > encryption at rest, signed A/B system updates, a deterministic initramfs
-> build, and a working UI shell. The x86_64 Linux musl CI suite and automated
-> QEMU boot smoke test are **VALIDATED GREEN IN CI**, and the ARM64 QEMU matrix
-> job is configured. Physical phone targets remain **PLANNED / NOT RUN** without
-> hardware evidence. This plan orders the remaining work by risk and dependency so
-> that each phase produces a verifiable improvement rather than a claim.
+> build, a working UI shell, and a **two-phase QEMU disk-persistence test** that
+> writes `/data` on one boot and reads it back byte-exact on the next. The
+> x86_64 Linux musl CI suite, the automated QEMU boot smoke test, and the
+> x86_64 **and** aarch64 QEMU matrix are **VALIDATED GREEN IN CI**. Physical
+> phone targets remain **PLANNED / NOT RUN** without hardware evidence. This
+> plan orders the remaining work by risk and dependency so that each phase
+> produces a verifiable improvement rather than a claim.
 
 
 ---
@@ -91,14 +93,14 @@ The code that exists must be correct before more is built on top of it.
     fallback that looks like success.
 - **Risks:** ext4 tooling in the runner. Use `mkdisk.py` to build the image
   and `debugfs` or a small Rust reader to inspect it.
-- **Status:** Harness implemented in `build/persistent-data-test.py` and
-  `build/mkdisk.py`: `mkdisk.py` writes a real, mountable ext2/3/4 image when
-  `mke2fs` is available, and `persistent-data-test.py` materializes known state
-  (`/data/config/oobe_done`, a PIN hash, a contacts file, an SMS thread) and
-  verifies it with `debugfs`. It skips cleanly on hosts without e2fsprogs.
-  **What is not yet proven:** a real QEMU write → reboot → read-back, and a
-  corrupt-image path that logs instead of silently falling back to tmpfs. Those
-  remain open; the harness is the substrate for them, not the proof.
+- **Status:** **Proven in CI.** `build/qemu-persistence-test.py` boots QEMU
+  twice against the same real ext filesystem disk: the first boot writes a
+  marker under `/data` and syncs, the second boot reads it back and asserts the
+  bytes match exactly. The x86_64 **and** aarch64 QEMU jobs in
+  `.github/workflows/linux-qemu.yml` are green with this test enabled. The
+  older `build/persistent-data-test.py` + `build/mkdisk.py` harness remains as
+  the on-host substrate. **Still open:** a corrupt-image path that logs a clear
+  warning instead of silently falling back to tmpfs.
 
 ### A4. Recovery boot path
 
@@ -533,9 +535,10 @@ host. In priority order:
 1. Run `.github/workflows/linux-qemu.yml` on a clean runner and fix every
    failure until it is green (A1). Nothing else on this list is trustworthy
    until this is observed.
-2. Validate the boot/recovery path on QEMU: write `/data` state, reboot from
-   the same disk, and confirm persistence; confirm `onuron.recovery=1` and the
-   failed-boot counter both enter `nilrecovery` (A3, A4).
+2. Validate the recovery boot path on QEMU: confirm `onuron.recovery=1` and the
+   failed-boot counter both enter `nilrecovery`, including with a corrupt
+   `/data` (A4). Disk persistence (A3) is now proven by
+   `build/qemu-persistence-test.py` in CI.
 3. Run the IPC policy (`etc/nilos/ipc-policy.toml`) on a live boot and fix any
    denials; then actively attack the sandbox and close real findings (C1, C2).
 4. Exercise `nilupd` apply/rollback across a simulated power cut on Linux, and

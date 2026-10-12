@@ -26,18 +26,15 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Unmaintained-crate detection.
-      # audit-check only reports known vulnerabilities; unmaintained
-      # dependencies need a separate check (cargo-deny).
-      # Best-effort: never fails the job on its own.
-      - name: Check for unmaintained dependencies
-        run: |
-          if ! command -v cargo-deny &> /dev/null; then
-            cargo install cargo-deny --locked 2>/dev/null || echo "cargo-deny install failed — skipping unmaintained check"
-          fi
-          if command -v cargo-deny &> /dev/null; then
-            cargo deny check unmaintained 2>&1 || true
-          fi
+      # Dependency policy gate (see deny.toml).
+      # cargo-deny hard-fails on a known vulnerability, a yanked crate, or any
+      # unmaintained crate that is not explicitly listed in deny.toml with a
+      # reason. A new unmaintained crate therefore forces a review instead of
+      # passing silently.
+      - name: Check advisories & unmaintained dependencies
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
 
       # Separate issue-creation step with explicit permissions.
       # Previously audit-check tried to create issues but failed with
