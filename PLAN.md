@@ -20,3 +20,4 @@
 
 ## এই সেশনে
 - [ ] `cargo test` (দ্রুত) + ফলাফল রেকর্ড; QEMU শুধু পরিবেশ থাকলে।
+- [x] 13 Oct: `nilsim/` আর্কাইভ প্রস্তাব **বাতিল (ADR)** — Rust desktop sim বনাম Go app-runtime emulator ভিন্ন স্তর; দেখুন `onuron_project/specs/simulation.md`।
