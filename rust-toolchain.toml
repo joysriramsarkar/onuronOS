@@ -1,0 +1,23 @@
+# Rust toolchain pin for the Onuron OS workspace.
+#
+# Why this file exists
+#
+# Every workflow in this repository used `dtolnay/rust-toolchain@stable`, and
+# nothing on disk said which compiler the project is written against. "stable"
+# moves: the day a new Rust minor ships, CI silently switches to it. A build that
+# goes red then has two causes at once — the code, and a toolchain nobody chose —
+# and reproducing last week's green build means nothing, because last week's
+# "stable" is no longer installed anywhere.
+#
+# The version below is the one this repository builds against. CI pins the same
+# number, and `onuron_ecosystem_plan/TOOLCHAIN_PINS.md` records it a third time;
+# the three are checked against each other by
+# `scripts/verify-toolchain-pins.ps1`.
+#
+# Changing it is a deliberate act: bump it here, in the workflows, and in the pin
+# file together.
+
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

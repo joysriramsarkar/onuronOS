@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Setup Rust Toolchain with Components
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.98.0
         with:
           components: rustfmt, clippy
 

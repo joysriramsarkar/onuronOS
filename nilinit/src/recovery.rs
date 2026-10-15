@@ -170,6 +170,46 @@ mod tests {
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
+    #[test]
+    fn second_failed_boot_stays_normal_threshold_boundary() {
+        // MAX_FAILED_BOOTS = 3: boots 1 and 2 stay normal, boot 3 recovers.
+        assert_eq!(
+            plan_boot("", MAX_FAILED_BOOTS - 2),
+            BootDecision::Normal { failed_boots: MAX_FAILED_BOOTS - 1 }
+        );
+        assert!(matches!(
+            plan_boot("", MAX_FAILED_BOOTS - 1),
+            BootDecision::Recovery { .. }
+        ));
+    }
+
+    #[test]
+    fn successful_boot_resets_counter_so_next_boot_increments_from_zero() {
+        assert_eq!(successful_boot_counter(), 0);
+        // After a successful boot clears the counter, the next boot
+        // increments from 0 -> 1 and stays normal.
+        assert_eq!(
+            plan_boot("", successful_boot_counter()),
+            BootDecision::Normal { failed_boots: 1 }
+        );
+    }
+
+    #[test]
+    fn flag_and_garbage_edges_do_not_trap_or_escape_recovery() {
+        // Bare flag token (no =1) still requests recovery, even with a
+        // saturated counter that would recover anyway.
+        assert!(recovery_requested("ONURON.RECOVERY"));
+        assert_eq!(
+            plan_boot("onuron.recovery", u32::MAX),
+            BootDecision::Recovery { reason: RecoveryReason::Requested }
+        );
+        // Overflow and whitespace-padded values degrade to 0, never to
+        // an accidental recovery trigger.
+        assert_eq!(parse_boot_count("4294967296"), 0);
+        assert_eq!(parse_boot_count("  3  "), 3);
+        assert_eq!(plan_boot("", parse_boot_count("garbage!!")), BootDecision::Normal { failed_boots: 1 });
+    }
+
     // Tiny helper so this module needs no extra dependency. Not cryptographic.
     fn rand_like() -> u64 {
         use std::time::{SystemTime, UNIX_EPOCH};
