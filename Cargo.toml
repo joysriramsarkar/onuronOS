@@ -49,7 +49,6 @@ members = [
   "protocol",
   "softbus",
   "shell",
-  "nilgui",
   "nilsim",
   "pkg/nilpkg",
   "apps/hello",

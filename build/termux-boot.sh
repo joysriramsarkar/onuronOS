@@ -47,9 +47,8 @@ if [[ "$MODE" == "gui" ]]; then
     fi
 
     if [ ! -f "$GUI_BIN" ]; then
-        echo "[!] nilgui binary not found at ~/nilgui!"
-        echo "    Download it from your PC or build it with:"
-        echo "    cargo build -p nilgui --target aarch64-unknown-linux-musl --release"
+        echo "[!] nilgui was archived in Phase 2 in favor of compositor/shell."
+        echo "    To run standard shell/compositor, use text/service mode."
         exit 1
     fi
 
