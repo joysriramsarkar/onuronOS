@@ -3,11 +3,13 @@
 
 #[cfg(target_os = "windows")]
 mod nilbrowser;
+mod memories;
 
 #[cfg(target_os = "windows")]
 #[link(name = "user32")]
 extern "system" {
     fn SetFocus(hWnd: isize) -> isize;
+    fn SetProcessDPIAware() -> i32;
 }
 // - VLC Media Player (org.videolan.vlc): Full Official VideoLAN Media Engine for NilOS
 // - NilZar Browser: Full Declarative Web Browser with History & Bookmarks Drawers, Real Web Fetcher & Portals
@@ -36,30 +38,35 @@ const HOME_SCREEN_RAW: &[u8] = include_bytes!("../assets/home_screen.bin");
 const WALLPAPER_RAW: &[u8] = include_bytes!("../assets/wallpaper.bin");
 
 // ─── Color Palette (Figma 3D Fluid Purple Glass Theme) ─────────────────────────
-const COLOR_BG: u32 = 0x140E28;          // Figma Deep Fluid Violet
-const COLOR_DOCK_BG: u32 = 0x261A48;     // Frosted Violet Glass Dock
-const COLOR_SURFACE: u32 = 0x1E153D;     // Frosted Purple Card Surface
-const COLOR_SURFACE_ALT: u32 = 0x31235F; // Active Purple Glass
-const COLOR_BORDER: u32 = 0x4D3A84;      // Luminous Violet Border
-const COLOR_CYAN: u32 = 0x38BDF8;        // Electric Sky Cyan
-const COLOR_BLUE: u32 = 0x6366F1;        // Vivid Indigo
-const COLOR_GREEN: u32 = 0x22C55E;       // Emerald Green
-const COLOR_AMBER: u32 = 0xFBBF24;       // Warm Amber
-const COLOR_PURPLE: u32 = 0xC084FC;      // Figma Vibrant Violet
-const COLOR_RED: u32 = 0xF43F5E;         // Rose Red
-const COLOR_FOX: u32 = 0xFF6320;         // Firefox Vivid Orange
-const COLOR_VLC: u32 = 0xFF7A1A;         // Official VLC Vibrant Orange
-const COLOR_TEXT_HIGH: u32 = 0xF8FAFC;   // Crisp Soft White
-const COLOR_TEXT_MED: u32 = 0xA5B4FC;    // Pastel Lavender/Indigo
-const COLOR_TEXT_DIM: u32 = 0x6366F1;    // Dim Indigo Accent
-const COLOR_ACCENT_BG: u32 = 0x312E81;   // Deep Indigo Glass Card
-const COLOR_TERM_BG: u32 = 0x0B081A;     // Obsidian Violet Terminal
-const COLOR_NANO_HDR: u32 = 0x4338CA;    // Indigo Header
+const COLOR_BG: u32 = 0xF4F6FA;          // Gallery light background
+const COLOR_DOCK_BG: u32 = 0xFFFFFF;     // White dock
+const COLOR_SURFACE: u32 = 0xFFFFFF;     // White surface
+const COLOR_SURFACE_ALT: u32 = 0xEEF2F8; // Soft grey surface
+const COLOR_BORDER: u32 = 0xE1E5EC;      // Hairline border
+const COLOR_CYAN: u32 = 0x0E7490;        // Deep sky cyan
+const COLOR_BLUE: u32 = 0x2563EB;        // Cobalt blue
+const COLOR_GREEN: u32 = 0x15803D;       // Deep green
+const COLOR_AMBER: u32 = 0xB45309;       // Burnt amber
+const COLOR_PURPLE: u32 = 0x7C3AED;      // Violet
+const COLOR_RED: u32 = 0xDC2626;         // Red
+const COLOR_FOX: u32 = 0xEA580C;         // Orange
+const COLOR_VLC: u32 = 0xEA580C;         // Orange
+const COLOR_TEXT_HIGH: u32 = 0x121418;   // Ink
+const COLOR_TEXT_MED: u32 = 0x5B6472;    // Muted ink
+const COLOR_TEXT_DIM: u32 = 0x8A92A0;    // Faint ink
+const COLOR_ACCENT_BG: u32 = 0xE4EAFB;   // Soft accent
+const COLOR_TERM_BG: u32 = 0xF4F6FA;     // Light terminal
+const COLOR_NANO_HDR: u32 = 0x2563EB;    // Blue header
 // Extra premium palette entries
-const COLOR_GOLD: u32 = 0xF59E0B;         // Gold Accent
-const COLOR_TEAL: u32 = 0x14B8A6;         // Teal Accent
-const COLOR_PINK: u32 = 0xEC4899;         // Hot Pink
+const COLOR_GOLD: u32 = 0xB45309;         // Gold
+const COLOR_TEAL: u32 = 0x0F766E;         // Teal
+const COLOR_PINK: u32 = 0xDB2777;         // Pink
 const SIMULATED_BADGE: &str = "[SIMULATED]";
+
+// Wi-Fi icon from Flaticon (566280), 18x13 alpha mask
+const WIFI_ICON: &[u8] = include_bytes!("../assets/icons/wifi.bin");
+const WIFI_W: usize = 18;
+const WIFI_H: usize = 13;
 
 // ─── Screen Enum ──────────────────────────────────────────────────────────────
 #[derive(Debug, Clone, PartialEq)]
@@ -77,6 +84,7 @@ enum Screen {
     AppNotes,
     AppCalculator,
     AppBrowser,
+    AppMemories,
     ControlCenter,
     NanoEditor,
     InCall,
@@ -171,7 +179,9 @@ struct FontEngine {
     ui_font: Font,
     mono_font: Font,
     bengali_font: Font,
+    bengali_bold_font: Font,
     bengali_face_bytes: Vec<u8>,
+    bengali_bold_face_bytes: Vec<u8>,
 }
 
 impl FontEngine {
@@ -185,11 +195,9 @@ impl FontEngine {
             .or_else(|_| fs::read(r"C:\Windows\Fonts\cour.ttf"))
             .unwrap_or_else(|_| ui_bytes.clone());
 
-        let bengali_bytes = fs::read(r"C:\Windows\Fonts\vrinda.ttf")
-            .or_else(|_| fs::read(r"C:\Windows\Fonts\Shonar.ttf"))
-            .or_else(|_| fs::read(r"C:\Windows\Fonts\vrindab.ttf"))
-            .or_else(|_| fs::read(r"C:\Windows\Fonts\Shonarb.ttf"))
-            .unwrap_or_else(|_| ui_bytes.clone());
+        // Bundled Noto Sans Bengali (static TTF), replacing legacy Vrinda
+        let bengali_bytes = include_bytes!("../assets/fonts/NotoSansBengali-Regular.ttf").to_vec();
+        let bengali_bold_bytes = include_bytes!("../assets/fonts/NotoSansBengali-Bold.ttf").to_vec();
 
         let ui_font = Font::from_bytes(ui_bytes, FontSettings::default())
             .expect("Failed to parse UI font");
@@ -197,12 +205,16 @@ impl FontEngine {
             .expect("Failed to parse Monospace font");
         let bengali_font = Font::from_bytes(bengali_bytes.clone(), FontSettings::default())
             .expect("Failed to parse Bengali font");
+        let bengali_bold_font = Font::from_bytes(bengali_bold_bytes.clone(), FontSettings::default())
+            .expect("Failed to parse Bengali bold font");
 
         FontEngine {
             ui_font,
             mono_font,
             bengali_font,
+            bengali_bold_font,
             bengali_face_bytes: bengali_bytes,
+            bengali_bold_face_bytes: bengali_bold_bytes,
         }
     }
 }
@@ -442,6 +454,113 @@ impl<'a> FramePainter<'a> {
         }
     }
 
+    pub(crate) fn put_px(&mut self, x: i16, y: i16, color: u32) {
+        if x < 0 || y < 0 { return; }
+        let (x, y) = (x as usize, y as usize);
+        if x < self.width && y < self.height {
+            self.buffer[y * self.width + x] = color;
+        }
+    }
+
+    pub(crate) fn blend_px(&mut self, x: i16, y: i16, color: u32, alpha: u8) {
+        if x < 0 || y < 0 { return; }
+        let (x, y) = (x as usize, y as usize);
+        if x >= self.width || y >= self.height { return; }
+        let i = y * self.width + x;
+        let d = self.buffer[i];
+        let a = alpha as u32;
+        let ia = 255 - a;
+        let r = (((color >> 16) & 0xFF) * a + ((d >> 16) & 0xFF) * ia) / 255;
+        let g = (((color >> 8) & 0xFF) * a + ((d >> 8) & 0xFF) * ia) / 255;
+        let b = ((color & 0xFF) * a + (d & 0xFF) * ia) / 255;
+        self.buffer[i] = (r << 16) | (g << 8) | b;
+    }
+
+    pub(crate) fn blend_rect(&mut self, x: i16, y: i16, w: u16, h: u16, color: u32, alpha: u8) {
+        for dy in 0..h as i16 {
+            for dx in 0..w as i16 {
+                self.blend_px(x + dx, y + dy, color, alpha);
+            }
+        }
+    }
+
+    pub(crate) fn blend_rounded_rect(&mut self, x: i16, y: i16, w: u16, h: u16, r: i16, color: u32, alpha: u8) {
+        if w == 0 || h == 0 { return; }
+        let w_i = w as i16;
+        let h_i = h as i16;
+        let rr = r.min(w_i / 2).min(h_i / 2).max(0);
+        for dy in 0..h_i {
+            for dx in 0..w_i {
+                let mut cov: u8 = 255;
+                if rr > 0 {
+                    let cxd = if dx < rr { rr - dx } else if dx >= w_i - rr { dx - (w_i - rr - 1) } else { 0 };
+                    let cyd = if dy < rr { rr - dy } else if dy >= h_i - rr { dy - (h_i - rr - 1) } else { 0 };
+                    if cxd > 0 && cyd > 0 {
+                        let dist = ((cxd * cxd + cyd * cyd) as f32).sqrt();
+                        cov = (((rr as f32 + 0.5 - dist).clamp(0.0, 1.0)) * 255.0) as u8;
+                    }
+                }
+                if cov > 0 {
+                    let a = ((alpha as u32 * cov as u32) / 255) as u8;
+                    self.blend_px(x + dx, y + dy, color, a);
+                }
+            }
+        }
+    }
+    pub(crate) fn blit_cover(&mut self, x: i16, y: i16, w: u16, h: u16, src: &[u8], sw: usize, sh: usize, r: i16) {
+        if w == 0 || h == 0 || sw == 0 || sh == 0 { return; }
+        let wf = w as f32;
+        let hf = h as f32;
+        let scale = (wf / sw as f32).max(hf / sh as f32);
+        let crop_w = wf / scale;
+        let crop_h = hf / scale;
+        let sx0 = (sw as f32 - crop_w) / 2.0;
+        let sy0 = (sh as f32 - crop_h) / 2.0;
+        let w_i = w as i16;
+        let h_i = h as i16;
+        let rr = r.min(w_i / 2).min(h_i / 2).max(0);
+        for dy in 0..h_i {
+            for dx in 0..w_i {
+                let mut cov: u8 = 255;
+                if rr > 0 {
+                    let cxd = if dx < rr { rr - dx } else if dx >= w_i - rr { dx - (w_i - rr - 1) } else { 0 };
+                    let cyd = if dy < rr { rr - dy } else if dy >= h_i - rr { dy - (h_i - rr - 1) } else { 0 };
+                    if cxd > 0 && cyd > 0 {
+                        let dist = ((cxd * cxd + cyd * cyd) as f32).sqrt();
+                        cov = (((rr as f32 + 0.5 - dist).clamp(0.0, 1.0)) * 255.0) as u8;
+                    }
+                }
+                if cov == 0 { continue; }
+                let fx = sx0 + dx as f32 * crop_w / wf;
+                let fy = sy0 + dy as f32 * crop_h / hf;
+                let x0 = (fx.floor().max(0.0) as usize).min(sw - 1);
+                let y0 = (fy.floor().max(0.0) as usize).min(sh - 1);
+                let x1 = (x0 + 1).min(sw - 1);
+                let y1 = (y0 + 1).min(sh - 1);
+                let tx = (fx - x0 as f32).clamp(0.0, 1.0);
+                let ty = (fy - y0 as f32).clamp(0.0, 1.0);
+                let i00 = (y0 * sw + x0) * 3;
+                let i10 = (y0 * sw + x1) * 3;
+                let i01 = (y1 * sw + x0) * 3;
+                let i11 = (y1 * sw + x1) * 3;
+                if i11 + 2 < src.len() {
+                    let w00 = (1.0 - tx) * (1.0 - ty);
+                    let w10 = tx * (1.0 - ty);
+                    let w01 = (1.0 - tx) * ty;
+                    let w11 = tx * ty;
+                    let cr = src[i00] as f32 * w00 + src[i10] as f32 * w10 + src[i01] as f32 * w01 + src[i11] as f32 * w11;
+                    let cg = src[i00 + 1] as f32 * w00 + src[i10 + 1] as f32 * w10 + src[i01 + 1] as f32 * w01 + src[i11 + 1] as f32 * w11;
+                    let cb = src[i00 + 2] as f32 * w00 + src[i10 + 2] as f32 * w10 + src[i01 + 2] as f32 * w01 + src[i11 + 2] as f32 * w11;
+                    let color = ((cr as u32) << 16) | ((cg as u32) << 8) | (cb as u32);
+                    if cov == 255 {
+                        self.put_px(x + dx, y + dy, color);
+                    } else {
+                        self.blend_px(x + dx, y + dy, color, cov);
+                    }
+                }
+            }
+        }
+    }
     fn fill_rect(&mut self, x: i16, y: i16, w: u16, h: u16, color: u32) {
         for dy in 0..(h as i16) {
             let py = y + dy;
@@ -459,46 +578,35 @@ impl<'a> FramePainter<'a> {
     }
 
     fn fill_rounded_rect(&mut self, x: i16, y: i16, w: u16, h: u16, r: i16, color: u32) {
-        let r_sq = r * r;
-        for dy in 0..(h as i16) {
+        if w == 0 || h == 0 { return; }
+        let w_i = w as i16;
+        let h_i = h as i16;
+        let rr = r.min(w_i / 2).min(h_i / 2).max(0);
+        for dy in 0..h_i {
             let py = y + dy;
-            if py < 0 || py >= self.height as i16 {
-                continue;
-            }
+            if py < 0 || py >= self.height as i16 { continue; }
             let row_offset = (py as usize) * self.width;
-            for dx in 0..(w as i16) {
+            for dx in 0..w_i {
                 let px = x + dx;
-                if px < 0 || px >= self.width as i16 {
-                    continue;
+                if px < 0 || px >= self.width as i16 { continue; }
+                let mut cov: u8 = 255;
+                if rr > 0 {
+                    let cxd = if dx < rr { rr - dx } else if dx >= w_i - rr { dx - (w_i - rr - 1) } else { 0 };
+                    let cyd = if dy < rr { rr - dy } else if dy >= h_i - rr { dy - (h_i - rr - 1) } else { 0 };
+                    if cxd > 0 && cyd > 0 {
+                        let dist = ((cxd * cxd + cyd * cyd) as f32).sqrt();
+                        cov = (((rr as f32 + 0.5 - dist).clamp(0.0, 1.0)) * 255.0) as u8;
+                    }
                 }
-
-                let in_corner = if dx < r && dy < r {
-                    let cx = r - dx;
-                    let cy = r - dy;
-                    cx * cx + cy * cy > r_sq
-                } else if dx >= (w as i16 - r) && dy < r {
-                    let cx = dx - (w as i16 - r - 1);
-                    let cy = r - dy;
-                    cx * cx + cy * cy > r_sq
-                } else if dx < r && dy >= (h as i16 - r) {
-                    let cx = r - dx;
-                    let cy = dy - (h as i16 - r - 1);
-                    cx * cx + cy * cy > r_sq
-                } else if dx >= (w as i16 - r) && dy >= (h as i16 - r) {
-                    let cx = dx - (w as i16 - r - 1);
-                    let cy = dy - (h as i16 - r - 1);
-                    cx * cx + cy * cy > r_sq
-                } else {
-                    false
-                };
-
-                if !in_corner {
+                if cov == 255 {
                     self.buffer[row_offset + px as usize] = color;
+                } else if cov > 0 {
+                    let idx = row_offset + px as usize;
+                    self.buffer[idx] = blend_pixel(self.buffer[idx], color, cov);
                 }
             }
         }
     }
-
     fn draw_rect_outline(&mut self, x: i16, y: i16, w: u16, h: u16, color: u32) {
         self.fill_rect(x, y, w, 1, color);
         self.fill_rect(x, y + h as i16 - 1, w, 1, color);
@@ -539,7 +647,10 @@ impl<'a> FramePainter<'a> {
 
         for (run_text, is_bengali) in runs {
             if is_bengali {
-                if let Some(face) = rustybuzz::Face::from_slice(&self.fonts.bengali_face_bytes, 0) {
+                let bold = px_size >= 13.0;
+                let face_bytes: &[u8] = if bold { &self.fonts.bengali_bold_face_bytes } else { &self.fonts.bengali_face_bytes };
+                let bfont = if bold { &self.fonts.bengali_bold_font } else { &self.fonts.bengali_font };
+                if let Some(face) = rustybuzz::Face::from_slice(face_bytes, 0) {
                     let mut buffer = rustybuzz::UnicodeBuffer::new();
                     buffer.push_str(run_text);
                     buffer.guess_segment_properties();
@@ -550,7 +661,7 @@ impl<'a> FramePainter<'a> {
 
                     for (info, pos) in glyph_buffer.glyph_infos().iter().zip(glyph_buffer.glyph_positions().iter()) {
                         let glyph_id = info.glyph_id as u16;
-                        let (metrics, bitmap) = self.fonts.bengali_font.rasterize_indexed(glyph_id, px_size);
+                        let (metrics, bitmap) = bfont.rasterize_indexed(glyph_id, px_size);
 
                         let x_offset = (pos.x_offset as f32 * scale).round() as i16;
                         let y_offset = (pos.y_offset as f32 * scale).round() as i16;
@@ -623,7 +734,10 @@ impl<'a> FramePainter<'a> {
 
         for (run_text, is_bengali) in runs {
             if is_bengali {
-                if let Some(face) = rustybuzz::Face::from_slice(&self.fonts.bengali_face_bytes, 0) {
+                let bold = px_size >= 13.0;
+                let face_bytes: &[u8] = if bold { &self.fonts.bengali_bold_face_bytes } else { &self.fonts.bengali_face_bytes };
+                let bfont = if bold { &self.fonts.bengali_bold_font } else { &self.fonts.bengali_font };
+                if let Some(face) = rustybuzz::Face::from_slice(face_bytes, 0) {
                     let mut buffer = rustybuzz::UnicodeBuffer::new();
                     buffer.push_str(run_text);
                     buffer.guess_segment_properties();
@@ -908,6 +1022,13 @@ struct BrowserTab {
 struct SimState {
     screen: Screen,
     home_page: usize,
+    mem_view: u8,
+    mem_tab: usize,
+    mem_idx: usize,
+    mem_anim: f32,
+    mem_opening: bool,
+    mem_toast: u16,
+    mem_from: (i16, i16, u16, u16),
     user_name: String,
     pin: String,
     pin_input: String,
@@ -927,6 +1048,7 @@ struct SimState {
     battery_level: u8,
     battery_charging: bool,
     bt_enabled: bool,
+    location_enabled: bool,
     softbus_enabled: bool,
     dark_mode: bool,
     torch_enabled: bool,
@@ -1121,6 +1243,13 @@ impl SimState {
         SimState {
             screen: Screen::Home,
             home_page: 0,
+            mem_view: 0,
+            mem_tab: 0,
+            mem_idx: 0,
+            mem_anim: 0.0,
+            mem_opening: false,
+            mem_toast: 0,
+            mem_from: (14, 84, 302, 166),
             user_name: "জয় সরকার".into(),
             pin: "1234".into(),
             pin_input: String::new(),
@@ -1154,6 +1283,7 @@ impl SimState {
             battery_level: 88,
             battery_charging: false,
             bt_enabled: true,
+            location_enabled: true,
             softbus_enabled: true,
             dark_mode: true,
             torch_enabled: false,
@@ -2086,6 +2216,10 @@ impl SimState {
                 cmd[4..].trim()
             };
             let target = virtual_to_disk_path(&self.storage_root, &self.term_cwd, filename);
+            if target == self.storage_root {
+                self.push_term_line("rm: refusing to remove the storage root".to_string(), COLOR_RED);
+                return;
+            }
             if target.is_dir() {
                 match fs::remove_dir_all(&target) {
                     Ok(_) => self.push_term_line(format!("[-] ফোল্ডার মোছা হয়েছে: {}", filename), COLOR_AMBER),
@@ -2257,74 +2391,67 @@ fn eval_simple_math(expr: &str) -> Result<f64, ()> {
 fn draw_home_vector_icon(p: &mut FramePainter, cx: i16, cy: i16, id: &str, accent: u32) {
     match id {
         "app_phone" => {
-            // Handset icon: earpiece, mouthpiece, curved receiver handle
-            p.fill_rounded_rect(cx - 7, cy - 9, 6, 6, 2, accent);
-            p.fill_rounded_rect(cx + 2, cy + 3, 6, 6, 2, accent);
-            p.fill_rounded_rect(cx - 5, cy - 5, 5, 11, 2, accent);
-            p.fill_rounded_rect(cx - 2, cy - 1, 5, 8, 2, accent);
+            p.fill_rounded_rect(cx - 7, cy - 11, 14, 22, 4, accent);
+            p.fill_rounded_rect(cx - 4, cy - 9, 8, 3, 1, 0xFFFFFF);
+            p.fill_rounded_rect(cx - 2, cy + 7, 4, 2, 1, 0xFFFFFF);
         }
         "app_browser" => {
-            // Globe icon: ring, equator line, central meridian
-            p.fill_rounded_rect(cx - 10, cy - 10, 20, 20, 10, accent);
-            p.fill_rounded_rect(cx - 8, cy - 8, 16, 16, 8, 0x0A1628);
+            p.fill_rounded_rect(cx - 11, cy - 11, 22, 22, 11, accent);
+            p.fill_rounded_rect(cx - 8, cy - 8, 16, 16, 8, COLOR_BG);
             p.fill_rect(cx - 8, cy - 1, 16, 2, accent);
             p.fill_rounded_rect(cx - 4, cy - 8, 8, 16, 4, accent);
-            p.fill_rounded_rect(cx - 2, cy - 6, 4, 12, 2, 0x0A1628);
+            p.fill_rounded_rect(cx - 2, cy - 6, 4, 12, 2, COLOR_BG);
         }
         "app_messages" => {
-            // Speech bubble
-            p.fill_rounded_rect(cx - 10, cy - 9, 20, 15, 4, accent);
-            p.fill_rect(cx - 7, cy + 4, 5, 4, accent);
-            p.fill_rect(cx - 9, cy + 6, 3, 2, accent);
-            p.fill_rounded_rect(cx - 6, cy - 5, 12, 2, 1, 0x0A1628);
-            p.fill_rounded_rect(cx - 6, cy - 1, 8, 2, 1, 0x0A1628);
+            p.fill_rounded_rect(cx - 12, cy - 10, 24, 17, 5, accent);
+            p.fill_rect(cx - 7, cy + 5, 6, 5, accent);
+            p.fill_rect(cx - 10, cy + 7, 3, 3, accent);
+            p.fill_rounded_rect(cx - 8, cy - 6, 14, 2, 1, 0xFFFFFF);
+            p.fill_rounded_rect(cx - 8, cy - 2, 10, 2, 1, 0xFFFFFF);
         }
         "app_files" => {
-            // Folder tab & body with paper document
-            p.fill_rounded_rect(cx - 10, cy - 9, 9, 4, 1, accent);
-            p.fill_rounded_rect(cx - 11, cy - 6, 22, 16, 3, accent);
-            p.fill_rect(cx - 7, cy - 4, 14, 4, 0xFFFFFF);
-            p.fill_rounded_rect(cx - 11, cy - 2, 22, 12, 2, 0x38BDF8);
+            p.fill_rounded_rect(cx - 11, cy - 10, 10, 5, 2, accent);
+            p.fill_rounded_rect(cx - 12, cy - 7, 26, 19, 4, accent);
+            p.fill_rect(cx - 8, cy - 4, 16, 4, 0xFFFFFF);
+            p.fill_rounded_rect(cx - 12, cy - 1, 26, 13, 3, 0xFFFFFF);
         }
         "app_settings" => {
-            // Gear cog
-            p.fill_rounded_rect(cx - 3, cy - 10, 6, 20, 2, accent);
-            p.fill_rounded_rect(cx - 10, cy - 3, 20, 6, 2, accent);
-            p.fill_rounded_rect(cx - 8, cy - 8, 16, 16, 3, accent);
-            p.fill_rounded_rect(cx - 7, cy - 7, 14, 14, 7, accent);
-            p.fill_rounded_rect(cx - 3, cy - 3, 6, 6, 3, 0x0A1628);
+            p.fill_rounded_rect(cx - 9, cy - 9, 18, 18, 9, accent);
+            p.fill_rounded_rect(cx - 4, cy - 4, 8, 8, 4, COLOR_BG);
+            for (dx, dy) in [(-10i16, 0i16), (10, 0), (0, -10), (0, 10), (-7, -7), (7, 7), (-7, 7), (7, -7)] {
+                p.fill_rounded_rect(cx + dx - 2, cy + dy - 2, 4, 4, 2, accent);
+            }
         }
         "app_terminal" => {
-            // Terminal box with prompt
-            p.fill_rounded_rect(cx - 11, cy - 8, 22, 16, 3, 0x1E293B);
-            p.draw_rect_outline(cx - 11, cy - 8, 22, 16, 0x334155);
-            p.fill_rect(cx - 8, cy - 3, 2, 2, accent);
-            p.fill_rect(cx - 6, cy - 1, 2, 2, accent);
-            p.fill_rect(cx - 8, cy + 1, 2, 2, accent);
-            p.fill_rect(cx - 3, cy + 1, 5, 2, COLOR_GREEN);
+            p.fill_rounded_rect(cx - 12, cy - 9, 24, 18, 4, COLOR_TEXT_HIGH);
+            p.fill_rect(cx - 8, cy - 4, 2, 2, COLOR_GREEN);
+            p.fill_rect(cx - 5, cy - 2, 2, 2, COLOR_GREEN);
+            p.fill_rect(cx - 8, cy, 2, 2, COLOR_GREEN);
+            p.fill_rect(cx - 1, cy + 4, 8, 2, COLOR_CYAN);
         }
         "app_softbus" => {
-            // SoftBus interconnect topology
-            p.fill_rect(cx - 7, cy - 1, 14, 2, 0x94A3B8);
-            p.fill_rect(cx - 1, cy - 7, 2, 14, 0x94A3B8);
-            p.fill_rounded_rect(cx - 3, cy - 10, 6, 6, 3, COLOR_AMBER);
-            p.fill_rounded_rect(cx - 10, cy - 3, 6, 6, 3, accent);
-            p.fill_rounded_rect(cx + 4, cy - 3, 6, 6, 3, COLOR_CYAN);
-            p.fill_rounded_rect(cx - 3, cy + 4, 6, 6, 3, COLOR_PURPLE);
+            p.fill_rect(cx - 8, cy - 1, 16, 2, COLOR_TEXT_MED);
+            p.fill_rect(cx - 1, cy - 8, 2, 16, COLOR_TEXT_MED);
+            p.fill_rounded_rect(cx - 4, cy - 12, 8, 8, 4, COLOR_AMBER);
+            p.fill_rounded_rect(cx - 12, cy - 4, 8, 8, 4, accent);
+            p.fill_rounded_rect(cx + 4, cy - 4, 8, 8, 4, COLOR_CYAN);
+            p.fill_rounded_rect(cx - 4, cy + 4, 8, 8, 4, COLOR_PURPLE);
         }
-        "app_android" | _ => {
-            // Onuron Atom Core
-            p.fill_rounded_rect(cx - 9, cy - 9, 18, 18, 5, 0x0284C7);
-            p.fill_rounded_rect(cx - 6, cy - 6, 12, 12, 3, 0x0A1628);
-            p.fill_rounded_rect(cx - 3, cy - 3, 6, 6, 3, COLOR_CYAN);
-            p.fill_rect(cx - 1, cy - 8, 2, 2, 0x38BDF8);
-            p.fill_rect(cx - 1, cy + 6, 2, 2, 0x38BDF8);
-            p.fill_rect(cx - 8, cy - 1, 2, 2, 0x38BDF8);
-            p.fill_rect(cx + 6, cy - 1, 2, 2, 0x38BDF8);
+        "app_memories" => {
+            p.fill_rounded_rect(cx - 12, cy - 10, 24, 20, 4, 0xFFFFFF);
+            p.fill_rounded_rect(cx - 10, cy - 8, 20, 16, 3, accent);
+            p.fill_rounded_rect(cx - 7, cy - 5, 5, 5, 2, 0xFFFFFF);
+            p.fill_rect(cx - 10, cy + 2, 8, 5, 0xFFFFFF);
+            p.fill_rect(cx - 3, cy, 5, 7, 0xFFFFFF);
+            p.fill_rect(cx + 2, cy + 3, 7, 4, 0xFFFFFF);
+        }
+        _ => {
+            p.fill_rounded_rect(cx - 10, cy - 10, 20, 20, 6, accent);
+            p.fill_rounded_rect(cx - 6, cy - 6, 12, 12, 4, COLOR_BG);
+            p.fill_rounded_rect(cx - 3, cy - 3, 6, 6, 3, accent);
         }
     }
 }
-
 fn render_home(p: &mut FramePainter, _state: &SimState) {
     // 1. Deep Space Obsidian Navy background
     p.fill_rect(0, 0, p.width as u16, p.height as u16, COLOR_BG);
@@ -2373,6 +2500,7 @@ fn render_home(p: &mut FramePainter, _state: &SimState) {
         ("টার্মিনাল", COLOR_CYAN, "app_terminal"),
         ("সফটবাস", COLOR_GREEN, "app_softbus"),
         ("অনুরণ", COLOR_CYAN, "app_android"),
+        ("স্মৃতি", COLOR_PINK, "app_memories"),
     ];
 
     for (i, (title, accent, id)) in apps.iter().enumerate() {
@@ -2381,109 +2509,116 @@ fn render_home(p: &mut FramePainter, _state: &SimState) {
         let icon_cx = 12 + c * col_w + col_w / 2;
         let icon_cy = grid_y + r * 94;
 
-        let ix = icon_cx - (icon_size as i16) / 2;
-        p.fill_rounded_rect(ix, icon_cy, icon_size, icon_size, 16, COLOR_SURFACE);
-        p.draw_rect_outline(ix, icon_cy, icon_size, icon_size, COLOR_BORDER);
-
-        // Accent indicator dot
-        p.fill_rounded_rect(icon_cx - 3, icon_cy + 6, 6, 6, 3, *accent);
-
-        // Vector Icon (No tofu box!)
-        draw_home_vector_icon(p, icon_cx, icon_cy + 29, id, *accent);
+        // Icon only, no surrounding card
+        draw_home_vector_icon(p, icon_cx, icon_cy + 27, id, *accent);
 
         // Label
         let tw = p.text_width(11.5, title, false);
         p.draw_text_smooth(icon_cx - tw / 2, icon_cy + (icon_size as i16) + 16, 11.5, title, COLOR_TEXT_HIGH, false);
 
-        p.register_button(ix, icon_cy, icon_size, icon_size + 20, id);
+        p.register_button(icon_cx - (icon_size as i16) / 2, icon_cy, icon_size, icon_size + 20, id);
     }
 }
 
+fn draw_wifi_png(p: &mut FramePainter, x: i16, y: i16, color: u32) {
+    for dy in 0..WIFI_H {
+        for dx in 0..WIFI_W {
+            let a = WIFI_ICON[(dy * WIFI_W + dx) * 4 + 3];
+            if a > 0 {
+                p.blend_px(x + dx as i16, y + dy as i16, color, a);
+            }
+        }
+    }
+}
+
+fn draw_location_pin(p: &mut FramePainter, x: i16, y: i16, color: u32) {
+    p.fill_rounded_rect(x, y, 11, 11, 5, color);
+    p.fill_rect(x + 2, y + 9, 7, 2, color);
+    p.fill_rect(x + 3, y + 11, 5, 1, color);
+    p.fill_rect(x + 4, y + 12, 3, 1, color);
+    p.fill_rounded_rect(x + 4, y + 3, 3, 3, 1, COLOR_BG);
+}
+
+fn seg_dist(px: f32, py: f32, x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    let vx = x2 - x1;
+    let vy = y2 - y1;
+    let wx = px - x1;
+    let wy = py - y1;
+    let len2 = (vx * vx + vy * vy).max(0.0001);
+    let t = ((wx * vx + wy * vy) / len2).clamp(0.0, 1.0);
+    let dx = px - (x1 + t * vx);
+    let dy = py - (y1 + t * vy);
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn draw_bluetooth_icon(p: &mut FramePainter, x: i16, y: i16, color: u32) {
+    // Real Bluetooth rune: stem + two right triangles, anti-aliased
+    let segs = [
+        (6.0f32, 0.0f32, 6.0f32, 16.0f32),
+        (6.0, 8.0, 13.0, 8.0),
+        (6.0, 0.0, 13.0, 8.0),
+        (13.0, 8.0, 6.0, 16.0),
+    ];
+    for dy in 0..18i16 {
+        for dx in 0..16i16 {
+            let px = dx as f32 + 0.5;
+            let py = dy as f32 + 0.5;
+            let mut d = f32::MAX;
+            for &(x1, y1, x2, y2) in segs.iter() {
+                d = d.min(seg_dist(px, py, x1, y1, x2, y2));
+            }
+            let cov = (1.0 - (d - 0.70).max(0.0)).clamp(0.0, 1.0);
+            if cov > 0.0 {
+                p.blend_px(x + dx, y + dy, color, (cov * 255.0) as u8);
+            }
+        }
+    }
+}
+fn draw_tower_bars(p: &mut FramePainter, x: i16, base_y: i16, state: &SimState, on_col: u32) {
+    for i in 0..4i16 {
+        let h = 3 + i * 2;
+        let filled = (i as u8) < state.cellular_signal_level;
+        let col = if filled { on_col } else { 0xC7D0DB };
+        p.fill_rect(x + i * 5, base_y - h, 3, h as u16, col);
+    }
+}
 fn render_status_bar(p: &mut FramePainter, state: &SimState) {
-    // Frosted status bar backdrop
-    for row in 0..32i16 {
-        let t = row as u32;
-        let r = 0x05u32 + t * 2 / 32;
-        let g = 0x08u32 + t * 3 / 32;
-        let b = 0x14u32 + t * 5 / 32;
-        p.fill_rect(0, row, p.width as u16, 1, (r << 16) | (g << 8) | b);
-    }
+    p.fill_rect(0, 0, p.width as u16, 32, COLOR_BG);
+    p.fill_rect(0, 31, p.width as u16, 1, COLOR_BORDER);
 
-    // 1. Time (Left) in Bengali IST
+    // Time (left)
     let time_str = get_ist_time_str();
-    p.draw_text_smooth(12, 9, 13.0, &time_str, COLOR_TEXT_HIGH, true);
-    p.draw_text_smooth(60, 9, 11.0, "OnuronOS", COLOR_CYAN, false);
+    p.draw_text_smooth(12, 8, 13.0, &time_str, COLOR_TEXT_HIGH, true);
 
-    // 2. Dynamic Island (Center)
-    let center_x = p.width as i16 / 2;
-    p.fill_rounded_rect(center_x - 38, 4, 76, 22, 11, 0x000000);
-    p.fill_rect(center_x - 3, 11, 6, 8, 0x181F2E);
-    p.fill_rounded_rect(center_x + 8, 12, 6, 6, 3, 0x1C2740);
-    p.fill_rounded_rect(center_x - 14, 12, 6, 6, 3, 0x1C2740);
-    p.register_button(center_x - 38, 4, 76, 22, "toggle_island");
-
-    // 3. Dynamic Wi-Fi (Left of Cellular)
-    let wifi_x: i16 = 212;
-    if state.wifi_enabled {
-        let c_top = if state.wifi_signal_level >= 3 { COLOR_CYAN } else { 0x334155 };
-        let c_mid = if state.wifi_signal_level >= 2 { COLOR_CYAN } else { 0x334155 };
-        let c_dot = if state.wifi_signal_level >= 1 { COLOR_CYAN } else { 0x334155 };
-
-        p.fill_rounded_rect(wifi_x, 10, 14, 2, 1, c_top);
-        p.fill_rounded_rect(wifi_x + 2, 14, 10, 2, 1, c_mid);
-        p.fill_rounded_rect(wifi_x + 5, 18, 4, 3, 1, c_dot);
-    } else {
-        p.fill_rounded_rect(wifi_x, 10, 14, 2, 1, 0x334155);
-        p.draw_text_smooth(wifi_x + 3, 8, 10.0, "✕", COLOR_TEXT_DIM, false);
+    // Location / Bluetooth indicators (only when enabled)
+    if state.location_enabled {
+        draw_location_pin(p, 186, 9, COLOR_TEXT_HIGH);
     }
-    p.register_button(wifi_x - 4, 4, 22, 24, "toggle_wifi");
-
-    // 4. Cellular Network Generation Badge (৫G / ৪G / ৩G / E / অফ)
-    let net_x: i16 = 232;
-    if state.cellular_enabled {
-        let (badge, color) = match state.cellular_signal_level {
-            4 | 3 => ("৫G", COLOR_CYAN),
-            2 => ("৪G", COLOR_BLUE),
-            1 => ("৩G", COLOR_AMBER),
-            _ => ("E", COLOR_RED),
-        };
-        p.draw_text_smooth(net_x, 9, 11.5, badge, color, true);
-    } else {
-        p.draw_text_smooth(net_x, 10, 10.0, "অফ", COLOR_TEXT_DIM, false);
+    if state.bt_enabled {
+        draw_bluetooth_icon(p, 206, 9, COLOR_BLUE);
     }
 
-    // 5. Cellular Signal Towers (4 Vertical Bars, increasing/decreasing)
-    let sig_x: i16 = 256;
-    let tower_base_y: i16 = 21;
-    let bar_heights = [3i16, 5, 7, 10];
+    // Wi-Fi (Flaticon 566280)
+    let wifi_col = if state.wifi_enabled { COLOR_TEXT_HIGH } else { 0xB9C2CE };
+    draw_wifi_png(p, 228, 9, wifi_col);
+    p.register_button(224, 4, 28, 24, "toggle_wifi");
 
-    if state.cellular_enabled {
-        for (i, h) in bar_heights.iter().enumerate() {
-            let bx = sig_x + i as i16 * 4;
-            let by = tower_base_y - *h;
-            let col = if (i as u8) < state.cellular_signal_level {
-                COLOR_TEXT_HIGH
-            } else {
-                0x334155 // Dimmed empty bar
-            };
-            p.fill_rect(bx, by, 2, *h as u16, col);
-        }
-    } else {
-        for (i, h) in bar_heights.iter().enumerate() {
-            let bx = sig_x + i as i16 * 4;
-            let by = tower_base_y - *h;
-            p.fill_rect(bx, by, 2, *h as u16, 0x334155);
-        }
-        p.draw_text_smooth(sig_x + 3, 8, 10.0, "✕", COLOR_RED, false);
-    }
-    p.register_button(net_x - 2, 4, 44, 24, "cycle_signal");
+    // Cellular tower + generation (restored)
+    let cell_col = if state.cellular_enabled { COLOR_TEXT_HIGH } else { 0xB9C2CE };
+    let gen = match state.cellular_signal_level {
+        4 | 3 => "৫জি",
+        2 => "৪জি",
+        1 => "৩জি",
+        _ => "—",
+    };
+    p.draw_text_smooth(250, 6, 8.8, gen, cell_col, false);
+    draw_tower_bars(p, 272, 22, state, cell_col);
 
-    // 6. Dynamic Battery
-    let bat_x: i16 = 282;
-    p.fill_rounded_rect(bat_x, 10, 24, 12, 2, 0x1E293B);
-    p.draw_rect_outline(bat_x, 10, 24, 12, 0x64748B);
-    p.fill_rect(bat_x + 24, 13, 2, 6, 0x64748B);
-
+    // Battery (far right)
+    let bat_x: i16 = 300;
+    p.fill_rounded_rect(bat_x, 10, 24, 12, 2, 0xFFFFFF);
+    p.draw_rect_outline(bat_x, 10, 24, 12, 0x6B7280);
+    p.fill_rect(bat_x + 24, 13, 2, 6, 0x6B7280);
     let fill_w = ((state.battery_level as i16 * 18) / 100).max(2).min(18);
     let fill_color = if state.battery_level <= 20 {
         COLOR_RED
@@ -2493,7 +2628,6 @@ fn render_status_bar(p: &mut FramePainter, state: &SimState) {
         COLOR_GREEN
     };
     p.fill_rounded_rect(bat_x + 2, 12, fill_w as u16, 8, 1, fill_color);
-
     if state.battery_charging {
         let bx = bat_x + 10;
         let by = 13;
@@ -2502,46 +2636,52 @@ fn render_status_bar(p: &mut FramePainter, state: &SimState) {
         p.fill_rect(bx, by + 4, 3, 2, COLOR_AMBER);
     }
     p.register_button(bat_x - 2, 4, 32, 24, "toggle_battery_charge");
-
-    // Hairline bottom border
-    p.fill_rect(0, 32, p.width as u16, 1, COLOR_BORDER);
 }
-
 fn render_bottom_nav(p: &mut FramePainter, current: &Screen) {
     let nav_y = (p.height as i16) - 50;
-    for row in 0..50i16 {
-        let t = row as u32;
-        let base = 0x080F1Bu32;
-        let br = ((base >> 16) & 0xFF) + t * 2 / 50;
-        let bg = ((base >> 8) & 0xFF) + t / 50;
-        let bb = (base & 0xFF) + t * 4 / 50;
-        p.fill_rect(0, nav_y + row, p.width as u16, 1, (br << 16) | (bg << 8) | bb);
+    let light = true;
+    if light {
+        p.fill_rect(0, nav_y, p.width as u16, 50, 0xF7F8FA);
+    } else {
+        for row in 0..50i16 {
+            let t = row as u32;
+            let base = 0x080F1Bu32;
+            let br = ((base >> 16) & 0xFF) + t * 2 / 50;
+            let bg = ((base >> 8) & 0xFF) + t / 50;
+            let bb = (base & 0xFF) + t * 4 / 50;
+            p.fill_rect(0, nav_y + row, p.width as u16, 1, (br << 16) | (bg << 8) | bb);
+        }
     }
-    p.fill_rect(0, nav_y, p.width as u16, 1, COLOR_BORDER);
+    let line = if light { 0xE1E5EC } else { COLOR_BORDER };
+    p.fill_rect(0, nav_y, p.width as u16, 1, line);
 
     let btn_w = (p.width as u16 - 16) / 3;
     let btn_h = 36u16;
     let by = nav_y + 7;
+    let btn_bg = if light { 0xFFFFFF } else { COLOR_SURFACE };
 
-    // Back button: pure clean Bengali text
-    p.fill_rounded_rect(6, by, btn_w, btn_h, 10, COLOR_SURFACE);
-    p.draw_text_smooth(6 + (btn_w as i16 - p.text_width(13.5, "ব্যাক", false)) / 2, by + 10, 13.5, "ব্যাক", COLOR_TEXT_MED, false);
+    p.fill_rounded_rect(6, by, btn_w, btn_h, 10, btn_bg);
+    if light { p.draw_rect_outline(6, by, btn_w, btn_h, 0xE1E5EC); }
+    let back_fg = if light { 0x4B5563 } else { COLOR_TEXT_MED };
+    p.draw_text_smooth(6 + (btn_w as i16 - p.text_width(13.5, "ব্যাক", false)) / 2, by + 10, 13.5, "ব্যাক", back_fg, false);
     p.register_button(6, by, btn_w, btn_h, "nav_back");
 
-    // Home button: highlighted
     let hx = 6 + btn_w as i16 + 6;
-    let home_bg = if *current == Screen::Home { 0x0C2E55u32 } else { COLOR_SURFACE };
+    let home_bg = if light { 0xE4EAFB } else if *current == Screen::Home { 0x0C2E55 } else { COLOR_SURFACE };
     p.fill_rounded_rect(hx, by, btn_w, btn_h, 10, home_bg);
     if *current == Screen::Home {
-        p.fill_rect(hx + btn_w as i16 / 2 - 16, by + btn_h as i16 - 4, 32, 3, COLOR_CYAN);
+        let accent = if light { 0x2A5BE0 } else { COLOR_CYAN };
+        p.fill_rect(hx + btn_w as i16 / 2 - 16, by + btn_h as i16 - 4, 32, 3, accent);
     }
-    p.draw_text_smooth(hx + (btn_w as i16 - p.text_width(14.0, "হোম", false)) / 2, by + 10, 14.0, "হোম", COLOR_CYAN, false);
+    let home_fg = if light { 0x2A5BE0 } else { COLOR_CYAN };
+    p.draw_text_smooth(hx + (btn_w as i16 - p.text_width(14.0, "হোম", false)) / 2, by + 10, 14.0, "হোম", home_fg, false);
     p.register_button(hx, by, btn_w, btn_h, "nav_home");
 
-    // Lock button
     let lx = hx + btn_w as i16 + 6;
-    p.fill_rounded_rect(lx, by, btn_w, btn_h, 10, COLOR_SURFACE);
-    p.draw_text_smooth(lx + (btn_w as i16 - p.text_width(13.5, "লক", false)) / 2, by + 10, 13.5, "লক", COLOR_AMBER, false);
+    p.fill_rounded_rect(lx, by, btn_w, btn_h, 10, btn_bg);
+    if light { p.draw_rect_outline(lx, by, btn_w, btn_h, 0xE1E5EC); }
+    let lock_fg = if light { 0xB45309 } else { COLOR_AMBER };
+    p.draw_text_smooth(lx + (btn_w as i16 - p.text_width(13.5, "লক", false)) / 2, by + 10, 13.5, "লক", lock_fg, false);
     p.register_button(lx, by, btn_w, btn_h, "nav_lock");
 }
 
@@ -2644,18 +2784,18 @@ fn render_app_browser(p: &mut FramePainter, state: &SimState) {
     let pw = p.width as i16;
 
     // 1. Header: NilZar Chromium Browser
-    p.fill_rect(0, 36, p.width as u16, 28, 0x0A101D);
-    p.draw_text_smooth(10, 42, 13.0, "নীলজার ব্রাউজার (Chromium V8)", 0x38BDF8, false);
+    p.fill_rect(0, 36, p.width as u16, 28, 0xFFFFFF);
+    p.draw_text_smooth(10, 42, 13.0, "নীলজার ব্রাউজার (Chromium V8)", 0x0E7490, false);
 
     // 2. Address & Control Bar (y = 66..94)
-    p.fill_rect(0, 64, p.width as u16, 32, 0x0F172A);
-    p.draw_button(6, 68, 28, 24, "<", 0x1E293B, COLOR_TEXT_HIGH, "browser_back");
-    p.draw_button(36, 68, 28, 24, "↻", 0x1E293B, COLOR_TEXT_HIGH, "browser_reload");
+    p.fill_rect(0, 64, p.width as u16, 32, 0xF1F4F9);
+    p.draw_button(6, 68, 28, 24, "<", 0xE8EDF4, COLOR_TEXT_HIGH, "browser_back");
+    p.draw_button(36, 68, 28, 24, "↻", 0xE8EDF4, COLOR_TEXT_HIGH, "browser_reload");
 
     let url_x = 68i16;
     let url_w = (pw - url_x - 38) as u16;
-    p.fill_rounded_rect(url_x, 68, url_w, 24, 6, 0x1E293B);
-    p.draw_rect_outline(url_x, 68, url_w, 24, 0x334155);
+    p.fill_rounded_rect(url_x, 68, url_w, 24, 6, 0xE8EDF4);
+    p.draw_rect_outline(url_x, 68, url_w, 24, 0xC7D0DB);
 
     let display_url = if state.browser_is_editing_url {
         let mut s = state.browser_url_input.clone();
@@ -2670,18 +2810,18 @@ fn render_app_browser(p: &mut FramePainter, state: &SimState) {
     p.draw_text_smooth(url_x + 6, 73, 11.5, &short_url, 0xF8FAFC, false);
     p.register_button(url_x, 68, url_w, 24, "browser_url_bar");
 
-    p.draw_button(pw - 32, 68, 26, 24, "Go", 0x0284C7, COLOR_TEXT_HIGH, "browser_go");
+    p.draw_button(pw - 32, 68, 26, 24, "Go", 0x2563EB, COLOR_TEXT_HIGH, "browser_go");
 
     // 3. Tab Strip Bar (y = 96..124)
-    p.fill_rect(0, 96, p.width as u16, 28, 0x060913);
-    p.draw_rect_outline(0, 96, p.width as u16, 28, 0x1E293B);
+    p.fill_rect(0, 96, p.width as u16, 28, 0xF7F9FC);
+    p.draw_rect_outline(0, 96, p.width as u16, 28, 0xE8EDF4);
 
     let mut tab_x = 6i16;
     for (i, tab) in state.browser_tabs.iter().enumerate() {
         let is_active = i == state.browser_active_tab;
         let tab_w = 78u16;
-        let bg = if is_active { 0x0284C7 } else { 0x1E293B };
-        let fg = if is_active { 0xFFFFFF } else { 0x94A3B8 };
+        let bg = if is_active { 0x2563EB } else { 0xE8EDF4 };
+        let fg = if is_active { 0xFFFFFF } else { 0x6B7280 };
 
         p.fill_rounded_rect(tab_x, 99, tab_w, 22, 4, bg);
         let title_disp: String = tab.title.chars().take(6).collect();
@@ -2697,10 +2837,10 @@ fn render_app_browser(p: &mut FramePainter, state: &SimState) {
     }
 
     // New Tab (+) Button
-    p.draw_button(pw - 28, 99, 22, 22, "+", 0x1E293B, 0x38BDF8, "tab_add");
+    p.draw_button(pw - 28, 99, 22, 22, "+", 0xE8EDF4, 0x0E7490, "tab_add");
 
     // 4. WebView2 Container Outline (y = 125..626)
-    p.draw_rect_outline(3, 125, 324, 502, 0x1E293B);
+    p.draw_rect_outline(3, 125, 324, 502, 0xE8EDF4);
 }
 
 fn render_app_notes(p: &mut FramePainter, state: &SimState) {
@@ -2903,7 +3043,7 @@ fn render_nano_editor(p: &mut FramePainter, state: &SimState) {
     let box_x = 8;
 
     p.fill_rect(box_x, box_y, box_w, box_h, COLOR_TERM_BG);
-    p.draw_rect_outline(box_x, box_y, box_w, box_h, 0x1E293B);
+    p.draw_rect_outline(box_x, box_y, box_w, box_h, 0xE8EDF4);
 
     let line_height = 18;
     let max_lines = (box_h as usize / line_height).saturating_sub(1);
@@ -2940,12 +3080,46 @@ fn render_nano_editor(p: &mut FramePainter, state: &SimState) {
 
 
 // ─── 9. Terminal Screen ───────────────────────────────────────────────────────
+fn wrap_text_lines(p: &FramePainter, text: &str, max_w: i16, size: f32) -> Vec<String> {
+    if text.is_empty() { return vec![String::new()]; }
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for word in text.split(' ') {
+        let cand = if cur.is_empty() { word.to_string() } else { format!("{} {}", cur, word) };
+        if p.text_width(size, &cand, true) <= max_w {
+            cur = cand;
+        } else {
+            if !cur.is_empty() {
+                out.push(std::mem::take(&mut cur));
+            }
+            if p.text_width(size, word, true) > max_w {
+                let mut chunk = String::new();
+                for ch in word.chars() {
+                    let mut test = chunk.clone();
+                    test.push(ch);
+                    if !chunk.is_empty() && p.text_width(size, &test, true) > max_w {
+                        out.push(chunk);
+                        chunk = String::new();
+                    }
+                    chunk.push(ch);
+                }
+                cur = chunk;
+            } else {
+                cur = word.to_string();
+            }
+        }
+    }
+    if !cur.is_empty() { out.push(cur); }
+    if out.is_empty() { out.push(String::new()); }
+    out
+}
 fn render_app_terminal(p: &mut FramePainter, state: &SimState) {
 
     let mode_label = if state.python_mode { "Python REPL" } else { "Onuron bash" };
-    p.fill_rect(0, 36, p.width as u16, 36, 0x020C18);
-    p.draw_text_smooth(12, 42, 14.0, &format!(">_  অনুরণ টার্মিনাল — {}  [v1.7]", mode_label), COLOR_GREEN, false);
-    p.draw_button((p.width as i16) - 70, 38, 62, 24, if state.python_mode { "bash" } else { "python" }, COLOR_SURFACE, COLOR_AMBER, "term_toggle_python");
+    p.fill_rect(0, 36, p.width as u16, 36, COLOR_SURFACE);
+    p.fill_rect(0, 71, p.width as u16, 1, COLOR_BORDER);
+    p.draw_text_smooth(12, 42, 13.5, &format!(">_ অনুরণ টার্মিনাল · {}", mode_label), COLOR_GREEN, false);
+    p.draw_button((p.width as i16) - 70, 38, 62, 24, if state.python_mode { "bash" } else { "python" }, COLOR_SURFACE_ALT, COLOR_AMBER, "term_toggle_python");
 
     let chip_w = ((p.width - 48) / 5) as u16;
     let chip_y = 78;
@@ -2963,11 +3137,17 @@ fn render_app_terminal(p: &mut FramePainter, state: &SimState) {
     let box_w = (p.width - 16) as u16;
     let box_x: i16 = 8;
     p.fill_rect(box_x, box_y, box_w, box_h, COLOR_TERM_BG);
-    p.draw_rect_outline(box_x, box_y, box_w, box_h, 0x1E293B);
+    p.draw_rect_outline(box_x, box_y, box_w, box_h, 0xE8EDF4);
 
     let line_height = 17usize;
     let max_visible_lines = (box_h as usize / line_height).saturating_sub(1);
-    let mut all_display_lines = state.term_lines.clone();
+    let max_text_w = box_w as i16 - 20;
+    let mut all_display_lines: Vec<TermLine> = Vec::new();
+    for line in state.term_lines.iter() {
+        for chunk in wrap_text_lines(p, &line.text, max_text_w, 13.0) {
+            all_display_lines.push(TermLine { text: chunk, color: line.color });
+        }
+    }
     let cursor_char = if (state.term_cursor_ticks / 25) % 2 == 0 { "█" } else { " " };
     let (before_cursor, after_cursor) = state.term_cursor_split();
     let prompt_prefix = if state.python_mode {
@@ -2975,7 +3155,9 @@ fn render_app_terminal(p: &mut FramePainter, state: &SimState) {
     } else {
         format!("joy@onuron:{}$ {}{}{}", state.short_cwd(), before_cursor, cursor_char, after_cursor)
     };
-    all_display_lines.push(TermLine { text: prompt_prefix, color: if state.python_mode { COLOR_AMBER } else { COLOR_TEXT_HIGH } });
+    for chunk in wrap_text_lines(p, &prompt_prefix, max_text_w, 13.0) {
+        all_display_lines.push(TermLine { text: chunk, color: if state.python_mode { COLOR_AMBER } else { COLOR_TEXT_HIGH } });
+    }
 
     let total_lines = all_display_lines.len();
     let max_scroll = total_lines.saturating_sub(max_visible_lines);
@@ -3359,13 +3541,22 @@ fn render_app_settings(p: &mut FramePainter, state: &SimState) {
     p.register_button(16, y, card_w, 44, "toggle_softbus");
     y += 50;
 
-    // 6. System Info Card
+    // 6. Location
+    p.fill_rect(16, y, card_w, 44, COLOR_SURFACE);
+    p.draw_rect_outline(16, y, card_w, 44, COLOR_BORDER);
+    p.draw_text_smooth(28, y + 13, 14.5, "লোকেশন", COLOR_TEXT_HIGH, false);
+    let (loc_stat, loc_col) = if state.location_enabled { ("[ চালু ]", COLOR_GREEN) } else { ("[ বন্ধ ]", COLOR_TEXT_DIM) };
+    p.draw_text_smooth((p.width as i16) - 78, y + 13, 13.5, loc_stat, loc_col, false);
+    p.register_button(16, y, card_w, 44, "toggle_location");
+    y += 50;
+
+    // 7. System Info Card
     p.fill_rect(16, y, card_w, 110, COLOR_SURFACE);
     p.draw_rect_outline(16, y, card_w, 110, COLOR_BORDER);
     p.draw_text_smooth(28, y + 12, 16.0, "অনুরণ ওএস তথ্য", COLOR_CYAN, false);
-    p.draw_text_smooth(28, y + 36, 13.5, "ভার্সন: Onuron OS 1.7.0 (S25 Hosted & QEMU)", COLOR_TEXT_MED, false);
-    p.draw_text_smooth(28, y + 58, 13.5, "হার্ডওয়্যার HAL: NilHAL v2 (Dynamic Vector Status)", COLOR_GREEN, false);
-    p.draw_text_smooth(28, y + 80, 13.5, "সময় অঞ্চল: IST (UTC+5:30) ভারত", COLOR_TEXT_MED, false);
+    p.draw_text_smooth(28, y + 36, 12.8, "ভার্সন: Onuron OS 1.7.0 (S25 & QEMU)", COLOR_TEXT_MED, false);
+    p.draw_text_smooth(28, y + 58, 12.8, "HAL: NilHAL v2 (Dynamic Vector)", COLOR_GREEN, false);
+    p.draw_text_smooth(28, y + 80, 12.8, "সময় অঞ্চল: IST (UTC+5:30)", COLOR_TEXT_MED, false);
 }
 
 // ─── 10. NilPkg Package Store Screen ──────────────────────────────────────────
@@ -3470,6 +3661,8 @@ impl minifb::InputCallback for InputHandler {
 
 // ─── Main Desktop Simulator Loop ──────────────────────────────────────────────
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "windows")]
+    unsafe { SetProcessDPIAware(); }
     println!("=========================================================");
     println!("  Onuron OS Mobile Simulator (Alap Framework & Chromium)  ");
     println!("=========================================================");
@@ -3510,6 +3703,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     window.set_input_callback(handler);
 
     let mut state = SimState::new();
+    if std::env::args().any(|a| a == "--memories") { state.screen = Screen::AppMemories; }
+    if std::env::args().any(|a| a == "--memories-detail") { state.screen = Screen::AppMemories; state.mem_view = 1; state.mem_anim = 1.0; state.mem_opening = true; }
+    if std::env::args().any(|a| a == "--memories-albums") { state.screen = Screen::AppMemories; state.mem_tab = 1; }
+    if std::env::args().any(|a| a == "--memories-search") { state.screen = Screen::AppMemories; state.mem_tab = 2; }
     let mut was_mouse_down = false;
     let mut drag_start: Option<(f32, f32)> = None;
 
@@ -3786,6 +3983,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // memories spring transition + toast timer
+        if state.screen == Screen::AppMemories && state.mem_view == 1 {
+            if state.mem_opening {
+                state.mem_anim = (state.mem_anim + 0.13).min(1.0);
+            } else {
+                state.mem_anim -= 0.16;
+                if state.mem_anim <= 0.0 {
+                    state.mem_anim = 0.0;
+                    state.mem_view = 0;
+                }
+            }
+        }
+        if state.mem_toast > 0 { state.mem_toast -= 1; }
+
         // 4. Render Frame to Buffer (Deep Space Obsidian Navy Backdrop)
         buffer.fill(COLOR_BG);
 
@@ -3805,15 +4016,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Screen::AppNotes => render_app_notes(&mut painter, &state),
             Screen::AppCalculator => render_app_calculator(&mut painter, &state),
             Screen::AppBrowser => render_app_browser(&mut painter, &state),
+            Screen::AppMemories => memories::render(&mut painter, &state),
             Screen::ControlCenter => render_control_center(&mut painter, &state),
             Screen::NanoEditor => render_nano_editor(&mut painter, &state),
             Screen::InCall => render_in_call(&mut painter, &state),
         }
 
-        // Live Dynamic Status Bar (always rendered over Home and apps)
-        if state.screen != Screen::ControlCenter && state.screen != Screen::NanoEditor {
-            render_status_bar(&mut painter, &state);
-        }
+        // One system status bar on every screen (gallery style + Wi-Fi)
+        render_status_bar(&mut painter, &state);
 
         if state.screen != Screen::Lockscreen && state.screen != Screen::NanoEditor && state.screen != Screen::ControlCenter {
             render_bottom_nav(&mut painter, &state.screen);
@@ -3862,7 +4072,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         state.screen = Screen::ControlCenter;
                     } else if id == "close_control" {
                         state.screen = Screen::Home;
-                    } else if id == "app_phone" {
+                    } else if id == "app_memories" {
+                state.screen = Screen::AppMemories;
+                state.mem_view = 0;
+                state.mem_tab = 0;
+                state.mem_anim = 0.0;
+                state.mem_opening = false;
+                state.mem_toast = 0;
+            } else if id.starts_with("mem_open_") {
+                if let Ok(idx) = id[9..].parse::<usize>() {
+                    if idx < memories::MEMORIES_COUNT {
+                        state.mem_idx = idx;
+                        state.mem_view = 1;
+                        state.mem_anim = 0.0;
+                        state.mem_opening = true;
+                        state.mem_from = memories::card_rect(idx);
+                    }
+                }
+            } else if id.starts_with("mem_thumb_") {
+                if let Ok(t) = id[10..].parse::<usize>() {
+                    if t < 4 {
+                        let idx = (state.mem_idx + t) % memories::MEMORIES_COUNT;
+                        state.mem_idx = idx;
+                        state.mem_view = 1;
+                        state.mem_anim = 0.0;
+                        state.mem_opening = true;
+                        state.mem_from = (16 + t as i16 * 78, 538, 66, 66);
+                    }
+                }
+            } else if id == "mem_back" {
+                state.mem_opening = false;
+            } else if id == "mem_share" {
+                state.mem_toast = 110;
+            } else if id.starts_with("mem_tab_") {
+                if let Ok(t) = id[8..].parse::<usize>() {
+                    if t < 3 {
+                        state.mem_tab = t;
+                    }
+                }
+            } else if id == "app_phone" {
                         state.screen = Screen::AppPhone;
                     } else if id == "app_messages" {
                         state.screen = Screen::AppMessages;
@@ -4077,7 +4325,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         state.battery_charging = !state.battery_charging;
                     } else if id == "toggle_bt" {
                         state.bt_enabled = !state.bt_enabled;
-                    } else if id == "toggle_softbus" {
+                    } else if id == "toggle_location" { state.location_enabled = !state.location_enabled;
+    } else if id == "toggle_softbus" {
                         state.softbus_enabled = !state.softbus_enabled;
                     } else if id == "toggle_theme" {
                         state.dark_mode = !state.dark_mode;
