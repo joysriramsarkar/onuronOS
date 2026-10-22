@@ -1,14 +1,15 @@
 // nilinit/src/main.rs — Onuron OS PID 1: Mount, Disk Init, Mobile Storage Hierarchy, SELinux, Supervisor, Socket Activation
+use serde::Deserialize;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
-use serde::Deserialize;
 
 mod activate;
 mod recovery;
 mod supervisor;
+mod fscrypt;
 use activate::SocketActivationManager;
 use recovery::BootDecision;
 use supervisor::{ServiceSpec, Supervisor};
@@ -140,7 +141,9 @@ fn mount_early_fs() {
                 libc::dup2(fd, 0);
                 libc::dup2(fd, 1);
                 libc::dup2(fd, 2);
-                if fd > 2 { libc::close(fd); }
+                if fd > 2 {
+                    libc::close(fd);
+                }
             }
         }
     }
@@ -174,19 +177,17 @@ fn load_kernel_modules() {
                     use std::os::unix::io::AsRawFd;
                     let fd = file.as_raw_fd();
                     let ret = unsafe {
-                        libc::syscall(
-                            libc::SYS_finit_module,
-                            fd,
-                            c"".as_ptr(),
-                            0 as libc::c_int,
-                        )
+                        libc::syscall(libc::SYS_finit_module, fd, c"".as_ptr(), 0 as libc::c_int)
                     };
                     if ret == 0 {
                         log_ok(&format!("Kernel module loaded: {}", mod_name));
                     } else {
                         let err = std::io::Error::last_os_error();
                         if err.raw_os_error() == Some(libc::EEXIST) {
-                            log_ok(&format!("Kernel module already built-in/loaded: {}", mod_name));
+                            log_ok(&format!(
+                                "Kernel module already built-in/loaded: {}",
+                                mod_name
+                            ));
                         } else {
                             log_warn(&format!("Failed loading module {}: {}", mod_name, err));
                         }
@@ -205,7 +206,7 @@ fn mount_data_partition() {
     {
         // Try virtio-blk disk (/dev/vda) first, then IDE (/dev/sda), then fall back to tmpfs
         let candidates = ["/dev/vda", "/dev/vda1", "/dev/sda", "/dev/sda1", "/dev/hda"];
-        let mut mounted = false;
+        let mut attempts: Vec<(String, Result<(), String>)> = Vec::new();
 
         for dev in &candidates {
             // Wait briefly for device to appear
@@ -223,7 +224,8 @@ fn mount_data_partition() {
                     Some("ext4"),
                     nix::mount::MsFlags::empty(),
                     None::<&str>,
-                ).or_else(|_| {
+                )
+                .or_else(|_| {
                     nix::mount::mount(
                         Some(*dev),
                         "/data",
@@ -235,27 +237,53 @@ fn mount_data_partition() {
 
                 match result {
                     Ok(_) => {
-                        log_ok(&format!("Persistent storage mounted: {} → /data", dev));
-                        mounted = true;
+                        attempts.push(((*dev).to_string(), Ok(())));
                         break;
                     }
                     Err(e) => {
-                        log_warn(&format!("Could not mount {} as ext4/ext2: {} — trying next", dev, e));
+                        log_warn(&format!(
+                            "Could not mount {} as ext4/ext2: {} — trying next",
+                            dev, e
+                        ));
+                        attempts.push(((*dev).to_string(), Err(e.to_string())));
                     }
                 }
             }
         }
 
-        if !mounted {
-            // Fall back to tmpfs — data will not persist across reboots
-            let _ = nix::mount::mount(
-                Some("tmpfs"),
-                "/data",
-                Some("tmpfs"),
-                nix::mount::MsFlags::empty(),
-                Some("size=64M"),
-            );
-            log_warn("No persistent disk found — /data is tmpfs (ephemeral)");
+        match recovery::evaluate_data_mount_attempts(&attempts) {
+            recovery::DataMountOutcome::Mounted { device } => {
+                log_ok(&format!("Persistent storage mounted: {} → /data", device));
+            }
+            recovery::DataMountOutcome::CorruptDisk { failed_devices } => {
+                let summary: Vec<String> = failed_devices
+                    .iter()
+                    .map(|(d, e)| format!("{}: {}", d, e))
+                    .collect();
+                log_warn(&format!(
+                    "CORRUPT DISK DETECTED: persistent block device(s) present but unmountable ({}) — mounting emergency tmpfs on /data",
+                    summary.join("; ")
+                ));
+                let _ = nix::mount::mount(
+                    Some("tmpfs"),
+                    "/data",
+                    Some("tmpfs"),
+                    nix::mount::MsFlags::empty(),
+                    Some("size=64M"),
+                );
+                let _ = fs::write("/run/onuron/data_corrupt", summary.join("\n"));
+            }
+            recovery::DataMountOutcome::NoDiskPresent => {
+                // Fall back to tmpfs — data will not persist across reboots
+                let _ = nix::mount::mount(
+                    Some("tmpfs"),
+                    "/data",
+                    Some("tmpfs"),
+                    nix::mount::MsFlags::empty(),
+                    Some("size=64M"),
+                );
+                log_warn("No persistent disk found — /data is tmpfs (ephemeral)");
+            }
         }
     }
 
@@ -263,14 +291,26 @@ fn mount_data_partition() {
     // /system, /vendor, /cache, /recovery, /metadata
     // /data/user, /data/app, /data/system, /data/media, /data/config
     for dir in &[
-        "/system", "/vendor", "/cache", "/recovery", "/metadata",
-        "/data/user", "/data/app", "/data/system", "/data/media",
-        "/data/config", "/data/contacts", "/data/sms", "/data/logs",
+        "/system",
+        "/vendor",
+        "/cache",
+        "/recovery",
+        "/metadata",
+        "/data/user",
+        "/data/app",
+        "/data/system",
+        "/data/media",
+        "/data/config",
+        "/data/contacts",
+        "/data/sms",
+        "/data/logs",
         "/data/nilos", // backward compatibility for existing prototypes
     ] {
         let _ = fs::create_dir_all(dir);
     }
-    log_ok("Mobile filesystem hierarchy initialized (/data/user, /data/app, /data/system, /system)");
+    log_ok(
+        "Mobile filesystem hierarchy initialized (/data/user, /data/app, /data/system, /system)",
+    );
 }
 
 fn check_live_install() {
@@ -294,7 +334,10 @@ fn load_selinux() {
     let policy = match fs::read(policy_path) {
         Ok(p) => p,
         Err(e) => {
-            log_warn(&format!("SELinux policy file not found at {}: {}", policy_path, e));
+            log_warn(&format!(
+                "SELinux policy file not found at {}: {}",
+                policy_path, e
+            ));
             return;
         }
     };
@@ -302,7 +345,9 @@ fn load_selinux() {
     match OpenOptions::new().write(true).open(selinux_load_path) {
         Ok(mut f) => match f.write_all(&policy) {
             Ok(_) => {
-                log_ok("SELinux binary policy successfully committed to kernel (/sys/fs/selinux/load)");
+                log_ok(
+                    "SELinux binary policy successfully committed to kernel (/sys/fs/selinux/load)",
+                );
                 let mut verified_enforcing = false;
                 let enforce_path = "/sys/fs/selinux/enforce";
                 if let Ok(mut enforce_file) = OpenOptions::new().write(true).open(enforce_path) {
@@ -321,12 +366,55 @@ fn load_selinux() {
                 }
             }
             Err(e) => {
-                log_warn(&format!("Failed writing SELinux binary policy to kernel: {}", e));
+                log_warn(&format!(
+                    "Failed writing SELinux binary policy to kernel: {}",
+                    e
+                ));
             }
         },
         Err(e) => {
-            log_warn(&format!("Cannot open {} with write permissions: {}", selinux_load_path, e));
+            log_warn(&format!(
+                "Cannot open {} with write permissions: {}",
+                selinux_load_path, e
+            ));
         }
+    }
+}
+
+fn load_fscrypt_key() {
+    // Read the fscrypt policy from /data/system/fscrypt/policy
+    let policy_path = "/data/system/fscrypt/policy";
+    let policy = match fs::read_to_string(policy_path) {
+        Ok(p) => p,
+        Err(e) => {
+            log_info(&format!("fscrypt policy not found at {}: {}", policy_path, e));
+            return;
+        }
+    };
+
+    let descriptor = match fscrypt::KeyDescriptor::parse(&policy) {
+        Ok(d) => d,
+        Err(e) => {
+            log_warn(&format!("fscrypt policy parse failed: {}", e));
+            return;
+        }
+    };
+
+    // Connect to nilkeyd and request the key blob
+    let key = match fscrypt::request_key("/run/nilos/keyd.sock", &descriptor.descriptor) {
+        Ok(k) => k,
+        Err(e) => {
+            log_warn(&format!("fscrypt key request failed: {}", e));
+            return;
+        }
+    };
+
+    // Apply the key to /data
+    if let Err(e) = fscrypt::apply_key(&key, &descriptor.descriptor, &policy) {
+        log_warn(&format!("fscrypt key apply failed: {}", e));
+        log_warn("fscrypt key was not applied; /data will be unencrypted");
+    } else {
+        log_ok("fscrypt key loaded from nilkeyd and applied to /data");
     }
 }
 
@@ -419,7 +507,9 @@ fn check_persistence_test(supervisor: &mut Supervisor) {
 
             // Verify /data is NOT tmpfs
             if let Ok(mounts) = fs::read_to_string("/proc/mounts") {
-                let is_block_mount = mounts.lines().any(|l| l.contains("/data ext4") || l.contains("/data ext2"));
+                let is_block_mount = mounts
+                    .lines()
+                    .any(|l| l.contains("/data ext4") || l.contains("/data ext2"));
                 if !is_block_mount {
                     kmsg("\x1b[1;31m[ FAIL ]\x1b[0m Persistence test failed: /data is not mounted from real ext block device!");
                     handle_system_shutdown("halt", supervisor);
@@ -430,13 +520,18 @@ fn check_persistence_test(supervisor: &mut Supervisor) {
             match fs::write(marker_path, test_payload) {
                 Ok(_) => {
                     #[cfg(target_os = "linux")]
-                    unsafe { libc::sync(); }
+                    unsafe {
+                        libc::sync();
+                    }
                     log_ok("Persistence marker written and synced to /data");
                     log_ok("Persistence test WRITE phase completed successfully");
                     handle_system_shutdown("poweroff", supervisor);
                 }
                 Err(e) => {
-                    kmsg(&format!("\x1b[1;31m[ FAIL ]\x1b[0m Failed writing persistence marker: {}", e));
+                    kmsg(&format!(
+                        "\x1b[1;31m[ FAIL ]\x1b[0m Failed writing persistence marker: {}",
+                        e
+                    ));
                     handle_system_shutdown("halt", supervisor);
                 }
             }
@@ -447,9 +542,13 @@ fn check_persistence_test(supervisor: &mut Supervisor) {
 
             // Verify /data is NOT tmpfs
             if let Ok(mounts) = fs::read_to_string("/proc/mounts") {
-                let is_block_mount = mounts.lines().any(|l| l.contains("/data ext4") || l.contains("/data ext2"));
+                let is_block_mount = mounts
+                    .lines()
+                    .any(|l| l.contains("/data ext4") || l.contains("/data ext2"));
                 if !is_block_mount {
-                    kmsg("\x1b[1;31m[ FAIL ]\x1b[0m Persistence test verify failed: /data is tmpfs!");
+                    kmsg(
+                        "\x1b[1;31m[ FAIL ]\x1b[0m Persistence test verify failed: /data is tmpfs!",
+                    );
                     handle_system_shutdown("halt", supervisor);
                     return;
                 }
@@ -457,16 +556,24 @@ fn check_persistence_test(supervisor: &mut Supervisor) {
 
             match fs::read(marker_path) {
                 Ok(content) if content == expected_payload => {
-                    log_ok("Persistence marker verified across reboot: payload matches byte-for-byte");
+                    log_ok(
+                        "Persistence marker verified across reboot: payload matches byte-for-byte",
+                    );
                     log_ok("Persistence test VERIFY phase completed successfully");
                     handle_system_shutdown("poweroff", supervisor);
                 }
                 Ok(content) => {
-                    kmsg(&format!("\x1b[1;31m[ FAIL ]\x1b[0m Persistence marker corrupt (read {} bytes)", content.len()));
+                    kmsg(&format!(
+                        "\x1b[1;31m[ FAIL ]\x1b[0m Persistence marker corrupt (read {} bytes)",
+                        content.len()
+                    ));
                     handle_system_shutdown("halt", supervisor);
                 }
                 Err(e) => {
-                    kmsg(&format!("\x1b[1;31m[ FAIL ]\x1b[0m Persistence marker missing after reboot: {}", e));
+                    kmsg(&format!(
+                        "\x1b[1;31m[ FAIL ]\x1b[0m Persistence marker missing after reboot: {}",
+                        e
+                    ));
                     handle_system_shutdown("halt", supervisor);
                 }
             }
@@ -484,6 +591,7 @@ fn main() {
     setup_cgroups();
     mount_data_partition();
     load_selinux();
+    load_fscrypt_key();
 
     // Recovery decision: an explicit kernel flag or too many consecutive
     // failed boots drops the device into `nilrecovery` instead of the UI.
@@ -519,13 +627,23 @@ fn main() {
         Ok(c) => match c.validate() {
             Ok(()) => c,
             Err(err) => {
-                kmsg(&format!("\x1b[1;31m[ FATAL ]\x1b[0m Invalid services.toml schema: {}", err));
-                loop { thread::sleep(Duration::from_secs(60)); }
+                kmsg(&format!(
+                    "\x1b[1;31m[ FATAL ]\x1b[0m Invalid services.toml schema: {}",
+                    err
+                ));
+                loop {
+                    thread::sleep(Duration::from_secs(60));
+                }
             }
         },
         Err(e) => {
-            kmsg(&format!("\x1b[1;31m[ FATAL ]\x1b[0m Could not parse services.toml: {}", e));
-            loop { thread::sleep(Duration::from_secs(60)); }
+            kmsg(&format!(
+                "\x1b[1;31m[ FATAL ]\x1b[0m Could not parse services.toml: {}",
+                e
+            ));
+            loop {
+                thread::sleep(Duration::from_secs(60));
+            }
         }
     };
 
@@ -556,30 +674,36 @@ fn main() {
     thread::sleep(Duration::from_millis(50));
 
     // Core services that MUST be running for Onuron OS to be considered operational
-    let core_services = ["nild", "nilkeyd", "nilbus", "netd", "audiod", "powerd", "nilshell"];
+    let core_services = [
+        "nild", "nilkeyd", "nilbus", "netd", "audiod", "powerd", "nilshell",
+    ];
     let mut boot_failed = match supervisor.check_core_health(&core_services) {
         Ok(()) => false,
         Err(failed) => {
             for core in failed {
-                kmsg(&format!("\x1b[1;31m[ FAIL ]\x1b[0m Core service '{}' failed to start or crashed!", core));
+                kmsg(&format!(
+                    "\x1b[1;31m[ FAIL ]\x1b[0m Core service '{}' failed to start or crashed!",
+                    core
+                ));
             }
             true
         }
     };
 
     // Core services readiness probes (socket existence and service liveness)
-    let readiness_probes: [(&str, Option<&std::path::Path>); 7] = [
+    // Readiness probes: nilshell has no socket/marker; verify by process
+    // existence via supervisor.check_core_health instead.
+    let readiness_probes: [(&str, Option<&std::path::Path>); 6] = [
         ("nild", Some(std::path::Path::new("/run/onuron/ready/nild"))),
         ("nilkeyd", Some(std::path::Path::new("/run/nilos/keyd.sock"))),
         ("nilbus", Some(std::path::Path::new("/run/nilos/bus.sock"))),
         ("netd", Some(std::path::Path::new("/run/onuron/net.sock"))),
         ("audiod", Some(std::path::Path::new("/run/onuron/audio.sock"))),
         ("powerd", Some(std::path::Path::new("/run/onuron/power.sock"))),
-        ("nilshell", Some(std::path::Path::new("/run/onuron/ready/nilshell"))),
     ];
 
     // Bounded retry loop for readiness checks
-    let max_readiness_wait = Duration::from_millis(5000);
+    let max_readiness_wait = Duration::from_millis(10000);
     let poll_interval = Duration::from_millis(100);
     let readiness_start = Instant::now();
     let mut readiness_ok = false;
@@ -617,7 +741,11 @@ fn main() {
         kmsg("\x1b[1;33m[ WARN ]\x1b[0m Onuron OS boot degraded: core readiness incomplete");
     } else {
         log_ok("Core service sockets verified ready");
-        log_ok(&format!("Core services verified healthy ({}/{} active)", core_services.len(), core_services.len()));
+        log_ok(&format!(
+            "Core services verified healthy ({}/{} active)",
+            core_services.len(),
+            core_services.len()
+        ));
         log_ok(&format!(
             "Onuron OS boot completed in {:.2} ms ({} services active, core services verified healthy)",
             boot_start.elapsed().as_secs_f64() * 1000.0,
@@ -682,9 +810,16 @@ mod tests {
     #[test]
     fn test_embedded_services_config_is_valid() {
         let config_str = include_str!("../../etc/nilos/services.toml");
-        let config: Config = toml::from_str(config_str).expect("Embedded services.toml must be valid TOML");
-        assert!(config.validate().is_ok(), "Embedded services.toml must pass schema validation");
-        assert!(config.services.len() >= 7, "Must contain all core mobile daemons");
+        let config: Config =
+            toml::from_str(config_str).expect("Embedded services.toml must be valid TOML");
+        assert!(
+            config.validate().is_ok(),
+            "Embedded services.toml must pass schema validation"
+        );
+        assert!(
+            config.services.len() >= 7,
+            "Must contain all core mobile daemons"
+        );
     }
 
     #[test]

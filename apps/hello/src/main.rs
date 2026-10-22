@@ -1,6 +1,6 @@
 // apps/hello/src/main.rs — First Native NilOS App (Stateful Counter with Handoff)
 use nilui::{App, Element, Ev};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 struct State {

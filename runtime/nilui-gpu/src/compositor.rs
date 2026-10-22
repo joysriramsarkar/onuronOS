@@ -73,7 +73,13 @@ impl PixelBuffer {
         self.fill_rect(x, y + r as i32, w, h.saturating_sub(r * 2), color);
         // Top and bottom bars
         self.fill_rect(x + r as i32, y, w.saturating_sub(r * 2), r, color);
-        self.fill_rect(x + r as i32, y + (h - r) as i32, w.saturating_sub(r * 2), r, color);
+        self.fill_rect(
+            x + r as i32,
+            y + (h - r) as i32,
+            w.saturating_sub(r * 2),
+            r,
+            color,
+        );
 
         // 4 corner circles
         self.fill_circle_corner(x + r as i32, y + r as i32, r, 0, color);
@@ -88,9 +94,9 @@ impl PixelBuffer {
             for dx in 0..=r_i {
                 if dx * dx + dy * dy <= r_i * r_i {
                     let (px, py) = match corner {
-                        0 => (cx - dx, cy - dy), // Top-left
-                        1 => (cx + dx - 1, cy - dy), // Top-right
-                        2 => (cx - dx, cy + dy - 1), // Bottom-left
+                        0 => (cx - dx, cy - dy),         // Top-left
+                        1 => (cx + dx - 1, cy - dy),     // Top-right
+                        2 => (cx - dx, cy + dy - 1),     // Bottom-left
                         _ => (cx + dx - 1, cy + dy - 1), // Bottom-right
                     };
                     self.set_pixel(px, py, color);
@@ -188,7 +194,7 @@ fn get_char_glyph(c: char) -> [u8; 8] {
         '%' => [0x62, 0x64, 0x08, 0x10, 0x20, 0x26, 0x46, 0x00],
         '-' => [0x00, 0x00, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00],
         ' ' => [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
-        _   => [0x7E, 0x42, 0x42, 0x42, 0x42, 0x42, 0x7E, 0x00], // Box fallback
+        _ => [0x7E, 0x42, 0x42, 0x42, 0x42, 0x42, 0x7E, 0x00], // Box fallback
     }
 }
 

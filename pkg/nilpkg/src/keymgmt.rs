@@ -151,7 +151,10 @@ pub fn read_passphrase(prompt: &str) -> Result<String, String> {
     #[cfg(unix)]
     {
         use std::os::unix::io::AsRawFd;
-        let tty = fs::OpenOptions::new().read(true).write(true).open("/dev/tty");
+        let tty = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty");
         if let Ok(tty) = tty {
             let fd = tty.as_raw_fd();
             let mut termios: libc::termios = unsafe { std::mem::zeroed() };
@@ -185,7 +188,10 @@ mod tests {
         let passphrase = "correct horse battery staple";
         let record = encrypt_private_key(&private_key, passphrase);
         assert!(record.starts_with("enc1$"));
-        assert!(!record.contains("4242"), "plaintext must not appear in record");
+        assert!(
+            !record.contains("4242"),
+            "plaintext must not appear in record"
+        );
         let decrypted = decrypt_private_key(&record, passphrase).unwrap();
         assert_eq!(decrypted, private_key);
     }
@@ -212,7 +218,10 @@ mod tests {
     #[test]
     fn invalid_formats_are_rejected() {
         for bad in ["", "enc1", "enc1$a$b$c", "enc2$aa$bb", "enc1$zz$bb"] {
-            assert!(decrypt_private_key(bad, "pass").is_none(), "accepted {bad:?}");
+            assert!(
+                decrypt_private_key(bad, "pass").is_none(),
+                "accepted {bad:?}"
+            );
         }
     }
 

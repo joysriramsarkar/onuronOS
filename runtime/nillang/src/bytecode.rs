@@ -1,6 +1,6 @@
 // runtime/nillang/src/bytecode.rs — Binary Bytecode Format for NilLang
-use serde::{Deserialize, Serialize};
 use crate::ast::Program;
+use serde::{Deserialize, Serialize};
 
 pub const BYTECODE_MAGIC: &[u8; 4] = b"NILB";
 pub const BYTECODE_VERSION: u16 = 1;
@@ -28,7 +28,8 @@ impl CompiledPackage {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<Self, String> {
-        let pkg: Self = serde_json::from_slice(bytes).map_err(|e| format!("Bytecode parse error: {e}"))?;
+        let pkg: Self =
+            serde_json::from_slice(bytes).map_err(|e| format!("Bytecode parse error: {e}"))?;
         if &pkg.magic != BYTECODE_MAGIC {
             return Err("Invalid bytecode magic header".to_string());
         }

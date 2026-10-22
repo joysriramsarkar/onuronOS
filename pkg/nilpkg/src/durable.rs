@@ -14,7 +14,8 @@ use std::path::Path;
 pub fn sync_dir(dir: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
-        let file = File::open(dir).map_err(|e| format!("Could not open {} to fsync: {e}", dir.display()))?;
+        let file = File::open(dir)
+            .map_err(|e| format!("Could not open {} to fsync: {e}", dir.display()))?;
         file.sync_all()
             .map_err(|e| format!("Could not fsync {}: {e}", dir.display()))?;
         Ok(())
@@ -35,7 +36,8 @@ pub fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
-    fs::create_dir_all(parent).map_err(|e| format!("Could not create {}: {e}", parent.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|e| format!("Could not create {}: {e}", parent.display()))?;
 
     let file_name = path
         .file_name()
@@ -45,9 +47,12 @@ pub fn write_file_atomic(path: &Path, data: &[u8]) -> Result<(), String> {
     let tmp = parent.join(format!(".{file_name}.tmp.{}", std::process::id()));
 
     {
-        let mut file = File::create(&tmp).map_err(|e| format!("Could not create {}: {e}", tmp.display()))?;
-        file.write_all(data).map_err(|e| format!("Could not write {}: {e}", tmp.display()))?;
-        file.sync_all().map_err(|e| format!("Could not fsync {}: {e}", tmp.display()))?;
+        let mut file =
+            File::create(&tmp).map_err(|e| format!("Could not create {}: {e}", tmp.display()))?;
+        file.write_all(data)
+            .map_err(|e| format!("Could not write {}: {e}", tmp.display()))?;
+        file.sync_all()
+            .map_err(|e| format!("Could not fsync {}: {e}", tmp.display()))?;
     }
 
     if let Err(e) = fs::rename(&tmp, path) {
@@ -85,10 +90,13 @@ fn sync_file(path: &Path) -> Result<(), String> {
 pub fn sync_tree(root: &Path) -> Result<(), String> {
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
-        let entries = fs::read_dir(&dir).map_err(|e| format!("Could not read {}: {e}", dir.display()))?;
+        let entries =
+            fs::read_dir(&dir).map_err(|e| format!("Could not read {}: {e}", dir.display()))?;
         for entry in entries.flatten() {
             let path = entry.path();
-            let file_type = entry.file_type().map_err(|e| format!("Could not stat {}: {e}", path.display()))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|e| format!("Could not stat {}: {e}", path.display()))?;
             if file_type.is_dir() {
                 dirs.push(path);
             } else if file_type.is_file() {
@@ -123,7 +131,10 @@ mod tests {
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
             .collect();
-        assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+        assert!(
+            leftovers.is_empty(),
+            "temp files left behind: {leftovers:?}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

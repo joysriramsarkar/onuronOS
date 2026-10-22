@@ -36,11 +36,11 @@ impl Default for NamespaceIsolation {
 /// Resource constraints (cgroup v2) for the guest container
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceLimits {
-    pub memory_max_bytes: u64,       // e.g. 3 GiB default cap
+    pub memory_max_bytes: u64, // e.g. 3 GiB default cap
     pub memory_swap_max_bytes: u64,
-    pub cpu_quota_us: u64,           // e.g. 800_000 per 1_000_000 period
+    pub cpu_quota_us: u64, // e.g. 800_000 per 1_000_000 period
     pub cpu_period_us: u64,
-    pub max_pids: u32,               // Prevent fork-bombing host
+    pub max_pids: u32, // Prevent fork-bombing host
 }
 
 impl Default for ResourceLimits {
@@ -123,19 +123,28 @@ impl ContainerProfile {
             return Err("IPC namespace must be enabled to prevent host SysV/POSIX IPC leak".into());
         }
         if self.devices.allow_raw_evdev {
-            return Err("Direct evdev input access is forbidden; must route through inputd/bridge".into());
+            return Err(
+                "Direct evdev input access is forbidden; must route through inputd/bridge".into(),
+            );
         }
         if self.devices.allow_raw_mem || self.devices.allow_raw_kmsg {
             return Err("Raw /dev/mem or /dev/kmsg access is strictly forbidden".into());
         }
         if self.devices.allow_direct_drm_master {
-            return Err("Direct DRM master access is forbidden; compositor owns the display".into());
+            return Err(
+                "Direct DRM master access is forbidden; compositor owns the display".into(),
+            );
         }
-        if self.limits.memory_max_bytes == 0 || self.limits.memory_max_bytes > 16 * 1024 * 1024 * 1024 {
+        if self.limits.memory_max_bytes == 0
+            || self.limits.memory_max_bytes > 16 * 1024 * 1024 * 1024
+        {
             return Err("Unbounded or invalid memory limits configured".into());
         }
         if !self.selinux_context.starts_with("u:r:android_container") {
-            return Err(format!("Invalid SELinux domain '{}'; expected android_container", self.selinux_context));
+            return Err(format!(
+                "Invalid SELinux domain '{}'; expected android_container",
+                self.selinux_context
+            ));
         }
         Ok(())
     }
@@ -143,7 +152,11 @@ impl ContainerProfile {
     /// Check if a given device access request by the guest container is permitted
     pub fn is_device_permitted(&self, dev_path: &Path) -> bool {
         let path_str = dev_path.to_string_lossy();
-        if path_str.starts_with("/dev/input") || path_str == "/dev/kmsg" || path_str == "/dev/mem" || path_str == "/dev/port" {
+        if path_str.starts_with("/dev/input")
+            || path_str == "/dev/kmsg"
+            || path_str == "/dev/mem"
+            || path_str == "/dev/port"
+        {
             return false;
         }
         self.devices.allowed_devices.contains(dev_path)

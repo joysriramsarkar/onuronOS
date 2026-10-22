@@ -7,9 +7,7 @@ use std::io::{Read, Write};
 mod engine;
 pub use engine::PhoneticEngine;
 
-use nilprotocol::{
-    Frame, ImeTransliteratePayload, ImeTransliterateResultPayload, MessageType,
-};
+use nilprotocol::{Frame, ImeTransliteratePayload, ImeTransliterateResultPayload, MessageType};
 
 pub fn handle_ipc_request(engine: &PhoneticEngine, frame: &Frame) -> Frame {
     let msg_type = MessageType::from(frame.message_type);

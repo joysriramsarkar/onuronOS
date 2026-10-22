@@ -69,28 +69,55 @@ pub enum HostToGuestEvent {
 #[serde(tag = "action", content = "params")]
 pub enum GuestToHostCommand {
     // Display
-    SetBrightness { percent: u8 },
-    SetKeepScreenOn { keep_on: bool },
+    SetBrightness {
+        percent: u8,
+    },
+    SetKeepScreenOn {
+        keep_on: bool,
+    },
 
     // Telephony
-    DialNumber { number: String },
-    HangupCall { call_id: String },
-    AnswerCall { call_id: String },
-    SendSms { recipient: String, message: String },
+    DialNumber {
+        number: String,
+    },
+    HangupCall {
+        call_id: String,
+    },
+    AnswerCall {
+        call_id: String,
+    },
+    SendSms {
+        recipient: String,
+        message: String,
+    },
 
     // Network
     ScanWifi,
-    ConnectWifi { ssid: String, password: String },
+    ConnectWifi {
+        ssid: String,
+        password: String,
+    },
 
     // Camera
-    StartCameraPreview { camera_id: u32 },
+    StartCameraPreview {
+        camera_id: u32,
+    },
     StopCameraPreview,
-    CapturePhoto { camera_id: u32 },
-    SetTorch { enabled: bool },
+    CapturePhoto {
+        camera_id: u32,
+    },
+    SetTorch {
+        enabled: bool,
+    },
 
     // Audio & Feedback
-    Vibrate { duration_ms: u32 },
-    SetVolume { stream_type: String, percent: u8 },
+    Vibrate {
+        duration_ms: u32,
+    },
+    SetVolume {
+        stream_type: String,
+        percent: u8,
+    },
 
     // Notifications
     PostSystemNotification {

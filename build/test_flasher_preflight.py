@@ -39,12 +39,19 @@ class TestFlasherPreflight(unittest.TestCase):
         self.out_fajita = os.path.join(TOP, "out", "oneplus-fajita")
         os.makedirs(self.out_fajita, exist_ok=True)
         self.created_images = []
+        self.stashed_files = []
 
     def tearDown(self):
         for f in self.created_images:
             try:
                 if os.path.exists(f):
                     os.remove(f)
+            except OSError:
+                pass
+        for orig, backup in self.stashed_files:
+            try:
+                if os.path.exists(backup):
+                    shutil.move(backup, orig)
             except OSError:
                 pass
         shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -132,6 +139,13 @@ sys.exit(0)
             with open(vbmeta_img, "wb") as f:
                 f.write(b"AVB0" + b"\x00" * 252)
             self.created_images.append(vbmeta_img)
+        elif not include_vbmeta:
+            for candidate in ("vbmeta_a.img", "vbmeta.img"):
+                cand_path = os.path.join(self.out_fajita, candidate)
+                if os.path.exists(cand_path):
+                    backup_path = os.path.join(self.tmpdir, f"stashed_{candidate}")
+                    shutil.move(cand_path, backup_path)
+                    self.stashed_files.append((cand_path, backup_path))
 
     def _run_flasher(self, target="oneplus-fajita", extra_args=None):
         extra = extra_args or []

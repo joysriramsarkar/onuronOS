@@ -1,7 +1,8 @@
 // shell/src/simulated.rs — Simulated screen registry and badge helpers
 //
 // This module provides a machine-readable registry of the UI screens that
-// display simulated/fabricated data. It is consumed by two things:
+// display simulated hardware/container fallbacks when physical hardware is absent.
+// It is consumed by two things:
 //
 //   1. The shell render loop, which stamps a visible `[SIMULATED]` badge on
 //      every registered screen (so adding a screen here is enough to label it).
@@ -14,22 +15,15 @@
 /// Visible badge rendered on every simulated screen.
 pub const BADGE: &str = "[SIMULATED]";
 
-/// Screen key -> reason the screen shows simulated/fabricated data.
+/// Screen key -> reason the screen shows simulated hardware/container fallback data.
 pub const SIMULATED_SCREENS: &[(&str, &str)] = &[
-    ("lockscreen", "clock, date and weather are static demo values"),
-    ("home", "hero clock, date and weather are static demo values"),
-    ("phone", "VoLTE call layer is simulated; recent-call list is fabricated"),
-    ("messages", "ships with seeded demo threads in addition to on-disk SMS"),
-    ("settings", "system/security state (SELinux, fscrypt) is unverified"),
-    ("nilpkg", "repository and installed-package lists are fabricated"),
-    ("softbus", "discovered peer list is fabricated; no mDNS scan is running"),
+    ("phone", "VoLTE call layer uses simulated fallback when modem hardware is absent"),
+    ("settings", "system/security state (SELinux, fscrypt) is unverified when kernel/storage policy is unmounted"),
+    ("softbus", "peer discovery uses local registry when mDNS/QUIC daemon is offline"),
     ("android", "container status is placeholder text; no LXC container is started"),
-    ("terminal", "`services`, `ps`, `net` fallbacks are simulated; `modem`, `audio`, `camera` have no hardware"),
-    ("notifications", "notification history is fabricated"),
-    ("calculator", "evaluates basic arithmetic expressions; scientific/CAS not implemented"),
-    ("notes", "ships with seeded sample notes; dynamic note sync/database simulated"),
-    ("music", "track list and playback status are simulated demo strings"),
-    ("camera", "viewfinder and sensor specs are simulated; live video stream requires camerad"),
+    ("terminal", "hardware commands (`modem`, `audio`, `camera`) use simulated fallback when devices are absent"),
+    ("music", "audio playback uses simulated output when ALSA hardware is absent"),
+    ("camera", "viewfinder and frame capture use simulated fallback when live camerad/V4L2 hardware is absent"),
 ];
 
 /// The badge token.
@@ -146,5 +140,8 @@ mod tests {
     fn reason_matches_registry() {
         assert!(reason("phone").is_some());
         assert!(reason("oobe_welcome").is_none());
+        assert!(reason("lockscreen").is_none());
+        assert!(reason("calculator").is_none());
+        assert!(reason("notes").is_none());
     }
 }

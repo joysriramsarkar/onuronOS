@@ -58,15 +58,36 @@ fn update(state: &mut SettingsState, ev: Ev) {
         // Toggles
         Ev::Click(201) => {
             state.wifi_enabled = !state.wifi_enabled;
-            state.status_toast = format!("Wi-Fi {}", if state.wifi_enabled { "Connected" } else { "Disconnected" });
+            state.status_toast = format!(
+                "Wi-Fi {}",
+                if state.wifi_enabled {
+                    "Connected"
+                } else {
+                    "Disconnected"
+                }
+            );
         }
         Ev::Click(202) => {
             state.bluetooth_enabled = !state.bluetooth_enabled;
-            state.status_toast = format!("Bluetooth {}", if state.bluetooth_enabled { "Enabled" } else { "Disabled" });
+            state.status_toast = format!(
+                "Bluetooth {}",
+                if state.bluetooth_enabled {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                }
+            );
         }
         Ev::Click(203) => {
             state.cellular_enabled = !state.cellular_enabled;
-            state.status_toast = format!("Mobile Data {}", if state.cellular_enabled { "Active (VoLTE)" } else { "Disabled" });
+            state.status_toast = format!(
+                "Mobile Data {}",
+                if state.cellular_enabled {
+                    "Active (VoLTE)"
+                } else {
+                    "Disabled"
+                }
+            );
         }
         Ev::Click(204) => {
             if state.volume >= 10 {
@@ -86,11 +107,19 @@ fn update(state: &mut SettingsState, ev: Ev) {
         }
         Ev::Click(206) => {
             state.is_muted = !state.is_muted;
-            state.status_toast = format!("Audio {}", if state.is_muted { "Muted" } else { "Unmuted" });
+            state.status_toast =
+                format!("Audio {}", if state.is_muted { "Muted" } else { "Unmuted" });
         }
         Ev::Click(207) => {
             state.high_refresh_rate = !state.high_refresh_rate;
-            state.status_toast = format!("Display {}", if state.high_refresh_rate { "120Hz Dynamic" } else { "60Hz Standard" });
+            state.status_toast = format!(
+                "Display {}",
+                if state.high_refresh_rate {
+                    "120Hz Dynamic"
+                } else {
+                    "60Hz Standard"
+                }
+            );
         }
         _ => {}
     }
@@ -98,42 +127,86 @@ fn update(state: &mut SettingsState, ev: Ev) {
 
 fn view(state: &SettingsState) -> Element {
     let nav_buttons = vec![
-        Element::Button { label: "📊 Overview".into(), on_click_id: 100 },
-        Element::Button { label: "📶 Wireless".into(), on_click_id: 101 },
-        Element::Button { label: "🔊 Sound".into(), on_click_id: 102 },
-        Element::Button { label: "🖥️ Display".into(), on_click_id: 103 },
-        Element::Button { label: "🛡️ Security".into(), on_click_id: 104 },
-        Element::Button { label: "ℹ️ About".into(), on_click_id: 105 },
+        Element::Button {
+            label: "📊 Overview".into(),
+            on_click_id: 100,
+        },
+        Element::Button {
+            label: "📶 Wireless".into(),
+            on_click_id: 101,
+        },
+        Element::Button {
+            label: "🔊 Sound".into(),
+            on_click_id: 102,
+        },
+        Element::Button {
+            label: "🖥️ Display".into(),
+            on_click_id: 103,
+        },
+        Element::Button {
+            label: "🛡️ Security".into(),
+            on_click_id: 104,
+        },
+        Element::Button {
+            label: "ℹ️ About".into(),
+            on_click_id: 105,
+        },
     ];
 
     let content = match state.active_tab {
         1 => Element::Column {
             children: vec![
-                Element::Text { content: "📶 Wireless & Networks".into() },
+                Element::Text {
+                    content: "📶 Wireless & Networks".into(),
+                },
                 Element::Button {
                     label: format!("Wi-Fi: [{}]", if state.wifi_enabled { "ON" } else { "OFF" }),
                     on_click_id: 201,
                 },
                 Element::Button {
-                    label: format!("Bluetooth: [{}] (btd)", if state.bluetooth_enabled { "ON" } else { "OFF" }),
+                    label: format!(
+                        "Bluetooth: [{}] (btd)",
+                        if state.bluetooth_enabled { "ON" } else { "OFF" }
+                    ),
                     on_click_id: 202,
                 },
                 Element::Button {
-                    label: format!("Cellular / VoLTE: [{}] (telephonyd)", if state.cellular_enabled { "ON" } else { "OFF" }),
+                    label: format!(
+                        "Cellular / VoLTE: [{}] (telephonyd)",
+                        if state.cellular_enabled { "ON" } else { "OFF" }
+                    ),
                     on_click_id: 203,
                 },
-                Element::Text { content: "SoftBus: /run/nilos/bus.sock Active".into() },
+                Element::Text {
+                    content: "SoftBus: /run/nilos/bus.sock Active".into(),
+                },
             ],
         },
         2 => Element::Column {
             children: vec![
-                Element::Text { content: "🔊 Sound & Audio Policy".into() },
-                Element::Text { content: format!("Output Route: Speaker (ALSA Default) • Ducking: Active") },
-                Element::Text { content: format!("Current Level: {}% {}", state.volume, if state.is_muted { "[MUTED]" } else { "" }) },
+                Element::Text {
+                    content: "🔊 Sound & Audio Policy".into(),
+                },
+                Element::Text {
+                    content: format!("Output Route: Speaker (ALSA Default) • Ducking: Active"),
+                },
+                Element::Text {
+                    content: format!(
+                        "Current Level: {}% {}",
+                        state.volume,
+                        if state.is_muted { "[MUTED]" } else { "" }
+                    ),
+                },
                 Element::Row {
                     children: vec![
-                        Element::Button { label: "🔉 Vol -".into(), on_click_id: 204 },
-                        Element::Button { label: "🔊 Vol +".into(), on_click_id: 205 },
+                        Element::Button {
+                            label: "🔉 Vol -".into(),
+                            on_click_id: 204,
+                        },
+                        Element::Button {
+                            label: "🔊 Vol +".into(),
+                            on_click_id: 205,
+                        },
                         Element::Button {
                             label: format!("🔇 {}", if state.is_muted { "Unmute" } else { "Mute" }),
                             on_click_id: 206,
@@ -144,50 +217,119 @@ fn view(state: &SettingsState) -> Element {
         },
         3 => Element::Column {
             children: vec![
-                Element::Text { content: "🖥️ Display & DRM/KMS Compositor".into() },
-                Element::Text { content: "Backend: Direct DRM modesetting (/dev/dri/card0)".into() },
-                Element::Text { content: "Buffer Pipeline: Tear-free Triple Buffering".into() },
+                Element::Text {
+                    content: "🖥️ Display & DRM/KMS Compositor".into(),
+                },
+                Element::Text {
+                    content: "Backend: Direct DRM modesetting (/dev/dri/card0)".into(),
+                },
+                Element::Text {
+                    content: "Buffer Pipeline: Tear-free Triple Buffering".into(),
+                },
                 Element::Button {
-                    label: format!("Refresh Rate: [{}]", if state.high_refresh_rate { "120Hz Smooth" } else { "60Hz Normal" }),
+                    label: format!(
+                        "Refresh Rate: [{}]",
+                        if state.high_refresh_rate {
+                            "120Hz Smooth"
+                        } else {
+                            "60Hz Normal"
+                        }
+                    ),
                     on_click_id: 207,
                 },
             ],
         },
         4 => Element::Column {
             children: vec![
-                Element::Text { content: "🛡️ Security & Sandboxing Architecture".into() },
-                Element::Text { content: "• SELinux: Enforcing (Mobile Security Profile 33)".into() },
-                Element::Text { content: "• Application Sandbox: Linux PID/Mount Namespaces via nilrt".into() },
-                Element::Text { content: "• Syscall Filter: Seccomp-BPF Bounded Allowlist".into() },
-                Element::Text { content: "• Encryption: fscrypt v2 Per-Credential Key Derivation".into() },
-                Element::Text { content: "• Privacy: Zero Cloud Telemetry by default".into() },
+                Element::Text {
+                    content: "🛡️ Security & Sandboxing Architecture".into(),
+                },
+                Element::Text {
+                    content: "• SELinux: Enforcing (Mobile Security Profile 33)".into(),
+                },
+                Element::Text {
+                    content: "• Application Sandbox: Linux PID/Mount Namespaces via nilrt".into(),
+                },
+                Element::Text {
+                    content: "• Syscall Filter: Seccomp-BPF Bounded Allowlist".into(),
+                },
+                Element::Text {
+                    content: "• Encryption: fscrypt v2 Per-Credential Key Derivation".into(),
+                },
+                Element::Text {
+                    content: "• Privacy: Zero Cloud Telemetry by default".into(),
+                },
             ],
         },
         5 => Element::Column {
             children: vec![
-                Element::Text { content: "ℹ️ About OnuronOS".into() },
-                Element::Text { content: "• OS Version: OnuronOS 1.0.0-alpha".into() },
-                Element::Text { content: "• Kernel: Linux LTS 6.6 (Defconfig Minimal Mobile)".into() },
-                Element::Text { content: "• PID 1 Init: nilinit supervisor".into() },
-                Element::Text { content: "• Userspace: 100% Memory-Safe Native Rust".into() },
-                Element::Text { content: "• Reference Boot: Fastboot / U-Boot / Android Boot Image v0-v4".into() },
-                Element::Text { content: "• Package Format: Signed .nilax (Ed25519 atomic install)".into() },
+                Element::Text {
+                    content: "ℹ️ About OnuronOS".into(),
+                },
+                Element::Text {
+                    content: "• OS Version: OnuronOS 1.0.0-alpha".into(),
+                },
+                Element::Text {
+                    content: "• Kernel: Linux LTS 6.6 (Defconfig Minimal Mobile)".into(),
+                },
+                Element::Text {
+                    content: "• PID 1 Init: nilinit supervisor".into(),
+                },
+                Element::Text {
+                    content: "• Userspace: 100% Memory-Safe Native Rust".into(),
+                },
+                Element::Text {
+                    content: "• Reference Boot: Fastboot / U-Boot / Android Boot Image v0-v4"
+                        .into(),
+                },
+                Element::Text {
+                    content: "• Package Format: Signed .nilax (Ed25519 atomic install)".into(),
+                },
             ],
         },
         _ => Element::Column {
             children: vec![
-                Element::Text { content: "⚙️ System Overview".into() },
-                Element::Text { content: format!("Wi-Fi: {} • BT: {} • VoLTE: {}", if state.wifi_enabled { "ON" } else { "OFF" }, if state.bluetooth_enabled { "ON" } else { "OFF" }, if state.cellular_enabled { "Active" } else { "Off" }) },
-                Element::Text { content: format!("Audio: {}% • Display: {} • Security: Enforcing", state.volume, if state.high_refresh_rate { "120Hz" } else { "60Hz" }) },
-                Element::Text { content: format!("Status: {}", state.status_toast) },
+                Element::Text {
+                    content: "⚙️ System Overview".into(),
+                },
+                Element::Text {
+                    content: format!(
+                        "Wi-Fi: {} • BT: {} • VoLTE: {}",
+                        if state.wifi_enabled { "ON" } else { "OFF" },
+                        if state.bluetooth_enabled { "ON" } else { "OFF" },
+                        if state.cellular_enabled {
+                            "Active"
+                        } else {
+                            "Off"
+                        }
+                    ),
+                },
+                Element::Text {
+                    content: format!(
+                        "Audio: {}% • Display: {} • Security: Enforcing",
+                        state.volume,
+                        if state.high_refresh_rate {
+                            "120Hz"
+                        } else {
+                            "60Hz"
+                        }
+                    ),
+                },
+                Element::Text {
+                    content: format!("Status: {}", state.status_toast),
+                },
             ],
         },
     };
 
     Element::Column {
         children: vec![
-            Element::Text { content: "⚙️ Settings & Device Management".into() },
-            Element::Row { children: nav_buttons },
+            Element::Text {
+                content: "⚙️ Settings & Device Management".into(),
+            },
+            Element::Row {
+                children: nav_buttons,
+            },
             content,
         ],
     }

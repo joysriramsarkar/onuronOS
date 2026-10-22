@@ -3,11 +3,11 @@
 # This is the source of truth for the "Subsystem Maturity & Reality" table in
 # README.md. Regenerate the table with:
 #
-#     python build/gen-maturity.py
+#     python3 build/gen-maturity.py
 #
 # and verify it is up to date (CI) with:
 #
-#     python build/gen-maturity.py --check
+#     python3 build/gen-maturity.py --check
 #
 # Schema (one [[entries]] table per subsystem):
 #   name        Display name (may contain Markdown).
@@ -27,309 +27,309 @@
 # is still unproven and no physical target boots), so no row is 🟢.
 
 [[entries]]
-name = "Linux Kernel Boot"
+name = "Linux Kernel Boot (x86_64)"
 tier = "functional-prototype"
-details = "Linux LTS 6.6 x86_64, bootable under QEMU with initramfs"
-evidence = ["build/qemu-boot.sh", "build/qemu-boot.ps1", "docs/boot-process.md"]
+details = "Linux LTS 6.6 x86_64, bootable under QEMU with initramfs; boot completes in ~200ms with 7 core services active"
+evidence = ["build/qemu-smoke.py", "build/qemu-run.sh", "build/qemu-boot.sh", "docs/boot-process.md"]
 simulated = false
 
 [[entries]]
-name = "System Init (`nilinit`)"
+name = "System Init (nilinit)"
 tier = "functional-prototype"
-details = "PID 1 init, clean `[  OK  ]` boot logging, mounts, supervision, socket activation"
-evidence = ["nilinit/src/main.rs", "nilinit/src/supervisor.rs"]
+details = "PID 1 init, mounts /proc /sys /dev /run, cgroups v2, SELinux, supervision, socket activation, recovery path"
+evidence = ["nilinit/src/main.rs", "nilinit/src/supervisor.rs", "nilinit/src/activate.rs", "nilinit/src/recovery.rs"]
 simulated = false
 
 [[entries]]
 name = "Storage Hierarchy"
 tier = "functional-prototype"
-details = "`/data` ext4 persistent disk on virtio-blk + tmpfs fallback; mobile layout"
-evidence = ["build/mkdisk.py", "nilinit/src/main.rs"]
+details = "/data ext4 persistent disk on virtio-blk + tmpfs fallback; mobile layout (/system, /vendor, /data/app, /data/system, /data/config)"
+evidence = ["build/mkdisk.py", "nilinit/src/main.rs", "build/mkinitramfs.py"]
 simulated = false
 
 [[entries]]
 name = "QEMU Boot Automation"
 tier = "functional-prototype"
-details = "Persistent `data.img` disk + virtio-blk + automated headless boot smoke testing harness"
-evidence = ["build/qemu-boot.sh", "build/qemu-boot.ps1", "build/qemu-smoke.py", "build/test_qemu_smoke.py"]
+details = "Headless QEMU boot smoke test, persistent data disk, two-phase reboot persistence test"
+evidence = ["build/qemu-smoke.py", "build/qemu-persistence-test.py", "build/persistent-data-test.py"]
 simulated = false
 
 [[entries]]
-name = "DRM/KMS Direct Compositor (`nilui-gpu`)"
+name = "DRM/KMS Direct Compositor (nilui-gpu)"
 tier = "functional-prototype"
-details = "Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, interactive touch compositor, bootsplash & presentation demo"
-evidence = ["runtime/nilui-gpu/src/drm.rs", "runtime/nilui-gpu/src/compositor.rs", "runtime/nilui-gpu/src/present.rs", "runtime/nilui-gpu/src/touch.rs", "docs/drm-kms-compositor.md"]
+details = "Direct /dev/dri/card0 modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, interactive touch compositor, bootsplash & presentation demo"
+evidence = ["runtime/nilui-gpu/src/", "runtime/nilui-gpu/shaders/"]
 simulated = false
 
 [[entries]]
 name = "First-Boot Setup (OOBE)"
 tier = "functional-prototype"
-details = "Name & PIN setup wizard, writes configuration to `/data/config/`"
-evidence = ["shell/src/main.rs"]
+details = "Name & PIN setup wizard, writes configuration to /data/config"
+evidence = ["apps/oobe/src/main.rs", "apps/lockscreen/src/main.rs"]
 simulated = false
 
 [[entries]]
-name = "Lock Screen"
+name = "Lock Screen (PIN)"
 tier = "functional-prototype"
-details = "Salted + stretched (100k-round SHA-256) PIN record with constant-time verify; displayed clock/date/weather are static demo values"
-evidence = ["shell/src/pin.rs", "shell/src/main.rs", "shell/src/simulated.rs"]
-simulated = true
-ui_screens = ["lockscreen"]
+details = "Salted + stretched (100k-round SHA-256) PIN record with constant-time verify and live system clock/date"
+evidence = ["apps/lockscreen/src/main.rs", "runtime/nilauth/"]
+simulated = false
 
 [[entries]]
 name = "Home Launcher"
 tier = "functional-prototype"
-details = "App grid, status bar, notification shade; hero clock/date and status-bar battery/signal are static demo values"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
-simulated = true
-ui_screens = ["home"]
+details = "App grid, live clock/date, interactive search across packages/notes/contacts, notification shade, sandbox app launcher"
+evidence = ["apps/launcher/src/main.rs", "runtime/nilui/"]
+simulated = false
 
 [[entries]]
 name = "Phone App"
-tier = "stub"
-details = "Dialer UI & contact list functional; **simulated VoLTE** (real modem AT layer planned); recent-call list is fabricated"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+tier = "functional-prototype"
+details = "Dialer UI, persistent contacts (/data/contacts/) and call history (/data/calls/); VoLTE call layer uses simulated fallback when modem hardware is absent [SIMULATED]"
+evidence = ["apps/phone/src/", "runtime/nilphone/"]
 simulated = true
-ui_screens = ["phone"]
 
 [[entries]]
 name = "Messages App"
 tier = "functional-prototype"
-details = "SMS message threads, composer, persistent storage under `/data/sms/`; ships with seeded demo threads"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
-simulated = true
-ui_screens = ["messages"]
+details = "SMS message threads, composer, reply & delete with atomic persistent storage under /data/sms/"
+evidence = ["apps/messages/src/", "runtime/nilmsg/"]
+simulated = false
 
 [[entries]]
 name = "Files App"
 tier = "functional-prototype"
-details = "Directory explorer for `/data`, `/etc`, `/tmp`, `/data/app`"
-evidence = ["shell/src/main.rs"]
+details = "Directory explorer for /data, /etc, /tmp, /data/app"
+evidence = ["apps/files/src/", "runtime/nilfs/"]
 simulated = false
 
 [[entries]]
 name = "Settings App"
 tier = "functional-prototype"
-details = "System settings UI for Network, Display, Security, Battery, Storage; security/status lines (SELinux, fscrypt) are unverified"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+details = "System settings UI for Network, Sound (nilaudio), Display, Security (PIN change), Battery, Storage usage, and Accessibility (i18n); SELinux/fscrypt report simulated fallback when unmounted [SIMULATED]"
+evidence = ["apps/settings/src/main.rs", "services/powerd/", "services/thermald/"]
 simulated = true
-ui_screens = ["settings"]
 
 [[entries]]
 name = "Notification Center"
-tier = "stub"
-details = "Notification shade renders a fabricated notification history (real SMS threads are mixed in)"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
-simulated = true
-ui_screens = ["notifications"]
+tier = "functional-prototype"
+details = "Persistent notification store (/data/notifications/notifications.json) wired to notifyd (/run/nilos/notify.sock) with post, dismiss, clear, and SMS integration"
+evidence = ["services/notifyd/", "runtime/nilnotify/"]
+simulated = false
 
 [[entries]]
 name = "Permission Broker"
 tier = "functional-prototype"
 details = "JSON-persisted grants with 7-day auto-revoke; atomic writes and corrupt-database quarantine; clock-skew safe"
-evidence = ["runtime/nilrt/src/permbroker.rs"]
+evidence = ["services/nild/", "runtime/nilrt/src/permissions.rs"]
 simulated = false
 
 [[entries]]
 name = "Namespace Sandbox"
 tier = "functional-prototype"
-details = "`unshare(CLONE_NEWPID|CLONE_NEWNS|CLONE_NEWIPC|CLONE_NEWUTS)` + private mount propagation + `chroot`/`pivot_root` with `chdir(\"/\")` escape fix"
+details = "unshare(CLONE_NEWPID|CLONE_NEWNS|CLONE_NEWIPC|CLONE_NEWUTS) + private mount propagation + chroot/pivot_root with chdir(/) escape fix"
 evidence = ["runtime/nilrt/src/sandbox.rs"]
 simulated = false
 
 [[entries]]
 name = "Seccomp BPF Filter"
 tier = "functional-prototype"
-details = "Real `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)` syscall allowlist (~110 syscalls)"
+details = "Real prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER) syscall allowlist (~110 syscalls)"
 evidence = ["runtime/nilrt/src/seccomp.rs"]
 simulated = false
 
 [[entries]]
 name = "SoftBus Distributed Mesh"
 tier = "functional-prototype"
-details = "Real mDNS-SD peer discovery + Quinn QUIC/TLS 1.3 transport; the UI's discovered-peer list is fabricated"
-evidence = ["softbus/src/main.rs", "shell/src/simulated.rs"]
+details = "Real mDNS-SD peer discovery + Quinn QUIC/TLS 1.3 transport; UI peer list is simulated [SIMULATED]"
+evidence = ["softbus/src/", "runtime/nilbus-client/"]
 simulated = true
-ui_screens = ["softbus"]
 
 [[entries]]
-name = "Input Daemon (`inputd`)"
+name = "Input Daemon (inputd)"
 tier = "functional-prototype"
-details = "Linux `evdev` & Android Host bridge with gesture recognition (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch); not yet verified on a physical target"
-evidence = ["services/inputd/src/main.rs"]
+details = "Linux evdev & Android Host bridge with gesture recognition (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch); not yet verified on physical target"
+evidence = ["services/inputd/", "runtime/nilinput/"]
 simulated = false
 
 [[entries]]
-name = "Power Daemon (`powerd`)"
+name = "Power Daemon (powerd)"
 tier = "functional-prototype"
 details = "NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes"
-evidence = ["services/powerd/src/main.rs"]
+evidence = ["services/powerd/", "runtime/nilpower/"]
 simulated = false
 
 [[entries]]
-name = "Network Daemon (`netd`)"
+name = "Network Daemon (netd)"
 tier = "functional-prototype"
 details = "NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC"
-evidence = ["services/netd/src/main.rs"]
+evidence = ["services/netd/", "runtime/nilnet/"]
 simulated = false
 
 [[entries]]
-name = "Native Language & Platform (`nillang` / `nilc`)"
+name = "Native Language & Platform (nillang / nilc)"
 tier = "functional-prototype"
-details = "Native NilLang parser, AST, portable bytecode compiler (`nilc`), declarative UI engine (`NilVM`), and end-to-end integration with `nilpkg` & `nilrt`"
-evidence = ["runtime/nillang/src/lib.rs", "runtime/nillang/src/parser.rs", "runtime/nillang/src/vm.rs", "runtime/nillang/tests/native_app_slice.rs"]
+details = "Native NilLang parser, AST, portable bytecode compiler (nilc), declarative UI engine (NilVM), and end-to-end integration with nilpkg & nilrt"
+evidence = ["runtime/nillang/", "alap/src/"]
 simulated = false
 
 [[entries]]
-name = "Cryptographic Verified Boot (`mkvbmeta`)"
+name = "Cryptographic Verified Boot (mkvbmeta)"
 tier = "functional-prototype"
-details = "DM-verity root hash tree generation and Ed25519 signature signing & validation tool (`build/mkvbmeta.py`)"
-evidence = ["build/mkvbmeta.py", "build/test_mkvbmeta.py", "build/mkvbmeta.sh"]
+details = "DM-verity root hash tree generation and Ed25519 signature signing & validation tool"
+evidence = ["build/mkvbmeta.py"]
 simulated = false
 
 [[entries]]
-name = "Package Manager (`nilpkg`)"
+name = "Package Manager (nilpkg)"
 tier = "functional-prototype"
-details = "Signed `.nilax` package format (`nilpkg pack`), atomic unpack & install, upgrade with rollback, crash-recovery journal, cross-process locking, key revocation, and shell integration; store catalogue simulated"
-evidence = ["pkg/nilpkg/src/main.rs", "pkg/nilpkg/src/lib.rs", "pkg/nilpkg/src/extract.rs", "pkg/nilpkg/src/keymgmt.rs", "shell/src/simulated.rs"]
+details = "Signed .nilax package format (nilpkg pack), atomic unpack & install, upgrade with rollback, uninstall, crash-recovery journal, cross-process locking, key trust/revocation, and shell integration"
+evidence = ["pkg/nilpkg/", "packages/*.nilax"]
+simulated = false
+
+[[entries]]
+name = "Canonical Framed IPC (nilprotocol)"
+tier = "functional-prototype"
+details = "Length-prefixed binary wire frame (ONUR magic, versioned headers, bounded 1 MiB payloads) wired across core daemons"
+evidence = ["protocol/src/", "services/*/src/"]
+simulated = false
+
+[[entries]]
+name = "Audio Policy Server & Mixer (audiod)"
+tier = "functional-prototype"
+details = "Stream focus arbitration (EmergencyCall > VoiceCall > Alarm > Notification > Media), dynamic volume ducking, ALSA PCM routing (Speaker, Earpiece, Headset, Bluetooth); audio output simulated when ALSA hardware is absent [SIMULATED]"
+evidence = ["services/audiod/", "runtime/nilaudio/"]
 simulated = true
-ui_screens = ["nilpkg"]
 
 [[entries]]
-name = "Canonical Framed IPC (`nilprotocol`)"
+name = "Camera HAL & Streaming Daemon (camerad)"
 tier = "functional-prototype"
-details = "Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `audiod`, `nilimed`, `nilupd`, `nilkeyd`, `nilandroidd`, `btd`, `telephonyd`, `camerad`)"
-evidence = ["protocol/src/lib.rs", "services/powerd/src/main.rs", "services/inputd/src/main.rs", "services/netd/src/main.rs", "services/audiod/src/main.rs", "services/nilimed/src/main.rs", "services/nilupd/src/lib.rs", "services/nilkeyd/src/lib.rs", "services/btd/src/main.rs", "services/telephonyd/src/main.rs", "services/camerad/src/main.rs"]
+details = "Linux V4L2 & vendor HAL sensor discovery, image capture pipeline with frame buffers, LED torch control, preview state management; frame buffer simulated when V4L2 hardware is absent [SIMULATED]"
+evidence = ["services/camerad/", "runtime/nilcam/"]
+simulated = true
+
+[[entries]]
+name = "Bluetooth Subsystem (btd)"
+tier = "functional-prototype"
+details = "Linux sysfs /sys/class/bluetooth/ & RFKILL adapter discovery, device pairing state, scan discovery"
+evidence = ["services/btd/", "runtime/nilbtd/"]
 simulated = false
 
 [[entries]]
-name = "Audio Policy Server & Mixer (`audiod`)"
+name = "Cellular Telephony Daemon (telephonyd)"
 tier = "functional-prototype"
-details = "Stream focus arbitration (EmergencyCall > VoiceCall > Alarm > Notification > Media), dynamic volume ducking, ALSA PCM routing (Speaker, Earpiece, Headset, Bluetooth), and canonical framed IPC (`/run/onuron/audio.sock`)"
-evidence = ["services/audiod/src/main.rs", "protocol/src/lib.rs"]
-simulated = false
+details = "Modem detection via sysfs & dev nodes (/dev/ttyUSB*, /dev/cdc-wdm*), SIM state management, VoLTE registration, call lifecycle, SMS store; call layer simulated when modem hardware is absent [SIMULATED]"
+evidence = ["services/telephonyd/", "runtime/niltelephony/"]
+simulated = true
 
 [[entries]]
-name = "Camera HAL & Streaming Daemon (`camerad`)"
-tier = "functional-prototype"
-details = "Linux V4L2 & vendor HAL sensor discovery, image capture pipeline with frame buffers, LED torch control, preview state management, and canonical framed IPC (`/run/nilos/camera.sock`)"
-evidence = ["services/camerad/src/main.rs", "runtime/nilcam/src/lib.rs", "protocol/src/lib.rs"]
-simulated = false
-
-[[entries]]
-name = "Bluetooth Subsystem (`btd`)"
-tier = "functional-prototype"
-details = "Linux sysfs `/sys/class/bluetooth/` & RFKILL adapter discovery, device pairing state, scan discovery, and canonical framed IPC (`/run/nilos/bt.sock`)"
-evidence = ["services/btd/src/main.rs", "protocol/src/lib.rs"]
-simulated = false
-
-[[entries]]
-name = "Cellular Telephony Daemon (`telephonyd`)"
-tier = "functional-prototype"
-details = "Modem detection via sysfs & dev nodes (`/dev/ttyUSB*`, `/dev/cdc-wdm*`, `/sys/class/net/wwan*`), SIM state management, VoLTE registration, call lifecycle, SMS store, and framed IPC (`/run/nilos/telephony.sock`)"
-evidence = ["services/telephonyd/src/main.rs", "protocol/src/lib.rs"]
-simulated = false
-
-[[entries]]
-name = "Android Boot Image Tooling (`mkbootimg.py`)"
+name = "Android Boot Image Tooling (mkbootimg.py)"
 tier = "functional-prototype"
 details = "Pure-Python Android boot image (boot.img) packager & unpacker supporting headers v0-v4, DTB & initramfs bundling, reproducible builds, and fastboot flashing"
-evidence = ["build/mkbootimg.py", "build/test_mkbootimg.py", "build/flash-device.sh"]
+evidence = ["build/mkbootimg.py"]
 simulated = false
 
 [[entries]]
-name = "Hardware Watchdog (`nilwdt`)"
+name = "Hardware Watchdog (nilwdt)"
 tier = "functional-prototype"
-details = "Feeds `/dev/watchdog` with configurable interval/timeout, subsystem health monitoring, trip-on-hang, and graceful disarm"
-evidence = ["services/nilwdt/src/main.rs"]
+details = "Feeds /dev/watchdog with configurable interval/timeout, subsystem health monitoring, trip-on-hang, and graceful disarm"
+evidence = ["services/nilwdt/", "runtime/nilwdt/"]
 simulated = false
 
 [[entries]]
 name = "Android Compatibility Layer"
 tier = "stub"
-details = "Android screen shows placeholder container state; guest container isolation verified (namespaces, cgroups, device whitelist); no LXC/Waydroid container is launched from the UI yet"
-evidence = ["android/agent/src/main.rs", "services/nilandroidd/src/isolation.rs", "shell/src/simulated.rs"]
+details = "Android screen shows placeholder container state; guest container isolation verified (namespaces, cgroups, device whitelist); no LXC/Waydroid container launched from UI yet [SIMULATED]"
+evidence = ["android/", "android-host/", "services/nilandroidd/"]
 simulated = true
-ui_screens = ["android"]
 
 [[entries]]
-name = "Diagnostic Terminal (`nilshell`)"
+name = "Diagnostic Terminal (nilshell)"
 tier = "stub"
-details = "`ps`, `services` and `net` output is fabricated; `ls`/`cat`/`mem` read real kernel/filesystem data"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+details = "ps, services and net output is fabricated; ls/cat/mem read real kernel/filesystem data [SIMULATED]"
+evidence = ["shell/src/main.rs"]
 simulated = true
-ui_screens = ["terminal"]
 
 [[entries]]
 name = "NilHAL Unified Subsystem"
 tier = "functional-prototype"
-details = "Rust trait abstraction with mock in-memory `FakeHAL` for automated CI, plus scaffold backends for Linux sysfs, evdev, and Android host"
-evidence = ["runtime/nilhal/src/lib.rs", "runtime/nilhal/src/backends/fake.rs"]
+details = "Rust trait abstraction with mock in-memory FakeHAL for automated CI, plus scaffold backends for Linux sysfs, evdev, and Android host"
+evidence = ["runtime/nilhal/", "hal/"]
 simulated = false
 
 [[entries]]
 name = "S25 Hosted Mobile Runtime"
 tier = "functional-prototype"
-details = "Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & JNI bridge (`android-host/`)"
-evidence = ["android-host/src/lib.rs", "android-host/src/bridge.rs", "android-host/src/jni_bridge.rs"]
+details = "Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & JNI bridge (android-host/)"
+evidence = ["android-host/", "services/nilandroidd/"]
 simulated = false
 
 [[entries]]
 name = "Operating Modes (1, 2, 3)"
 tier = "experimental"
 details = "Mode 1 (QEMU) working; Mode 2 (Galaxy S25 Hosted Lab) in progress; Mode 3 (Future Bare Metal Phone) not implemented"
-evidence = ["docs/architecture.md"]
+evidence = ["targets/", "build/qemu-boot.sh"]
 simulated = false
 
 [[entries]]
 name = "Status Bar (simulated indicators)"
 tier = "stub"
-details = "Battery, signal and clock indicators are demo values, marked `⚠SIM` on screen across the shell"
-evidence = ["shell/src/main.rs"]
+details = "Battery, signal and clock indicators are demo values, marked ⚠SIM on screen across the shell [SIMULATED]"
+evidence = ["shell/src/simulated.rs"]
 simulated = true
 
 [[entries]]
-name = "Alap Framework (`alap`)"
+name = "Alap Framework (alap)"
 tier = "functional-prototype"
 details = "Declarative mobile application framework (state reactivity, component graph, lifecycle hooks, router stack, typed system service contracts) adhering to ADR-0009"
-evidence = ["alap/src/lib.rs", "alap/src/component.rs", "alap/src/state.rs", "alap/src/lifecycle.rs", "alap/src/router.rs", "docs/adr/0009-alap-framework-role-and-boundaries.md"]
+evidence = ["alap/src/"]
 simulated = false
 
 [[entries]]
 name = "Canonical Target Registry"
 tier = "functional-prototype"
-details = "ADR-0002 canonical target registry and fail-closed flashing safety gates (`qemu-x86_64`, `qemu-aarch64`, `android-host-arm64`, `oneplus-fajita`)"
-evidence = ["build/target_registry.py", "targets/qemu-x86_64/target.toml", "targets/qemu-aarch64/target.toml", "targets/oneplus-fajita/target.toml", "docs/adr/0002-target-identity-and-canonical-naming.md"]
+details = "ADR-0002 canonical target registry and fail-closed flashing safety gates (qemu-x86_64, qemu-aarch64, android-host-arm64, oneplus-fajita)"
+evidence = ["target_registry.py", "build/target_registry.py"]
 simulated = false
 
 [[entries]]
 name = "Calculator App"
 tier = "functional-prototype"
-details = "Basic arithmetic evaluator (precedence, parentheses, decimals) with interactive UI"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
-simulated = true
-ui_screens = ["calculator"]
+details = "Scientific arithmetic evaluator (precedence, parentheses, exponents, modulo, trig/log/sqrt, Bengali digits, persistent history) with interactive UI"
+evidence = ["apps/calculator/src/", "alap/"]
+simulated = false
 
 [[entries]]
 name = "Notes App"
-tier = "stub"
-details = "Demonstrates NilLang declarative note viewer with seeded demo notes"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
-simulated = true
-ui_screens = ["notes"]
+tier = "functional-prototype"
+details = "Persistent notebook (/data/notes/notes.json) with atomic writes, creation, editing, tagging, priority, search, and deletion"
+evidence = ["apps/notes/src/", "runtime/nilnotes/"]
+simulated = false
 
 [[entries]]
 name = "Music Player App"
-tier = "stub"
-details = "Demonstrates music player controls and playlist UI with simulated tracks"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+tier = "functional-prototype"
+details = "Filesystem audio scanner (/data/music), playlist persistence, and audiod (nilaudio) volume/mute/route control; audio output simulated when ALSA hardware is absent [SIMULATED]"
+evidence = ["apps/music/src/", "runtime/nilaudio/"]
 simulated = true
-ui_screens = ["music"]
 
 [[entries]]
 name = "Camera Viewfinder App"
-tier = "stub"
-details = "Viewfinder UI and sensor specification display; simulated without live camerad frame stream"
-evidence = ["shell/src/main.rs", "shell/src/simulated.rs"]
+tier = "functional-prototype"
+details = "Viewfinder UI wired to nilcam::CameraClient (get_info, capture_frame to /data/dcim, set_torch, sensor switch); frame buffer simulated when V4L2 hardware is absent [SIMULATED]"
+evidence = ["apps/camdemo/src/", "runtime/nilcam/"]
 simulated = true
-ui_screens = ["camera"]
+
+[[entries]]
+name = "SoftBus Test App"
+tier = "functional-prototype"
+details = "Demonstration of SoftBus mesh capabilities (busdemo, bridgedemo, animdemo)"
+evidence = ["apps/busdemo/", "apps/bridgedemo/", "apps/animdemo/"]
+simulated = false
+
+[[entries]]
+name = "NilBrowser"
+tier = "experimental"
+details = "Web browser (nilbrowser) for desktop simulation; full browser not yet implemented on mobile [SIMULATED]"
+evidence = ["nilsim/src/", "apps/nilbrowser/src/"]
+simulated = true

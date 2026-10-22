@@ -41,10 +41,13 @@ pub async fn start_discovery(
     .map_err(|e| format!("ServiceInfo: {e}"))?
     .enable_addr_auto();
 
-    mdns.register(service).map_err(|e| format!("mdns register: {e}"))?;
+    mdns.register(service)
+        .map_err(|e| format!("mdns register: {e}"))?;
     println!("[nilbus:mdns] Registered '{service_name}' on port {quic_port}");
 
-    let receiver = mdns.browse(SERVICE_TYPE).map_err(|e| format!("mdns browse: {e}"))?;
+    let receiver = mdns
+        .browse(SERVICE_TYPE)
+        .map_err(|e| format!("mdns browse: {e}"))?;
     let peers_clone = peers.clone();
     let own_id = device_id.to_string();
 
@@ -57,7 +60,9 @@ pub async fn start_discovery(
                         .unwrap_or_else(|| info.get_fullname())
                         .to_string();
 
-                    if remote_id == own_id { continue; }
+                    if remote_id == own_id {
+                        continue;
+                    }
 
                     let port: u16 = info
                         .get_property_val_str("quic_port")
@@ -68,7 +73,11 @@ pub async fn start_discovery(
                         println!("[nilbus:mdns] Discovered peer: {remote_id} @ {addr}:{port}");
                         peers_clone.lock().unwrap().insert(
                             remote_id.clone(),
-                            Peer { device_id: remote_id, addr, quic_port: port },
+                            Peer {
+                                device_id: remote_id,
+                                addr,
+                                quic_port: port,
+                            },
                         );
                     }
                 }

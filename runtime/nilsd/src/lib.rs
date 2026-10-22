@@ -34,7 +34,10 @@ pub fn listen_fds() -> Vec<UnixListener> {
 pub fn first_listener_or_bind(fallback_path: &str) -> std::io::Result<UnixListener> {
     let mut fds = listen_fds();
     if !fds.is_empty() {
-        println!("[nilsd] Using socket-activated file descriptor (FD {})", SD_LISTEN_FDS_START);
+        println!(
+            "[nilsd] Using socket-activated file descriptor (FD {})",
+            SD_LISTEN_FDS_START
+        );
         Ok(fds.remove(0))
     } else {
         let _ = std::fs::remove_file(fallback_path);
@@ -64,10 +67,16 @@ pub fn notify_ready(service_name: &str, sock_path: Option<&str>) -> std::io::Res
     #[cfg(unix)]
     {
         use std::env;
-        if let Ok(notify_socket) = env::var("NOTIFY_SOCKET").or_else(|_| env::var("ONURON_NOTIFY_SOCKET")) {
+        if let Ok(notify_socket) =
+            env::var("NOTIFY_SOCKET").or_else(|_| env::var("ONURON_NOTIFY_SOCKET"))
+        {
             use std::os::unix::net::UnixDatagram;
             if let Ok(socket) = UnixDatagram::unbound() {
-                let msg = format!("READY=1\nMAINPID={}\nSERVICE={}\n", std::process::id(), service_name);
+                let msg = format!(
+                    "READY=1\nMAINPID={}\nSERVICE={}\n",
+                    std::process::id(),
+                    service_name
+                );
                 let _ = socket.send_to(msg.as_bytes(), &notify_socket);
             }
         }
@@ -105,7 +114,10 @@ pub fn notify_ready(service_name: &str, sock_path: Option<&str>) -> std::io::Res
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let content = format!("pid={}\nsocket={}\ntimestamp_secs={}\n", pid, sock, timestamp);
+    let content = format!(
+        "pid={}\nsocket={}\ntimestamp_secs={}\n",
+        pid, sock, timestamp
+    );
     std::fs::write(&ready_file, content)?;
     Ok(())
 }
@@ -116,20 +128,37 @@ mod tests {
 
     #[test]
     fn test_notify_ready_creates_valid_marker_file() {
-        let temp_dir = std::env::temp_dir().join(format!("onuron_test_ready_{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("onuron_test_ready_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::env::set_var("ONURON_READY_DIR", &temp_dir);
 
         let res = notify_ready("test_daemon", Some("/run/onuron/test.sock"));
-        assert!(res.is_ok(), "notify_ready should succeed with valid directory");
+        assert!(
+            res.is_ok(),
+            "notify_ready should succeed with valid directory"
+        );
 
         let marker_path = temp_dir.join("test_daemon");
-        assert!(marker_path.exists(), "Marker file must actually be created on disk");
+        assert!(
+            marker_path.exists(),
+            "Marker file must actually be created on disk"
+        );
 
-        let content = std::fs::read_to_string(&marker_path).expect("Marker file should be readable");
-        assert!(content.contains(&format!("pid={}", std::process::id())), "Marker must contain correct PID");
-        assert!(content.contains("socket=/run/onuron/test.sock"), "Marker must contain socket path");
-        assert!(content.contains("timestamp_secs="), "Marker must contain timestamp");
+        let content =
+            std::fs::read_to_string(&marker_path).expect("Marker file should be readable");
+        assert!(
+            content.contains(&format!("pid={}", std::process::id())),
+            "Marker must contain correct PID"
+        );
+        assert!(
+            content.contains("socket=/run/onuron/test.sock"),
+            "Marker must contain socket path"
+        );
+        assert!(
+            content.contains("timestamp_secs="),
+            "Marker must contain timestamp"
+        );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
         std::env::remove_var("ONURON_READY_DIR");
@@ -138,17 +167,20 @@ mod tests {
     #[test]
     fn test_notify_ready_propagates_write_error() {
         // Create a regular file and use a subpath of it as ONURON_READY_DIR so create_dir_all fails
-        let blocker_file = std::env::temp_dir().join(format!("onuron_blocker_{}", std::process::id()));
+        let blocker_file =
+            std::env::temp_dir().join(format!("onuron_blocker_{}", std::process::id()));
         std::fs::write(&blocker_file, "blocking").expect("Must create blocker file");
 
         let impossible_dir = blocker_file.join("subfolder_impossible");
         std::env::set_var("ONURON_READY_DIR", &impossible_dir);
 
         let res = notify_ready("fail_daemon", None);
-        assert!(res.is_err(), "notify_ready must propagate error when directory cannot be created");
+        assert!(
+            res.is_err(),
+            "notify_ready must propagate error when directory cannot be created"
+        );
 
         let _ = std::fs::remove_file(&blocker_file);
         std::env::remove_var("ONURON_READY_DIR");
     }
 }
-

@@ -1,7 +1,7 @@
 // nilinit/src/activate.rs — On-demand socket activation listener
+use std::collections::HashMap;
 #[cfg(unix)]
 use std::os::unix::net::UnixListener;
-use std::collections::HashMap;
 
 pub struct SocketActivationManager {
     #[cfg(unix)]
@@ -29,7 +29,10 @@ impl SocketActivationManager {
         {
             self.listeners.insert(service_name.to_string(), ());
         }
-        println!("[nilinit:activate] Registered socket activation for {} at {}", service_name, socket_path);
+        println!(
+            "[nilinit:activate] Registered socket activation for {} at {}",
+            service_name, socket_path
+        );
         Ok(())
     }
 
@@ -76,4 +79,3 @@ impl SocketActivationManager {
         }
     }
 }
-

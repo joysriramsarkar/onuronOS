@@ -58,7 +58,12 @@ impl TouchTarget {
         role: AccessibilityRole,
     ) -> Self {
         Self {
-            rect: Rect { x, y, width: w, height: h },
+            rect: Rect {
+                x,
+                y,
+                width: w,
+                height: h,
+            },
             id: id.to_string(),
             label: label.to_string(),
             is_pressed: false,
@@ -210,10 +215,11 @@ impl TouchCompositor {
     pub fn handle_swipe(&mut self, gesture: SwipeGesture) {
         match gesture {
             SwipeGesture::Up => {
-                // Swipe up from lockscreen unlocks to home
-                if self.current_screen == MobileScreen::Lockscreen {
-                    self.current_screen = MobileScreen::Home;
-                } else if self.current_screen == MobileScreen::Notifications {
+                // Swipe up from lockscreen or notification shade returns to home
+                if matches!(
+                    self.current_screen,
+                    MobileScreen::Lockscreen | MobileScreen::Notifications
+                ) {
                     self.current_screen = MobileScreen::Home;
                 }
             }
@@ -261,14 +267,28 @@ impl TouchCompositor {
         buf.fill_rect(0, 0, self.width, 48, 0xFF141C2B);
 
         // Left: Wi-Fi & Bluetooth state
-        let wifi_color = if self.wifi_enabled { 0xFF00E5FF } else { 0xFF64748B };
+        let wifi_color = if self.wifi_enabled {
+            0xFF00E5FF
+        } else {
+            0xFF64748B
+        };
         buf.draw_text("WIFI", 24, 16, 2, wifi_color);
 
-        let bt_color = if self.bluetooth_enabled { 0xFF2979FF } else { 0xFF64748B };
+        let bt_color = if self.bluetooth_enabled {
+            0xFF2979FF
+        } else {
+            0xFF64748B
+        };
         buf.draw_text("BT", 100, 16, 2, bt_color);
 
         // Center: Clock
-        buf.draw_text("12:45", (self.width / 2).saturating_sub(40) as i32, 16, 2, 0xFFFFFFFF);
+        buf.draw_text(
+            "12:45",
+            (self.width / 2).saturating_sub(40) as i32,
+            16,
+            2,
+            0xFFFFFFFF,
+        );
 
         // Right: Battery & Signal
         let batt_text = format!("{}%", self.battery_percent);
@@ -287,7 +307,13 @@ impl TouchCompositor {
         buf.fill_rounded_rect(40, 480, self.width.saturating_sub(80), 160, 20, 0xFF1E293B);
         buf.fill_rect(40, 480, 8, 160, 0xFF00E5FF); // Accent strip
         buf.draw_text("ONURON OS KERNEL", 70, 510, 2, 0xFF00E5FF);
-        buf.draw_text("DIRECT DRM/KMS 120HZ TEAR-FREE DISPLAY", 70, 550, 2, 0xFFF1F5F9);
+        buf.draw_text(
+            "DIRECT DRM/KMS 120HZ TEAR-FREE DISPLAY",
+            70,
+            550,
+            2,
+            0xFFF1F5F9,
+        );
         buf.draw_text("SWIPE UP TO UNLOCK", 70, 590, 2, 0xFF64748B);
 
         // Unlock Button Target
@@ -295,9 +321,22 @@ impl TouchCompositor {
         let btn_w = self.width.saturating_sub(120);
         let btn_x = 60;
         buf.fill_rounded_rect(btn_x, btn_y, btn_w, 64, 32, 0xFF00E5FF);
-        buf.draw_text("SWIPE UP / TAP UNLOCK", btn_x + 60, btn_y + 24, 2, 0xFF0A0E17);
+        buf.draw_text(
+            "SWIPE UP / TAP UNLOCK",
+            btn_x + 60,
+            btn_y + 24,
+            2,
+            0xFF0A0E17,
+        );
 
-        self.targets.push(TouchTarget::new(btn_x, btn_y, btn_w, 64, "btn_unlock", "Unlock"));
+        self.targets.push(TouchTarget::new(
+            btn_x,
+            btn_y,
+            btn_w,
+            64,
+            "btn_unlock",
+            "Unlock",
+        ));
     }
 
     fn render_home(&mut self, buf: &mut PixelBuffer) {
@@ -327,12 +366,20 @@ impl TouchCompositor {
             buf.fill_rect(x, y, 6, card_h, *color);
             buf.draw_text(label, x + 20, y + 40, 2, 0xFFFFFFFF);
 
-            self.targets.push(TouchTarget::new(x, y, card_w, card_h, id, label));
+            self.targets
+                .push(TouchTarget::new(x, y, card_w, card_h, id, label));
         }
 
         // Status banner if an app was clicked
         if let Some(ref msg) = self.status_message {
-            buf.fill_rounded_rect(40, (self.height as i32) - 220, self.width.saturating_sub(80), 50, 12, 0xFF1E293B);
+            buf.fill_rounded_rect(
+                40,
+                (self.height as i32) - 220,
+                self.width.saturating_sub(80),
+                50,
+                12,
+                0xFF1E293B,
+            );
             buf.draw_text(msg, 60, (self.height as i32) - 205, 2, 0xFF00E5FF);
         }
 
@@ -341,26 +388,87 @@ impl TouchCompositor {
         let lock_btn_x = 80;
         let lock_btn_y = (self.height as i32) - 140;
         buf.fill_rounded_rect(lock_btn_x, lock_btn_y, lock_btn_w, 48, 24, 0xFF2D3748);
-        buf.draw_text("LOCK DEVICE", lock_btn_x + 90, lock_btn_y + 16, 2, 0xFF94A3B8);
-        self.targets.push(TouchTarget::new(lock_btn_x, lock_btn_y, lock_btn_w, 48, "btn_lock", "Lock Device"));
+        buf.draw_text(
+            "LOCK DEVICE",
+            lock_btn_x + 90,
+            lock_btn_y + 16,
+            2,
+            0xFF94A3B8,
+        );
+        self.targets.push(TouchTarget::new(
+            lock_btn_x,
+            lock_btn_y,
+            lock_btn_w,
+            48,
+            "btn_lock",
+            "Lock Device",
+        ));
     }
 
     fn render_notifications(&mut self, buf: &mut PixelBuffer) {
-        buf.fill_rect(0, 48, self.width, self.height.saturating_sub(48), 0xF00A0E17);
+        buf.fill_rect(
+            0,
+            48,
+            self.width,
+            self.height.saturating_sub(48),
+            0xF00A0E17,
+        );
 
         // Header
         buf.draw_text("QUICK SETTINGS", 40, 80, 2, 0xFF00E5FF);
 
         // Quick Toggles: Wi-Fi & BT
-        let wifi_color = if self.wifi_enabled { 0xFF00E5FF } else { 0xFF2D3748 };
+        let wifi_color = if self.wifi_enabled {
+            0xFF00E5FF
+        } else {
+            0xFF2D3748
+        };
         buf.fill_rounded_rect(40, 120, 140, 60, 16, wifi_color);
-        buf.draw_text("WIFI", 70, 140, 2, if self.wifi_enabled { 0xFF0A0E17 } else { 0xFF94A3B8 });
-        self.targets.push(TouchTarget::new(40, 120, 140, 60, "btn_toggle_wifi", "Toggle WiFi"));
+        buf.draw_text(
+            "WIFI",
+            70,
+            140,
+            2,
+            if self.wifi_enabled {
+                0xFF0A0E17
+            } else {
+                0xFF94A3B8
+            },
+        );
+        self.targets.push(TouchTarget::new(
+            40,
+            120,
+            140,
+            60,
+            "btn_toggle_wifi",
+            "Toggle WiFi",
+        ));
 
-        let bt_color = if self.bluetooth_enabled { 0xFF2979FF } else { 0xFF2D3748 };
+        let bt_color = if self.bluetooth_enabled {
+            0xFF2979FF
+        } else {
+            0xFF2D3748
+        };
         buf.fill_rounded_rect(200, 120, 140, 60, 16, bt_color);
-        buf.draw_text("BT", 240, 140, 2, if self.bluetooth_enabled { 0xFFFFFFFF } else { 0xFF94A3B8 });
-        self.targets.push(TouchTarget::new(200, 120, 140, 60, "btn_toggle_bt", "Toggle BT"));
+        buf.draw_text(
+            "BT",
+            240,
+            140,
+            2,
+            if self.bluetooth_enabled {
+                0xFFFFFFFF
+            } else {
+                0xFF94A3B8
+            },
+        );
+        self.targets.push(TouchTarget::new(
+            200,
+            120,
+            140,
+            60,
+            "btn_toggle_bt",
+            "Toggle BT",
+        ));
 
         // Notifications List
         buf.draw_text("NOTIFICATIONS", 40, 220, 2, 0xFF94A3B8);
@@ -375,9 +483,23 @@ impl TouchCompositor {
 
         // Close button
         let close_btn_y = (self.height as i32) - 140;
-        buf.fill_rounded_rect(80, close_btn_y, self.width.saturating_sub(160), 48, 24, 0xFF00E5FF);
+        buf.fill_rounded_rect(
+            80,
+            close_btn_y,
+            self.width.saturating_sub(160),
+            48,
+            24,
+            0xFF00E5FF,
+        );
         buf.draw_text("CLOSE SHADE", 130, close_btn_y + 16, 2, 0xFF0A0E17);
-        self.targets.push(TouchTarget::new(80, close_btn_y, self.width.saturating_sub(160), 48, "btn_home", "Close"));
+        self.targets.push(TouchTarget::new(
+            80,
+            close_btn_y,
+            self.width.saturating_sub(160),
+            48,
+            "btn_home",
+            "Close",
+        ));
     }
 
     fn render_settings(&mut self, buf: &mut PixelBuffer) {
@@ -399,9 +521,23 @@ impl TouchCompositor {
 
         // Back to Home button
         let back_btn_y = (self.height as i32) - 140;
-        buf.fill_rounded_rect(80, back_btn_y, self.width.saturating_sub(160), 48, 24, 0xFF7C4DFF);
+        buf.fill_rounded_rect(
+            80,
+            back_btn_y,
+            self.width.saturating_sub(160),
+            48,
+            24,
+            0xFF7C4DFF,
+        );
         buf.draw_text("BACK TO HOME", 130, back_btn_y + 16, 2, 0xFFFFFFFF);
-        self.targets.push(TouchTarget::new(80, back_btn_y, self.width.saturating_sub(160), 48, "btn_home", "Back"));
+        self.targets.push(TouchTarget::new(
+            80,
+            back_btn_y,
+            self.width.saturating_sub(160),
+            48,
+            "btn_home",
+            "Back",
+        ));
     }
 
     fn render_navigation_bar(&self, buf: &mut PixelBuffer) {
@@ -428,7 +564,11 @@ mod tests {
         assert_eq!(compositor.current_screen, MobileScreen::Lockscreen);
 
         // Find unlock button
-        let target = compositor.targets.iter().find(|t| t.id == "btn_unlock").expect("unlock target exists");
+        let target = compositor
+            .targets
+            .iter()
+            .find(|t| t.id == "btn_unlock")
+            .expect("unlock target exists");
         let btn_center_x = target.rect.x + (target.rect.width as i32) / 2;
         let btn_center_y = target.rect.y + (target.rect.height as i32) / 2;
 

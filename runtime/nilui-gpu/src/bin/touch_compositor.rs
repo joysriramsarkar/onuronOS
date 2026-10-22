@@ -13,7 +13,10 @@ fn main() {
 
     println!(
         "[touch_compositor] KMS Panel Initialized: {}x{} @ {}Hz (Node: {})",
-        presenter.width, presenter.height, presenter.refresh_rate_hz, presenter.drm_device.card_path
+        presenter.width,
+        presenter.height,
+        presenter.refresh_rate_hz,
+        presenter.drm_device.card_path
     );
 
     // Simulate mobile touch workflow: Lockscreen -> Unlock -> Home -> Pull Down Shade -> Toggle BT -> Close
@@ -29,7 +32,11 @@ fn main() {
     );
 
     // Phase 2: User taps unlock button
-    let unlock_target = compositor.targets.iter().find(|t| t.id == "btn_unlock").cloned();
+    let unlock_target = compositor
+        .targets
+        .iter()
+        .find(|t| t.id == "btn_unlock")
+        .cloned();
     if let Some(target) = unlock_target {
         let cx = target.rect.x + (target.rect.width as i32) / 2;
         let cy = target.rect.y + (target.rect.height as i32) / 2;
@@ -67,7 +74,11 @@ fn main() {
     );
 
     // Phase 5: User taps Bluetooth toggle in quick settings
-    let bt_target = compositor.targets.iter().find(|t| t.id == "btn_toggle_bt").cloned();
+    let bt_target = compositor
+        .targets
+        .iter()
+        .find(|t| t.id == "btn_toggle_bt")
+        .cloned();
     if let Some(target) = bt_target {
         let cx = target.rect.x + (target.rect.width as i32) / 2;
         let cy = target.rect.y + (target.rect.height as i32) / 2;

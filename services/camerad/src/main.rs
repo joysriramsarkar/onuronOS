@@ -53,11 +53,23 @@ pub fn discover_v4l2_sensors(v4l_dir: &Path) -> Vec<CameraDevice> {
 
                     devices.push(CameraDevice {
                         id: idx,
-                        facing: if is_front { "front".to_string() } else { "back".to_string() },
-                        resolution: if is_front { "1920x1080".to_string() } else { "4032x3024".to_string() },
+                        facing: if is_front {
+                            "front".to_string()
+                        } else {
+                            "back".to_string()
+                        },
+                        resolution: if is_front {
+                            "1920x1080".to_string()
+                        } else {
+                            "4032x3024".to_string()
+                        },
                         torch_active: false,
                         preview_active: false,
-                        supported_formats: vec!["JPEG".to_string(), "RGBA8888".to_string(), "NV12".to_string()],
+                        supported_formats: vec![
+                            "JPEG".to_string(),
+                            "RGBA8888".to_string(),
+                            "NV12".to_string(),
+                        ],
                         sensor_name,
                         device_node: dev_node,
                     });
@@ -128,14 +140,17 @@ impl CameraManager {
     }
 
     pub fn get_info(&self, camera_id: u32) -> Option<CameraInfoPayload> {
-        self.devices.iter().find(|d| d.id == camera_id).map(|d| CameraInfoPayload {
-            camera_id: d.id,
-            facing: d.facing.clone(),
-            resolution: d.resolution.clone(),
-            torch_active: d.torch_active,
-            preview_active: d.preview_active,
-            supported_formats: d.supported_formats.clone(),
-        })
+        self.devices
+            .iter()
+            .find(|d| d.id == camera_id)
+            .map(|d| CameraInfoPayload {
+                camera_id: d.id,
+                facing: d.facing.clone(),
+                resolution: d.resolution.clone(),
+                torch_active: d.torch_active,
+                preview_active: d.preview_active,
+                supported_formats: d.supported_formats.clone(),
+            })
     }
 
     pub fn set_torch(&mut self, camera_id: u32, enable: bool) -> Result<(), String> {
@@ -162,7 +177,10 @@ impl CameraManager {
 
     /// Capture a camera frame buffer (returns simulated valid JPEG header / RGB bitmap payload).
     pub fn capture_frame(&mut self, camera_id: u32) -> Result<CameraFramePayload, String> {
-        let dev = self.devices.iter().find(|d| d.id == camera_id)
+        let dev = self
+            .devices
+            .iter()
+            .find(|d| d.id == camera_id)
             .ok_or_else(|| format!("Camera ID {} not found", camera_id))?;
 
         self.frame_counter += 1;
@@ -172,10 +190,10 @@ impl CameraManager {
         let tint = (self.frame_counter % 256) as u8;
         for y in 0..16u8 {
             for x in 0..16u8 {
-                synthetic_pixels.push(x * 16);     // R
-                synthetic_pixels.push(y * 16);     // G
-                synthetic_pixels.push(tint);       // B
-                synthetic_pixels.push(255);        // A
+                synthetic_pixels.push(x * 16); // R
+                synthetic_pixels.push(y * 16); // G
+                synthetic_pixels.push(tint); // B
+                synthetic_pixels.push(255); // A
             }
         }
 
@@ -194,9 +212,7 @@ impl CameraManager {
 pub fn handle_ipc_request(manager: &mut CameraManager, frame: &Frame) -> Frame {
     let msg_type = MessageType::from(frame.message_type);
     match msg_type {
-        MessageType::Ping => {
-            Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec())
-        }
+        MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
         MessageType::CameraGetInfo => {
             let camera_id = if frame.payload.len() >= 4 {
                 u32::from_be_bytes(frame.payload[0..4].try_into().unwrap_or([0; 4]))
@@ -204,10 +220,21 @@ pub fn handle_ipc_request(manager: &mut CameraManager, frame: &Frame) -> Frame {
                 0
             };
             if let Some(info) = manager.get_info(camera_id) {
-                Frame::with_json(MessageType::CameraInfo, frame.request_id, &info)
-                    .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+                Frame::with_json(MessageType::CameraInfo, frame.request_id, &info).unwrap_or_else(
+                    |_| {
+                        Frame::new(
+                            MessageType::ErrorResponse,
+                            frame.request_id,
+                            b"encode error".to_vec(),
+                        )
+                    },
+                )
             } else {
-                Frame::new(MessageType::ErrorResponse, frame.request_id, b"camera not found".to_vec())
+                Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    b"camera not found".to_vec(),
+                )
             }
         }
         MessageType::CameraCaptureFrame => {
@@ -217,26 +244,42 @@ pub fn handle_ipc_request(manager: &mut CameraManager, frame: &Frame) -> Frame {
                 0
             };
             match manager.capture_frame(camera_id) {
-                Ok(frame_payload) => {
-                    Frame::with_json(MessageType::CameraFrameData, frame.request_id, &frame_payload)
-                        .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
-                }
+                Ok(frame_payload) => Frame::with_json(
+                    MessageType::CameraFrameData,
+                    frame.request_id,
+                    &frame_payload,
+                )
+                .unwrap_or_else(|_| {
+                    Frame::new(
+                        MessageType::ErrorResponse,
+                        frame.request_id,
+                        b"encode error".to_vec(),
+                    )
+                }),
                 Err(e) => Frame::new(MessageType::ErrorResponse, frame.request_id, e.into_bytes()),
             }
         }
-        MessageType::CameraSetTorch => {
-            match frame.parse_json::<CameraSetTorchPayload>() {
-                Ok(req) => match manager.set_torch(req.camera_id, req.enable) {
-                    Ok(_) => {
-                        let info = manager.get_info(req.camera_id).unwrap();
-                        Frame::with_json(MessageType::CameraInfo, frame.request_id, &info)
-                            .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
-                    }
-                    Err(e) => Frame::new(MessageType::ErrorResponse, frame.request_id, e.into_bytes()),
-                },
-                Err(e) => Frame::new(MessageType::ErrorResponse, frame.request_id, format!("Invalid torch request: {}", e).into_bytes()),
-            }
-        }
+        MessageType::CameraSetTorch => match frame.parse_json::<CameraSetTorchPayload>() {
+            Ok(req) => match manager.set_torch(req.camera_id, req.enable) {
+                Ok(_) => {
+                    let info = manager.get_info(req.camera_id).unwrap();
+                    Frame::with_json(MessageType::CameraInfo, frame.request_id, &info)
+                        .unwrap_or_else(|_| {
+                            Frame::new(
+                                MessageType::ErrorResponse,
+                                frame.request_id,
+                                b"encode error".to_vec(),
+                            )
+                        })
+                }
+                Err(e) => Frame::new(MessageType::ErrorResponse, frame.request_id, e.into_bytes()),
+            },
+            Err(e) => Frame::new(
+                MessageType::ErrorResponse,
+                frame.request_id,
+                format!("Invalid torch request: {}", e).into_bytes(),
+            ),
+        },
         MessageType::CameraStartPreview => {
             let camera_id = if frame.payload.len() >= 4 {
                 u32::from_be_bytes(frame.payload[0..4].try_into().unwrap_or([0; 4]))
@@ -247,7 +290,13 @@ pub fn handle_ipc_request(manager: &mut CameraManager, frame: &Frame) -> Frame {
                 Ok(_) => {
                     let info = manager.get_info(camera_id).unwrap();
                     Frame::with_json(MessageType::CameraInfo, frame.request_id, &info)
-                        .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+                        .unwrap_or_else(|_| {
+                            Frame::new(
+                                MessageType::ErrorResponse,
+                                frame.request_id,
+                                b"encode error".to_vec(),
+                            )
+                        })
                 }
                 Err(e) => Frame::new(MessageType::ErrorResponse, frame.request_id, e.into_bytes()),
             }
@@ -262,12 +311,22 @@ pub fn handle_ipc_request(manager: &mut CameraManager, frame: &Frame) -> Frame {
                 Ok(_) => {
                     let info = manager.get_info(camera_id).unwrap();
                     Frame::with_json(MessageType::CameraInfo, frame.request_id, &info)
-                        .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+                        .unwrap_or_else(|_| {
+                            Frame::new(
+                                MessageType::ErrorResponse,
+                                frame.request_id,
+                                b"encode error".to_vec(),
+                            )
+                        })
                 }
                 Err(e) => Frame::new(MessageType::ErrorResponse, frame.request_id, e.into_bytes()),
             }
         }
-        _ => Frame::new(MessageType::ErrorResponse, frame.request_id, b"unsupported msg".to_vec()),
+        _ => Frame::new(
+            MessageType::ErrorResponse,
+            frame.request_id,
+            b"unsupported msg".to_vec(),
+        ),
     }
 }
 
@@ -403,4 +462,3 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 }
-

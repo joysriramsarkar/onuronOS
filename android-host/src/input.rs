@@ -2,7 +2,7 @@
 // Bridges Android MotionEvents and KeyEvents into Onuron OS unified input events.
 
 use crate::bridge::HostToGuestEvent;
-use nilhal::traits::{HalInputEvent, InputHal, HalError};
+use nilhal::traits::{HalError, HalInputEvent, InputHal};
 
 pub struct AndroidHostInput {
     event_queue: Vec<HalInputEvent>,
@@ -18,21 +18,36 @@ impl AndroidHostInput {
     /// Ingest a raw host event received from the Android Host bridge
     pub fn ingest_host_event(&mut self, host_event: HostToGuestEvent) {
         match host_event {
-            HostToGuestEvent::TouchEvent { action, pointer_id, x, y, .. } => {
-                match action.as_str() {
-                    "DOWN" => {
-                        self.event_queue.push(HalInputEvent::TouchDown { id: pointer_id, x, y });
-                    }
-                    "MOVE" => {
-                        self.event_queue.push(HalInputEvent::TouchMove { id: pointer_id, x, y });
-                    }
-                    "UP" | "CANCEL" => {
-                        self.event_queue.push(HalInputEvent::TouchUp { id: pointer_id });
-                    }
-                    _ => {}
+            HostToGuestEvent::TouchEvent {
+                action,
+                pointer_id,
+                x,
+                y,
+                ..
+            } => match action.as_str() {
+                "DOWN" => {
+                    self.event_queue.push(HalInputEvent::TouchDown {
+                        id: pointer_id,
+                        x,
+                        y,
+                    });
                 }
-            }
-            HostToGuestEvent::KeyEvent { action, keycode, .. } => {
+                "MOVE" => {
+                    self.event_queue.push(HalInputEvent::TouchMove {
+                        id: pointer_id,
+                        x,
+                        y,
+                    });
+                }
+                "UP" | "CANCEL" => {
+                    self.event_queue
+                        .push(HalInputEvent::TouchUp { id: pointer_id });
+                }
+                _ => {}
+            },
+            HostToGuestEvent::KeyEvent {
+                action, keycode, ..
+            } => {
                 let name = match keycode {
                     4 => "Back".to_string(),
                     3 => "Home".to_string(),
@@ -43,9 +58,15 @@ impl AndroidHostInput {
                 };
 
                 if action == "DOWN" {
-                    self.event_queue.push(HalInputEvent::KeyDown { code: keycode, name });
+                    self.event_queue.push(HalInputEvent::KeyDown {
+                        code: keycode,
+                        name,
+                    });
                 } else {
-                    self.event_queue.push(HalInputEvent::KeyUp { code: keycode, name });
+                    self.event_queue.push(HalInputEvent::KeyUp {
+                        code: keycode,
+                        name,
+                    });
                 }
             }
             _ => {}

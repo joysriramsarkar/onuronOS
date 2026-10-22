@@ -129,9 +129,9 @@ impl Component {
     /// Recursively counts all nodes in this component subtree.
     pub fn node_count(&self) -> usize {
         match self {
-            Self::Column { children, .. } | Self::Row { children, .. } | Self::List { children } => {
-                1 + children.iter().map(|c| c.node_count()).sum::<usize>()
-            }
+            Self::Column { children, .. }
+            | Self::Row { children, .. }
+            | Self::List { children } => 1 + children.iter().map(|c| c.node_count()).sum::<usize>(),
             Self::Scroll { child, .. } => 1 + child.node_count(),
             Self::Dialog { actions, .. } => {
                 1 + actions.iter().map(|c| c.node_count()).sum::<usize>()

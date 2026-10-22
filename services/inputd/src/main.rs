@@ -2,13 +2,13 @@
 // Reads raw Linux evdev (/dev/input/event*) & Android Host bridge events,
 // recognizes touch gestures (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch), and broadcasts over IPC.
 
+use nilprotocol::{Frame, MessageType};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
-use nilprotocol::{Frame, MessageType};
 
 // ─── Linux evdev constants ────────────────────────────────────────────────────
 pub const EV_SYN: u16 = 0x00;
@@ -48,21 +48,58 @@ pub enum SwipeDirection {
 #[serde(tag = "type")]
 pub enum InputEvent {
     // Raw Touch
-    TouchDown { id: u32, x: f32, y: f32 },
-    TouchMove { id: u32, x: f32, y: f32 },
-    TouchUp { id: u32 },
+    TouchDown {
+        id: u32,
+        x: f32,
+        y: f32,
+    },
+    TouchMove {
+        id: u32,
+        x: f32,
+        y: f32,
+    },
+    TouchUp {
+        id: u32,
+    },
 
     // High-Level Gestures
-    Tap { x: f32, y: f32 },
-    DoubleTap { x: f32, y: f32 },
-    LongPress { x: f32, y: f32 },
-    Swipe { direction: SwipeDirection, velocity: f32 },
-    Drag { x: f32, y: f32, dx: f32, dy: f32 },
-    MultiTouchPinch { center_x: f32, center_y: f32, scale: f32 },
+    Tap {
+        x: f32,
+        y: f32,
+    },
+    DoubleTap {
+        x: f32,
+        y: f32,
+    },
+    LongPress {
+        x: f32,
+        y: f32,
+    },
+    Swipe {
+        direction: SwipeDirection,
+        velocity: f32,
+    },
+    Drag {
+        x: f32,
+        y: f32,
+        dx: f32,
+        dy: f32,
+    },
+    MultiTouchPinch {
+        center_x: f32,
+        center_y: f32,
+        scale: f32,
+    },
 
     // Hardware Keys
-    KeyDown { code: u32, name: String },
-    KeyUp { code: u32, name: String },
+    KeyDown {
+        code: u32,
+        name: String,
+    },
+    KeyUp {
+        code: u32,
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,7 +213,9 @@ impl GestureRecognizer {
     pub fn on_touch_up(&mut self, up_x: f32, up_y: f32) -> Vec<InputEvent> {
         let mut events = Vec::new();
 
-        if let (Some((start_x, start_y)), Some(start_time)) = (self.start_pos.take(), self.start_time.take()) {
+        if let (Some((start_x, start_y)), Some(start_time)) =
+            (self.start_pos.take(), self.start_time.take())
+        {
             let elapsed = start_time.elapsed();
             let dx = up_x - start_x;
             let dy = up_y - start_y;
@@ -186,13 +225,20 @@ impl GestureRecognizer {
             if dist > 50.0 && elapsed.as_millis() < 400 {
                 let velocity = dist / (elapsed.as_secs_f32() + 0.001);
                 let direction = if dx.abs() > dy.abs() {
-                    if dx > 0.0 { SwipeDirection::Right } else { SwipeDirection::Left }
+                    if dx > 0.0 {
+                        SwipeDirection::Right
+                    } else {
+                        SwipeDirection::Left
+                    }
                 } else if dy > 0.0 {
                     SwipeDirection::Down
                 } else {
                     SwipeDirection::Up
                 };
-                events.push(InputEvent::Swipe { direction, velocity });
+                events.push(InputEvent::Swipe {
+                    direction,
+                    velocity,
+                });
             } else if dist < 20.0 {
                 // Stationary touch
                 if elapsed.as_millis() >= 500 {
@@ -201,7 +247,9 @@ impl GestureRecognizer {
                 } else {
                     // Tap or DoubleTap
                     let now = Instant::now();
-                    let is_double_tap = if let (Some(last_time), Some((last_x, last_y))) = (self.last_tap_time, self.last_tap_pos) {
+                    let is_double_tap = if let (Some(last_time), Some((last_x, last_y))) =
+                        (self.last_tap_time, self.last_tap_pos)
+                    {
                         let tap_interval = now.duration_since(last_time);
                         let tap_dist = ((up_x - last_x).powi(2) + (up_y - last_y).powi(2)).sqrt();
                         tap_interval.as_millis() < 350 && tap_dist < 30.0
@@ -285,7 +333,9 @@ impl MultiTouchTracker {
                         let up_x = slot.x;
                         let up_y = slot.y;
                         let _gestures = self.gesture_engine.on_touch_up(up_x, up_y);
-                        return Some(InputEvent::TouchUp { id: self.current_slot });
+                        return Some(InputEvent::TouchUp {
+                            id: self.current_slot,
+                        });
                     }
                 } else {
                     // New touch down
@@ -337,11 +387,18 @@ impl MultiTouchTracker {
             KEY_BACK => "Back",
             KEY_HOMEPAGE => "Home",
             _ => "Unknown",
-        }.to_string();
+        }
+        .to_string();
 
         match value {
-            1 => Some(InputEvent::KeyDown { code: code as u32, name }),
-            0 => Some(InputEvent::KeyUp { code: code as u32, name }),
+            1 => Some(InputEvent::KeyDown {
+                code: code as u32,
+                name,
+            }),
+            0 => Some(InputEvent::KeyUp {
+                code: code as u32,
+                name,
+            }),
             _ => None,
         }
     }
@@ -380,8 +437,18 @@ pub fn handle_ipc_request(
                 request_count: 1,
                 last_error: None,
             };
-            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
-                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+            Frame::with_json(
+                MessageType::ServiceStatusResponse,
+                frame.request_id,
+                &payload,
+            )
+            .unwrap_or_else(|_| {
+                Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    b"encode error".to_vec(),
+                )
+            })
         }
         MessageType::InputPollEvents => {
             let mut q = event_queue.lock().unwrap();
@@ -449,11 +516,16 @@ fn main() {
             let listener = match nilsd::first_listener_or_bind("/run/onuron/input.sock") {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("[inputd] Failed to bind IPC socket /run/onuron/input.sock: {}", e);
+                    eprintln!(
+                        "[inputd] Failed to bind IPC socket /run/onuron/input.sock: {}",
+                        e
+                    );
                     return;
                 }
             };
-            println!("\x1b[1;32m[inputd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/input.sock");
+            println!(
+                "\x1b[1;32m[inputd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/input.sock"
+            );
 
             for stream in listener.incoming() {
                 if let Ok(mut sock) = stream {
@@ -572,7 +644,10 @@ mod tests {
         // 2. Poll empty
         let poll_frame = Frame::new(MessageType::InputPollEvents, 2, vec![]);
         let batch_frame = handle_ipc_request(&poll_frame, &tracker, &queue);
-        assert_eq!(batch_frame.message_type, u16::from(MessageType::InputEventsBatch));
+        assert_eq!(
+            batch_frame.message_type,
+            u16::from(MessageType::InputEventsBatch)
+        );
         let events: Vec<InputEvent> = serde_json::from_slice(&batch_frame.payload).unwrap();
         assert!(events.is_empty());
 
@@ -593,7 +668,10 @@ mod tests {
         // 5. ServiceStatusRequest
         let status_frame = Frame::new(MessageType::ServiceStatusRequest, 5, vec![]);
         let resp = handle_ipc_request(&status_frame, &tracker, &queue);
-        assert_eq!(resp.message_type, u16::from(MessageType::ServiceStatusResponse));
+        assert_eq!(
+            resp.message_type,
+            u16::from(MessageType::ServiceStatusResponse)
+        );
         let status: nilprotocol::ServiceStatusPayload = resp.parse_json().unwrap();
         assert_eq!(status.service_name, "inputd");
         assert!(status.is_ready);

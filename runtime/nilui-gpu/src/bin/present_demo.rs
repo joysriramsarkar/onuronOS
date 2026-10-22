@@ -40,7 +40,13 @@ fn main() {
         buf.fill_rounded_rect(40, 480, 640, 200, 24, 0xFF1E293B);
         buf.fill_rect(40, 480, 8, 200, accent_color); // Accent strip
         buf.draw_text("NILOS NOTIFICATION", 70, 510, 2, 0xFF38BDF8); // Cyan
-        buf.draw_text("Direct DRM/KMS 120Hz Tear-Free Display Active", 70, 550, 2, 0xFFF1F5F9);
+        buf.draw_text(
+            "Direct DRM/KMS 120Hz Tear-Free Display Active",
+            70,
+            550,
+            2,
+            0xFFF1F5F9,
+        );
         buf.draw_text("Zero X11 / Zero Desktop Bloat", 70, 590, 2, 0xFF64748B);
 
         // 5. Bottom Navigation Bar

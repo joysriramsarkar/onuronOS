@@ -23,7 +23,12 @@ impl RestartPolicy {
                 max_delay_ms: 30_000,
                 threshold: u32::MAX,
             },
-            _ => Self { restart: false, base_delay_ms: 0, max_delay_ms: 0, threshold: 0 },
+            _ => Self {
+                restart: false,
+                base_delay_ms: 0,
+                max_delay_ms: 0,
+                threshold: 0,
+            },
         }
     }
 
@@ -33,7 +38,9 @@ impl RestartPolicy {
             return 0;
         }
         let shift = attempt.saturating_sub(1).min(16);
-        self.base_delay_ms.saturating_mul(1u64 << shift).min(self.max_delay_ms)
+        self.base_delay_ms
+            .saturating_mul(1u64 << shift)
+            .min(self.max_delay_ms)
     }
 
     pub fn may_restart(&self, attempt: u32) -> bool {
@@ -108,9 +115,9 @@ impl Supervisor {
     /// Probes a service socket or readiness marker, using canonical framed IPC Ping/Pong on Unix sockets.
     #[cfg(unix)]
     pub fn probe_socket_alive(sock_path: &std::path::Path) -> bool {
+        use nilprotocol::{Frame, MessageType};
         use std::os::unix::fs::FileTypeExt;
         use std::os::unix::net::UnixStream;
-        use nilprotocol::{Frame, MessageType};
 
         if let Ok(meta) = std::fs::metadata(sock_path) {
             if meta.file_type().is_socket() {
@@ -122,7 +129,8 @@ impl Supervisor {
                         if let Ok(resp) = Frame::read_from(&mut stream) {
                             return resp.request_id == Self::PING_REQ_ID
                                 && (resp.message_type == u16::from(MessageType::Pong)
-                                    || resp.message_type == u16::from(MessageType::ServiceStatusResponse));
+                                    || resp.message_type
+                                        == u16::from(MessageType::ServiceStatusResponse));
                         }
                     }
                 }
@@ -132,7 +140,9 @@ impl Supervisor {
                     return false;
                 }
                 if let Ok(content) = std::fs::read_to_string(sock_path) {
-                    return content.contains("pid=") || content.contains("READY=1") || content.contains("ready");
+                    return content.contains("pid=")
+                        || content.contains("READY=1")
+                        || content.contains("ready");
                 }
                 return false;
             }
@@ -148,7 +158,9 @@ impl Supervisor {
                     return false;
                 }
                 if let Ok(content) = std::fs::read_to_string(sock_path) {
-                    return content.contains("pid=") || content.contains("READY=1") || content.contains("ready");
+                    return content.contains("pid=")
+                        || content.contains("READY=1")
+                        || content.contains("ready");
                 }
                 return false;
             }
@@ -226,7 +238,10 @@ impl Supervisor {
                 }
             }
             None => {
-                eprintln!("[nilinit] Service '{}' has an invalid exec line: {}", spec.name, spec.exec);
+                eprintln!(
+                    "[nilinit] Service '{}' has an invalid exec line: {}",
+                    spec.name, spec.exec
+                );
             }
         }
     }
@@ -376,12 +391,25 @@ mod tests {
 
     #[test]
     fn parse_exec_honours_quotes_and_rejects_bad_input() {
-        assert_eq!(parse_exec("/usr/bin/netd"), Some(("/usr/bin/netd".into(), vec![])));
+        assert_eq!(
+            parse_exec("/usr/bin/netd"),
+            Some(("/usr/bin/netd".into(), vec![]))
+        );
         assert_eq!(
             parse_exec("/usr/bin/nild --foreground --label \"Onuron Shell\""),
-            Some(("/usr/bin/nild".into(), vec!["--foreground".into(), "--label".into(), "Onuron Shell".into()]))
+            Some((
+                "/usr/bin/nild".into(),
+                vec![
+                    "--foreground".into(),
+                    "--label".into(),
+                    "Onuron Shell".into()
+                ]
+            ))
         );
-        assert_eq!(parse_exec("  /usr/bin/app   "), Some(("/usr/bin/app".into(), vec![])));
+        assert_eq!(
+            parse_exec("  /usr/bin/app   "),
+            Some(("/usr/bin/app".into(), vec![]))
+        );
         assert_eq!(parse_exec("   "), None);
         assert_eq!(parse_exec(""), None);
         assert_eq!(parse_exec("/usr/bin/app \"unterminated"), None);
@@ -418,8 +446,8 @@ mod tests {
 
     #[test]
     fn crashing_service_is_restarted_with_backoff() {
-        let mut supervisor = Supervisor::new(vec![failing_service()])
-            .with_delay_override(Duration::from_millis(1));
+        let mut supervisor =
+            Supervisor::new(vec![failing_service()]).with_delay_override(Duration::from_millis(1));
         supervisor.start_all();
         assert_eq!(supervisor.live_count(), 1, "service should start");
 
@@ -444,7 +472,10 @@ mod tests {
                 break;
             }
         }
-        assert!(supervisor.attempts("crasher") >= 5, "attempts should accumulate");
+        assert!(
+            supervisor.attempts("crasher") >= 5,
+            "attempts should accumulate"
+        );
         assert_eq!(supervisor.live_count(), 1);
     }
 
@@ -454,9 +485,13 @@ mod tests {
             name: "oneshot".into(),
             exec: {
                 #[cfg(unix)]
-                { "false".to_string() }
+                {
+                    "false".to_string()
+                }
                 #[cfg(windows)]
-                { "cmd /c exit 1".to_string() }
+                {
+                    "cmd /c exit 1".to_string()
+                }
             },
             restart: "never".into(),
         }])
@@ -493,8 +528,8 @@ mod tests {
 
     #[test]
     fn shutdown_stops_all_running_services() {
-        let mut supervisor = Supervisor::new(vec![sleeping_service()])
-            .with_delay_override(Duration::from_millis(1));
+        let mut supervisor =
+            Supervisor::new(vec![sleeping_service()]).with_delay_override(Duration::from_millis(1));
         supervisor.start_all();
         assert_eq!(supervisor.live_count(), 1);
 
@@ -507,8 +542,8 @@ mod tests {
         // A service that has been up longer than the healthy threshold has its
         // attempt counter cleared on the next exit, so an old crash does not
         // inflate the backoff for a new one.
-        let mut supervisor = Supervisor::new(vec![failing_service()])
-            .with_delay_override(Duration::from_millis(1));
+        let mut supervisor =
+            Supervisor::new(vec![failing_service()]).with_delay_override(Duration::from_millis(1));
         supervisor.start_all();
 
         // Simulate several crashes to build up attempts.
@@ -533,7 +568,8 @@ mod tests {
             }
         }
         assert_eq!(
-            supervisor.attempts("crasher"), 1,
+            supervisor.attempts("crasher"),
+            1,
             "backoff should reset after a healthy uptime"
         );
     }
@@ -554,13 +590,18 @@ mod tests {
             Supervisor::new(vec![spec.clone()]).with_delay_override(Duration::ZERO);
 
         let mut dead_child = if cfg!(windows) {
-            Command::new("cmd").args(["/c", "exit", "0"]).spawn().unwrap()
+            Command::new("cmd")
+                .args(["/c", "exit", "0"])
+                .spawn()
+                .unwrap()
         } else {
             Command::new("true").spawn().unwrap()
         };
         let _ = dead_child.wait(); // ensure it is already reaped-dead
         supervisor.running.insert(spec.name.clone(), dead_child);
-        supervisor.started_at.insert(spec.name.clone(), Instant::now());
+        supervisor
+            .started_at
+            .insert(spec.name.clone(), Instant::now());
 
         const ITERS: usize = 10_000;
         for _ in 0..ITERS {
@@ -569,10 +610,20 @@ mod tests {
 
         // The seeded death may be counted once; the map must not keep growing.
         assert_eq!(supervisor.live_count(), 0, "no live children after soak");
-        assert_eq!(supervisor.attempts("soakd"), 1, "only the seeded death is counted");
+        assert_eq!(
+            supervisor.attempts("soakd"),
+            1,
+            "only the seeded death is counted"
+        );
         assert!(supervisor.running.is_empty(), "running map leaked entries");
-        assert!(supervisor.restart_attempts.len() <= 1, "attempt map grew unbounded");
-        assert!(supervisor.started_at.is_empty(), "started_at map leaked entries");
+        assert!(
+            supervisor.restart_attempts.len() <= 1,
+            "attempt map grew unbounded"
+        );
+        assert!(
+            supervisor.started_at.is_empty(),
+            "started_at map leaked entries"
+        );
 
         // The pure backoff policy and exec parser are also exercised many times
         // to prove they stay bounded (and never overflow) across many attempts.
@@ -621,22 +672,30 @@ mod tests {
         let _ = std::fs::create_dir_all(&temp_dir);
         let ready_file = temp_dir.join("service.ready");
         std::fs::write(&ready_file, "ready").unwrap();
-        assert!(supervisor.check_readiness(&[("sleeper", Some(&ready_file))]).is_ok());
+        assert!(supervisor
+            .check_readiness(&[("sleeper", Some(&ready_file))])
+            .is_ok());
 
         // Empty file probe must fail
         let empty_file = temp_dir.join("empty.ready");
         std::fs::write(&empty_file, "").unwrap();
-        assert!(supervisor.check_readiness(&[("sleeper", Some(&empty_file))]).is_err());
+        assert!(supervisor
+            .check_readiness(&[("sleeper", Some(&empty_file))])
+            .is_err());
 
         // Corrupted file probe lacking marker must fail
         let bad_file = temp_dir.join("bad.ready");
         std::fs::write(&bad_file, "garbage-content-without-valid-marker").unwrap();
-        assert!(supervisor.check_readiness(&[("sleeper", Some(&bad_file))]).is_err());
+        assert!(supervisor
+            .check_readiness(&[("sleeper", Some(&bad_file))])
+            .is_err());
 
         // Standard pid marker format must succeed
         let pid_file = temp_dir.join("daemon.ready");
         std::fs::write(&pid_file, "pid=4242\nsocket=/run/test.sock\n").unwrap();
-        assert!(supervisor.check_readiness(&[("sleeper", Some(&pid_file))]).is_ok());
+        assert!(supervisor
+            .check_readiness(&[("sleeper", Some(&pid_file))])
+            .is_ok());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
 

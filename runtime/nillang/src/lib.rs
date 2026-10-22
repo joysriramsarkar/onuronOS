@@ -54,7 +54,10 @@ app NotesApp {
         assert!(bytecode.len() > 10);
         let vm = load_package(&bytecode).expect("load successful");
         assert_eq!(vm.package.app_name, "notes");
-        assert_eq!(vm.state.get("title").map(|s| s.as_str()), Some("My Quick Notes"));
+        assert_eq!(
+            vm.state.get("title").map(|s| s.as_str()),
+            Some("My Quick Notes")
+        );
         let scene = vm.render_scene().expect("scene rendered");
         assert!(scene.contains("<Column>"));
         assert!(scene.contains("Notes Application"));

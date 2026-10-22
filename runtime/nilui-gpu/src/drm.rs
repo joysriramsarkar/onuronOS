@@ -35,7 +35,7 @@ impl Default for DrmMode {
 pub struct DumbBuffer {
     pub width: u32,
     pub height: u32,
-    pub pitch: u32,     // Bytes per row (width * 4 aligned)
+    pub pitch: u32, // Bytes per row (width * 4 aligned)
     pub size_bytes: usize,
     pub pixels: Vec<u32>, // 32-bit ARGB pixel memory
     pub fb_id: u32,

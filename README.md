@@ -27,13 +27,13 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **QEMU Boot Automation** | 🔵 Functional prototype | Persistent `data.img` disk + virtio-blk + automated headless boot smoke testing harness |
 | **DRM/KMS Direct Compositor (`nilui-gpu`)** | 🔵 Functional prototype | Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, interactive touch compositor, bootsplash & presentation demo |
 | **First-Boot Setup (OOBE)** | 🔵 Functional prototype | Name & PIN setup wizard, writes configuration to `/data/config/` |
-| **Lock Screen** | 🔵 Functional prototype | Salted + stretched (100k-round SHA-256) PIN record with constant-time verify; displayed clock/date/weather are static demo values **[SIMULATED]** |
-| **Home Launcher** | 🔵 Functional prototype | App grid, status bar, notification shade; hero clock/date and status-bar battery/signal are static demo values **[SIMULATED]** |
-| **Phone App** | 🟠 Stub / simulated | Dialer UI & contact list functional; **simulated VoLTE** (real modem AT layer planned); recent-call list is fabricated **[SIMULATED]** |
-| **Messages App** | 🔵 Functional prototype | SMS message threads, composer, persistent storage under `/data/sms/`; ships with seeded demo threads **[SIMULATED]** |
+| **Lock Screen** | 🔵 Functional prototype | Salted + stretched (100k-round SHA-256) PIN record with constant-time verify and live system clock/date |
+| **Home Launcher** | 🔵 Functional prototype | App grid, live clock/date, interactive search across packages/notes/contacts, notification shade, and sandbox app launcher |
+| **Phone App** | 🔵 Functional prototype | Dialer UI, persistent contacts (`/data/contacts/`) and call history (`/data/calls/`); VoLTE call layer uses simulated fallback when modem hardware is absent **[SIMULATED]** |
+| **Messages App** | 🔵 Functional prototype | SMS message threads, composer, reply & delete with atomic persistent storage under `/data/sms/` |
 | **Files App** | 🔵 Functional prototype | Directory explorer for `/data`, `/etc`, `/tmp`, `/data/app` |
-| **Settings App** | 🔵 Functional prototype | System settings UI for Network, Display, Security, Battery, Storage; security/status lines (SELinux, fscrypt) are unverified **[SIMULATED]** |
-| **Notification Center** | 🟠 Stub / simulated | Notification shade renders a fabricated notification history (real SMS threads are mixed in) **[SIMULATED]** |
+| **Settings App** | 🔵 Functional prototype | System settings UI for Network, Sound (`nilaudio`), Display, Security (PIN change), Battery, Storage usage, and Accessibility (`i18n`); SELinux/fscrypt report simulated fallback when unmounted **[SIMULATED]** |
+| **Notification Center** | 🔵 Functional prototype | Persistent notification store (`/data/notifications/notifications.json`) wired to `notifyd` (`/run/nilos/notify.sock`) with post, dismiss, clear, and SMS integration |
 | **Permission Broker** | 🔵 Functional prototype | JSON-persisted grants with 7-day auto-revoke; atomic writes and corrupt-database quarantine; clock-skew safe |
 | **Namespace Sandbox** | 🔵 Functional prototype | `unshare(CLONE_NEWPID|CLONE_NEWNS|CLONE_NEWIPC|CLONE_NEWUTS)` + private mount propagation + `chroot`/`pivot_root` with `chdir("/")` escape fix |
 | **Seccomp BPF Filter** | 🔵 Functional prototype | Real `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)` syscall allowlist (~110 syscalls) |
@@ -43,7 +43,7 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **Network Daemon (`netd`)** | 🔵 Functional prototype | NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC |
 | **Native Language & Platform (`nillang` / `nilc`)** | 🔵 Functional prototype | Native NilLang parser, AST, portable bytecode compiler (`nilc`), declarative UI engine (`NilVM`), and end-to-end integration with `nilpkg` & `nilrt` |
 | **Cryptographic Verified Boot (`mkvbmeta`)** | 🔵 Functional prototype | DM-verity root hash tree generation and Ed25519 signature signing & validation tool (`build/mkvbmeta.py`) |
-| **Package Manager (`nilpkg`)** | 🔵 Functional prototype | Signed `.nilax` package format (`nilpkg pack`), atomic unpack & install, upgrade with rollback, crash-recovery journal, cross-process locking, key revocation, and shell integration; store catalogue simulated **[SIMULATED]** |
+| **Package Manager (`nilpkg`)** | 🔵 Functional prototype | Signed `.nilax` package format (`nilpkg pack`), atomic unpack & install, upgrade with rollback, uninstall, crash-recovery journal, cross-process locking, key trust/revocation, and shell integration |
 | **Canonical Framed IPC (`nilprotocol`)** | 🔵 Functional prototype | Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `audiod`, `nilimed`, `nilupd`, `nilkeyd`, `nilandroidd`, `btd`, `telephonyd`, `camerad`) |
 | **Audio Policy Server & Mixer (`audiod`)** | 🔵 Functional prototype | Stream focus arbitration (EmergencyCall > VoiceCall > Alarm > Notification > Media), dynamic volume ducking, ALSA PCM routing (Speaker, Earpiece, Headset, Bluetooth), and canonical framed IPC (`/run/onuron/audio.sock`) |
 | **Camera HAL & Streaming Daemon (`camerad`)** | 🔵 Functional prototype | Linux V4L2 & vendor HAL sensor discovery, image capture pipeline with frame buffers, LED torch control, preview state management, and canonical framed IPC (`/run/nilos/camera.sock`) |
@@ -59,10 +59,10 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **Status Bar (simulated indicators)** | 🟠 Stub / simulated | Battery, signal and clock indicators are demo values, marked `⚠SIM` on screen across the shell **[SIMULATED]** |
 | **Alap Framework (`alap`)** | 🔵 Functional prototype | Declarative mobile application framework (state reactivity, component graph, lifecycle hooks, router stack, typed system service contracts) adhering to ADR-0009 |
 | **Canonical Target Registry** | 🔵 Functional prototype | ADR-0002 canonical target registry and fail-closed flashing safety gates (`qemu-x86_64`, `qemu-aarch64`, `android-host-arm64`, `oneplus-fajita`) |
-| **Calculator App** | 🔵 Functional prototype | Basic arithmetic evaluator (precedence, parentheses, decimals) with interactive UI **[SIMULATED]** |
-| **Notes App** | 🟠 Stub / simulated | Demonstrates NilLang declarative note viewer with seeded demo notes **[SIMULATED]** |
-| **Music Player App** | 🟠 Stub / simulated | Demonstrates music player controls and playlist UI with simulated tracks **[SIMULATED]** |
-| **Camera Viewfinder App** | 🟠 Stub / simulated | Viewfinder UI and sensor specification display; simulated without live camerad frame stream **[SIMULATED]** |
+| **Calculator App** | 🔵 Functional prototype | Scientific arithmetic evaluator (precedence, parentheses, exponents, modulo, trig/log/sqrt, Bengali digits, persistent history) with interactive UI |
+| **Notes App** | 🔵 Functional prototype | Persistent notebook (`/data/notes/notes.json`) with atomic writes, creation, editing, tagging, priority, search, and deletion |
+| **Music Player App** | 🔵 Functional prototype | Filesystem audio scanner (`/data/music`), playlist persistence, and `audiod` (`nilaudio`) volume/mute/route control; audio output simulated when ALSA hardware is absent **[SIMULATED]** |
+| **Camera Viewfinder App** | 🔵 Functional prototype | Viewfinder UI wired to `nilcam::CameraClient` (`get_info`, `capture_frame` to `/data/dcim`, `set_torch`, sensor switch); frame buffer simulated when V4L2 hardware is absent **[SIMULATED]** |
 <!-- END GENERATED: maturity -->
 ---
 

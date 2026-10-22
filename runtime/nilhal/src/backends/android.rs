@@ -8,16 +8,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Standard valid 16x16 test pattern JPEG (JFIF baseline, SOF0, DQT, DHT, SOS, EOI)
 const VALID_BASELINE_JPEG: &[u8] = &[
     0xFF, 0xD8, // SOI
-    0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x01, 0x00, 0x48, 0x00, 0x48, 0x00, 0x00, // APP0
+    0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x01, 0x00, 0x48, 0x00, 0x48,
+    0x00, 0x00, // APP0
     0xFF, 0xDB, 0x00, 0x43, 0x00, // DQT
     0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08, 0x07, 0x07, 0x07, 0x09, 0x09, 0x08, 0x0A, 0x0C, 0x14,
     0x0D, 0x0C, 0x0B, 0x0B, 0x0C, 0x19, 0x12, 0x13, 0x0F, 0x14, 0x1D, 0x1A, 0x1F, 0x1E, 0x1D, 0x1A,
     0x1C, 0x1C, 0x20, 0x24, 0x2E, 0x27, 0x20, 0x22, 0x2C, 0x23, 0x1C, 0x1C, 0x28, 0x37, 0x29, 0x2C,
     0x30, 0x31, 0x34, 0x34, 0x34, 0x1F, 0x27, 0x39, 0x3D, 0x38, 0x32, 0x3C, 0x2E, 0x33, 0x34, 0x32,
     0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x10, 0x00, 0x10, 0x01, 0x01, 0x11, 0x00, // SOF0
-    0xFF, 0xC4, 0x00, 0x1F, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, // DHT
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
-    0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, // SOS
+    0xFF, 0xC4, 0x00, 0x1F, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00,
+    0x00, // DHT
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
+    0x0B, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, // SOS
     0x7F, 0x00, 0xD2, 0x8A, 0x28, 0xA2, 0x80, // Scan data
     0xFF, 0xD9, // EOI
 ];
@@ -163,17 +165,23 @@ impl NetworkHal for AndroidNetwork {
     }
 
     fn scan_wifi(&mut self) -> Result<Vec<WifiApInfo>, HalError> {
-        Err(HalError::UnsupportedOperation("Wi-Fi scan bridge not connected".into()))
+        Err(HalError::UnsupportedOperation(
+            "Wi-Fi scan bridge not connected".into(),
+        ))
     }
 
     fn connect_wifi(&mut self, _ssid: &str, _psk: &str) -> Result<(), HalError> {
         let _ = (_ssid, _psk);
-        Err(HalError::UnsupportedOperation("Wi-Fi connect bridge not connected".into()))
+        Err(HalError::UnsupportedOperation(
+            "Wi-Fi connect bridge not connected".into(),
+        ))
     }
 
     fn set_cellular_enabled(&mut self, _enabled: bool) -> Result<(), HalError> {
         let _ = _enabled;
-        Err(HalError::UnsupportedOperation("Cellular control bridge not connected".into()))
+        Err(HalError::UnsupportedOperation(
+            "Cellular control bridge not connected".into(),
+        ))
     }
 }
 
@@ -236,14 +244,20 @@ impl TelephonyHal for AndroidTelephony {
     fn dial(&mut self, number: &str) -> Result<String, HalError> {
         let trimmed = number.trim();
         if trimmed.is_empty() {
-            return Err(HalError::UnsupportedOperation("Cannot dial an empty phone number".into()));
+            return Err(HalError::UnsupportedOperation(
+                "Cannot dial an empty phone number".into(),
+            ));
         }
 
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        let call_id = format!("s25_call_{}_{}", trimmed.replace(['+', '-', ' '], ""), now_ms);
+        let call_id = format!(
+            "s25_call_{}_{}",
+            trimmed.replace(['+', '-', ' '], ""),
+            now_ms
+        );
 
         self.call_state = CallState::Active {
             number: trimmed.to_string(),
@@ -258,7 +272,10 @@ impl TelephonyHal for AndroidTelephony {
     }
 
     fn answer(&mut self, _call_id: &str) -> Result<(), HalError> {
-        if let CallState::Ringing { ref incoming_number } = self.call_state {
+        if let CallState::Ringing {
+            ref incoming_number,
+        } = self.call_state
+        {
             self.call_state = CallState::Active {
                 number: incoming_number.clone(),
                 duration_secs: 0,
@@ -271,7 +288,9 @@ impl TelephonyHal for AndroidTelephony {
         let rec = recipient.trim();
         let msg = message.trim();
         if rec.is_empty() || msg.is_empty() {
-            return Err(HalError::UnsupportedOperation("Recipient or message cannot be empty".into()));
+            return Err(HalError::UnsupportedOperation(
+                "Recipient or message cannot be empty".into(),
+            ));
         }
 
         let now_sec = SystemTime::now()
@@ -449,13 +468,11 @@ impl BluetoothHal for AndroidBluetooth {
     }
 
     fn get_paired_devices(&self) -> Vec<BluetoothDeviceEntry> {
-        vec![
-            BluetoothDeviceEntry {
-                name: "Galaxy Buds3 Pro".into(),
-                address: "E8:50:8B:11:22:33".into(),
-                is_connected: true,
-            }
-        ]
+        vec![BluetoothDeviceEntry {
+            name: "Galaxy Buds3 Pro".into(),
+            address: "E8:50:8B:11:22:33".into(),
+            is_connected: true,
+        }]
     }
 
     fn pair(&mut self, _address: &str) -> Result<(), HalError> {

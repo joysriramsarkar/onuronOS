@@ -62,7 +62,8 @@ pub fn device_permission(path: &Path) -> Option<&'static str> {
     let s = path.to_string_lossy();
     if s.starts_with("/dev/video") {
         Some("camera")
-    } else if s.starts_with("/dev/snd") || s.starts_with("/dev/dsp") || s.starts_with("/dev/audio") {
+    } else if s.starts_with("/dev/snd") || s.starts_with("/dev/dsp") || s.starts_with("/dev/audio")
+    {
         Some("audio")
     } else if s.starts_with("/dev/gps") {
         Some("location")
@@ -111,7 +112,11 @@ impl AppPolicy {
         if let Some(perm) = device_permission(path) {
             return self.require(perm);
         }
-        let perm = if write { "storage.write" } else { "storage.read" };
+        let perm = if write {
+            "storage.write"
+        } else {
+            "storage.read"
+        };
         self.require(perm)
     }
 
@@ -258,7 +263,8 @@ mod tests {
         assert!(with.check_path(Path::new("/dev/video0"), true).is_allowed());
         // A different device still needs its own permission.
         assert_eq!(
-            with.check_path(Path::new("/dev/snd/pcmC0D0p"), true).denied_permission(),
+            with.check_path(Path::new("/dev/snd/pcmC0D0p"), true)
+                .denied_permission(),
             Some("audio")
         );
     }
@@ -270,13 +276,17 @@ mod tests {
         assert_eq!(denied.denied_permission(), Some("storage.write"));
 
         let with = policy(&["storage.write"]);
-        assert!(with.check_path(Path::new("/sdcard/notes.txt"), true).is_allowed());
+        assert!(with
+            .check_path(Path::new("/sdcard/notes.txt"), true)
+            .is_allowed());
     }
 
     #[test]
     fn writing_inside_the_data_dir_needs_no_storage_permission() {
         let p = policy(&[]);
-        assert!(p.check_path(Path::new("/data/data/org.onuron.app/state.json"), true).is_allowed());
+        assert!(p
+            .check_path(Path::new("/data/data/org.onuron.app/state.json"), true)
+            .is_allowed());
         assert!(p
             .check_path(Path::new("/data/data/org.onuron.app/sub/dir/file"), false)
             .is_allowed());
@@ -298,7 +308,9 @@ mod tests {
     fn reading_outside_requires_storage_read() {
         let without = policy(&[]);
         assert_eq!(
-            without.check_path(Path::new("/etc/hosts"), false).denied_permission(),
+            without
+                .check_path(Path::new("/etc/hosts"), false)
+                .denied_permission(),
             Some("storage.read")
         );
         let with = policy(&["storage.read"]);
@@ -308,11 +320,18 @@ mod tests {
     #[test]
     fn restriction_plan_matches_permissions() {
         let locked = plan_restrictions(&policy(&[]));
-        assert!(locked.read_only_root, "no storage.write must mean a read-only root");
-        assert!(locked.writable_paths.contains(&"/data/data/org.onuron.app".to_string()));
+        assert!(
+            locked.read_only_root,
+            "no storage.write must mean a read-only root"
+        );
+        assert!(locked
+            .writable_paths
+            .contains(&"/data/data/org.onuron.app".to_string()));
         assert!(locked.writable_paths.contains(&"/tmp".to_string()));
-        assert!(locked.device_masks.iter().any(|m| m == "/dev/video*"),
-            "camera-less app must have video devices masked");
+        assert!(
+            locked.device_masks.iter().any(|m| m == "/dev/video*"),
+            "camera-less app must have video devices masked"
+        );
 
         let full = plan_restrictions(&policy(&["storage.write", "camera", "audio", "location"]));
         assert!(!full.read_only_root);
@@ -322,9 +341,18 @@ mod tests {
 
     #[test]
     fn device_patterns_are_single_star_globs() {
-        assert!(matches_device_pattern("/dev/video*", Path::new("/dev/video0")));
-        assert!(!matches_device_pattern("/dev/video*", Path::new("/dev/snd/pcmC0D0p")));
-        assert!(matches_device_pattern("/dev/snd/*", Path::new("/dev/snd/pcmC0D0p")));
+        assert!(matches_device_pattern(
+            "/dev/video*",
+            Path::new("/dev/video0")
+        ));
+        assert!(!matches_device_pattern(
+            "/dev/video*",
+            Path::new("/dev/snd/pcmC0D0p")
+        ));
+        assert!(matches_device_pattern(
+            "/dev/snd/*",
+            Path::new("/dev/snd/pcmC0D0p")
+        ));
         assert!(!matches_device_pattern("/dev/snd/*", Path::new("/dev/snd")));
         assert!(matches_device_pattern("/dev/gps", Path::new("/dev/gps")));
     }

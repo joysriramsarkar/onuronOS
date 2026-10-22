@@ -4,12 +4,12 @@
 // - Atomic writes to prevent corruption on sudden power loss
 // - Schema-versioned JSON persistence in /data/notes/notes.json
 // - Fallback and corruption recovery policy
-// - Real creation, editing, deletion and listing
+// - Real creation, editing, tagging, priority setting, searching, deletion and listing
 
+use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NoteItem {
@@ -21,7 +21,7 @@ pub struct NoteItem {
     pub priority: String,
 }
 
-/// Provides standard default onboarding notes when storage is empty or initialized.
+/// Provides standard default onboarding notes when storage is initialized for the first time.
 pub fn default_notes() -> Vec<NoteItem> {
     vec![
         NoteItem {
@@ -52,6 +52,7 @@ pub fn default_notes() -> Vec<NoteItem> {
 }
 
 /// Loads notes from disk. If missing or corrupted, returns default notes.
+/// Respects an intentionally empty `[]` array when the user deletes all notes.
 pub fn load_notes(path: &Path) -> Vec<NoteItem> {
     if !path.exists() {
         return default_notes();
@@ -59,8 +60,8 @@ pub fn load_notes(path: &Path) -> Vec<NoteItem> {
 
     match fs::read_to_string(path) {
         Ok(content) => match serde_json::from_str::<Vec<NoteItem>>(&content) {
-            Ok(notes) if !notes.is_empty() => notes,
-            _ => default_notes(),
+            Ok(notes) => notes,
+            Err(_) => default_notes(),
         },
         Err(_) => default_notes(),
     }
@@ -97,6 +98,72 @@ pub fn add_note(notes: &mut Vec<NoteItem>, title: String, body: String, tag: Str
         priority: "Normal".into(),
     });
     next_id
+}
+
+/// Edits an existing note's title and/or body by ID.
+pub fn edit_note(
+    notes: &mut [NoteItem],
+    id: usize,
+    title: Option<String>,
+    body: Option<String>,
+) -> bool {
+    if let Some(note) = notes.iter_mut().find(|n| n.id == id) {
+        if let Some(t) = title {
+            if !t.trim().is_empty() {
+                note.title = t;
+            }
+        }
+        if let Some(b) = body {
+            note.body = b;
+        }
+        note.date = "আজ (সম্পাদিত)".into();
+        true
+    } else {
+        false
+    }
+}
+
+/// Updates a note's tag and/or priority by ID.
+pub fn update_note_meta(
+    notes: &mut [NoteItem],
+    id: usize,
+    tag: Option<String>,
+    priority: Option<String>,
+) -> bool {
+    if let Some(note) = notes.iter_mut().find(|n| n.id == id) {
+        if let Some(t) = tag {
+            if !t.trim().is_empty() {
+                note.tag = t;
+            }
+        }
+        if let Some(p) = priority {
+            let norm = match p.trim().to_lowercase().as_str() {
+                "high" | "উচ্চ" => "High",
+                "low" | "কম" => "Low",
+                _ => "Normal",
+            };
+            note.priority = norm.into();
+        }
+        true
+    } else {
+        false
+    }
+}
+
+/// Searches notes by case-insensitive substring across title, body, and tag.
+pub fn search_notes<'a>(notes: &'a [NoteItem], query: &str) -> Vec<&'a NoteItem> {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return notes.iter().collect();
+    }
+    notes
+        .iter()
+        .filter(|n| {
+            n.title.to_lowercase().contains(&q)
+                || n.body.to_lowercase().contains(&q)
+                || n.tag.to_lowercase().contains(&q)
+        })
+        .collect()
 }
 
 /// Deletes a note by ID. Returns true if removed, false if not found.
@@ -140,8 +207,37 @@ mod tests {
         assert_eq!(loaded.len(), 4);
         assert_eq!(loaded[3].title, "নতুন পরীক্ষা নোট");
 
+        // Deleting all notes and saving must persist an empty list instead of re-seeding defaults
+        notes.clear();
+        save_notes_atomic(&notes_file, &notes).expect("Empty save must succeed");
+        let loaded_empty = load_notes(&notes_file);
+        assert!(loaded_empty.is_empty());
+
         // Clean up
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_edit_and_search_notes() {
+        let mut notes = default_notes();
+        assert!(edit_note(
+            &mut notes,
+            1,
+            Some("আপডেটেড শিরোনাম".into()),
+            Some("নতুন বিস্তারিত তথ্য".into())
+        ));
+        assert!(update_note_meta(
+            &mut notes,
+            1,
+            Some("গুরুত্বপূর্ণ".into()),
+            Some("low".into())
+        ));
+        assert_eq!(notes[0].title, "আপডেটেড শিরোনাম");
+        assert_eq!(notes[0].priority, "Low");
+
+        let hits = search_notes(&notes, "আপডেটেড");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, 1);
     }
 
     #[test]

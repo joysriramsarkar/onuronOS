@@ -88,7 +88,9 @@ impl AudioHal for AndroidHostAudio {
         // Scale raw PCM samples with current master volume attenuation
         let scaled: Vec<i16> = pcm_samples
             .iter()
-            .map(|&sample| ((sample as f32) * volume_scale).clamp(i16::MIN as f32, i16::MAX as f32) as i16)
+            .map(|&sample| {
+                ((sample as f32) * volume_scale).clamp(i16::MIN as f32, i16::MAX as f32) as i16
+            })
             .collect();
 
         self.last_played = scaled.clone();
@@ -157,7 +159,9 @@ mod tests {
         // Inject simulated microphone samples
         audio.inject_record_samples(&[123i16, 456, 789]);
         let mut mic_buf = [0i16; 3];
-        let n = audio.record_stream(&mut mic_buf).expect("Record should succeed");
+        let n = audio
+            .record_stream(&mut mic_buf)
+            .expect("Record should succeed");
         assert_eq!(n, 3);
         assert_eq!(mic_buf, [123, 456, 789]);
     }

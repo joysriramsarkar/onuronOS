@@ -27,8 +27,12 @@ fn main() {
             let src = fs::read_to_string(&args[2]).expect("read source file");
             match nillang::Parser::new(&src).parse() {
                 Ok(prog) => {
-                    println!("[nilc] Syntax OK ({} apps, {} structs, {} components)",
-                        prog.apps.len(), prog.structs.len(), prog.components.len());
+                    println!(
+                        "[nilc] Syntax OK ({} apps, {} structs, {} components)",
+                        prog.apps.len(),
+                        prog.structs.len(),
+                        prog.components.len()
+                    );
                 }
                 Err(e) => {
                     eprintln!("[nilc] Syntax Error: {e}");
@@ -73,14 +77,20 @@ fn main() {
             let path = &args[2];
             let bytes = if path.ends_with(".nil") {
                 let src = fs::read_to_string(path).expect("read source file");
-                let app_name = Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("app");
+                let app_name = Path::new(path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("app");
                 nillang::compile_source(&src, app_name).expect("compile source")
             } else {
                 fs::read(path).expect("read bytecode")
             };
 
             let mut vm = nillang::load_package(&bytes).expect("load bytecode");
-            println!("[nilc] Executing native NilLang app: {}", vm.package.app_name);
+            println!(
+                "[nilc] Executing native NilLang app: {}",
+                vm.package.app_name
+            );
             match vm.render_scene() {
                 Ok(scene) => println!("[nilc] Active Scene Render:\n{scene}"),
                 Err(e) => eprintln!("[nilc] Runtime Error: {e}"),
@@ -88,7 +98,10 @@ fn main() {
 
             match vm.to_alap_component() {
                 Ok(comp) => {
-                    println!("[nilc] Alap Declarative Component: {} nodes", comp.node_count());
+                    println!(
+                        "[nilc] Alap Declarative Component: {} nodes",
+                        comp.node_count()
+                    );
                     let mut fb = nilui::SoftwareFramebufferBackend::new(400, 600);
                     let (fw, fh) = nilui::render_component_to_backend(&mut fb, &comp, 20, 20);
                     println!("[nilc] NilUI Framebuffer Render: bounds ({fw}x{fh})");

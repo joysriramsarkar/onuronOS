@@ -27,11 +27,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # Dependency policy gate (see deny.toml).
-      # cargo-deny hard-fails on a known vulnerability, a yanked crate, or any
-      # unmaintained crate that is not explicitly listed in deny.toml with a
-      # reason. A new unmaintained crate therefore forces a review instead of
-      # passing silently.
+      # Always run even if cargo-audit reported findings so both audit reports
+      # are visible in the same CI run.
       - name: Check advisories & unmaintained dependencies
+        if: always()
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check advisories

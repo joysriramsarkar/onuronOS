@@ -121,7 +121,9 @@ pub fn setexeccon(con: &str) -> Result<(), String> {
         }
 
         if !written && Path::new("/sys/fs/selinux").is_dir() {
-            return Err("SELinux filesystem is present but /proc attr/exec is unavailable".to_string());
+            return Err(
+                "SELinux filesystem is present but /proc attr/exec is unavailable".to_string(),
+            );
         }
     }
 

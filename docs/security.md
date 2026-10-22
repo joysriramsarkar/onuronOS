@@ -1,9 +1,22 @@
 # 🔒 Onuron OS Security Architecture & Sandboxing
 
-Security and user privacy are foundational requirements of Onuron OS. The architecture enforces defense-in-depth through mandatory access control, cryptographic verification, hardware-backed encryption, and process isolation.
+Security and user privacy are foundational requirements of Onuron OS. The architecture enforces defense-in-depth through mandatory access control, cryptographic verification, encryption, and process isolation.
 
 Official architectural ecosystem:
 > **"Onuron OS — powered by NilLang + Alap"**
+
+## Implementation Status Ledger
+
+To keep architectural claims transparent and verifiable, every security subsystem is classified below with its current implementation maturity and verification path:
+
+| Subsystem | Status | Implementation & Verification | Current Limitations |
+|---|---|---|---|
+| **Package Signing (`nilpkg`)** | **Implemented** (Automated tests) | Ed25519 signature + SHA-256 payload digest + safe tar/zip extraction (`pkg/nilpkg/src/extract.rs`). Verified by 45+ unit/integration tests. | Hardware token / HSM signing not yet wired. |
+| **Permission Broker (`nilrt`)** | **Implemented** (Automated tests) | Per-app capability grants with atomic persistence, TTL auto-revocation, and path/device glob checks (`runtime/nilrt/src/permbroker.rs`). | Interactive UI prompt in `nilshell` is console/simulator-based. |
+| **Linux Namespaces (`nilrt`)** | **Implemented** (Linux/QEMU) | `CLONE_NEWPID`, `CLONE_NEWNS`, `CLONE_NEWNET`, `CLONE_NEWIPC` isolation (`runtime/nilrt/src/sandbox.rs`). | Host-side Windows simulator (`nilsim`) uses per-app WebView2 user-data directories instead of Linux namespaces. |
+| **SELinux Policy (`security/selinux`)** | **Functional Prototype** | CIL policy modules (`00-base.cil`..`90-neverallow.cil`) audited in CI (`build/test_selinux_audit.py`) and runtime mode probe in `nilrt`. | Full enforcing mode across all hardware device nodes is a release-hardening milestone. |
+| **Storage Encryption (`nilkeyd`)** | **Functional Prototype** | Argon2/ChaCha20-Poly1305 key wrapping, PIN verification, and Linux `fscrypt v2` ioctl bindings (`services/nilkeyd/src/fscrypt.rs`). | Hardware TEE / Secure Enclave key derivation is planned; currently uses software-derived master keys. |
+| **Verified Boot (`vbmeta` / A-B)** | **Experimental** | `mkvbmeta.py`, preflight checks, and `nilupd` signed A/B slot transactions (`services/nilupd`). | Bootloader root-of-trust fuse locking on physical reference hardware is not yet enabled. |
 
 ---
 

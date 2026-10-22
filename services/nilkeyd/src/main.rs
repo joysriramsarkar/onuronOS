@@ -160,9 +160,11 @@ fn master_key_path(o: &Opts) -> PathBuf {
 /// Load the master key into memory from a file or by unwrapping the record.
 fn load_master_in_memory(o: &Opts, pin: &str) -> Result<[u8; nilkeyd::KEY_LEN], String> {
     if let Some(path) = &o.master_key {
-        return load_master_from_file(path).map_err(|e| format!("could not read master key: {}", e));
+        return load_master_from_file(path)
+            .map_err(|e| format!("could not read master key: {}", e));
     }
-    let record = read_record(&record_path(o)).map_err(|e| format!("could not read record: {}", e))?;
+    let record =
+        read_record(&record_path(o)).map_err(|e| format!("could not read record: {}", e))?;
     let secret = load_device_secret(&device_secret_path(o))
         .map_err(|e| format!("could not read device secret: {}", e))?;
     unwrap_master_key(&record, pin, &secret).map_err(|e| format!("unwrap failed: {}", e))
@@ -226,7 +228,10 @@ fn cmd_unwrap(args: &[String]) -> i32 {
     match load_master_from_file(&master_key_path(&o)) {
         Ok(master) => {
             // Only a fingerprint is printed by default; the key itself stays on disk.
-            println!("unwrapped (master fingerprint {})", device_secret_fingerprint(&master));
+            println!(
+                "unwrapped (master fingerprint {})",
+                device_secret_fingerprint(&master)
+            );
             0
         }
         Err(e) => {
@@ -258,7 +263,12 @@ fn cmd_rewrap(args: &[String]) -> i32 {
             return 2;
         }
     };
-    match rewrap_record(&record_path(&o), &device_secret_path(&o), &old_pin, &new_pin) {
+    match rewrap_record(
+        &record_path(&o),
+        &device_secret_path(&o),
+        &old_pin,
+        &new_pin,
+    ) {
         Ok(master) => {
             println!(
                 "rewrapped (master fingerprint {})",
@@ -274,7 +284,8 @@ fn cmd_rewrap(args: &[String]) -> i32 {
 }
 
 fn read_blob(path: &str) -> Result<nilkeyd::EncryptedBlob, String> {
-    let text = std::fs::read_to_string(path).map_err(|e| format!("could not read {}: {}", path, e))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| format!("could not read {}: {}", path, e))?;
     serde_json::from_str(&text).map_err(|e| format!("could not parse {}: {}", path, e))
 }
 
@@ -397,14 +408,21 @@ fn cmd_status(args: &[String]) -> i32 {
     let master = master_key_path(&o);
 
     let record_state = match read_record(&record) {
-        Ok(r) => format!("present (device fingerprint {})", r.device_secret_fingerprint),
+        Ok(r) => format!(
+            "present (device fingerprint {})",
+            r.device_secret_fingerprint
+        ),
         Err(UnwrapError::Io(_)) => "missing".to_string(),
         Err(e) => format!("unreadable ({})", e),
     };
     println!("record:        {} ({})", record_state, record.display());
     println!(
         "device secret: {} ({})",
-        if secret.exists() { "present" } else { "missing" },
+        if secret.exists() {
+            "present"
+        } else {
+            "missing"
+        },
         secret.display()
     );
     if is_unlocked(&record, &master) {
@@ -412,7 +430,11 @@ fn cmd_status(args: &[String]) -> i32 {
     } else {
         println!("state:         KEY_LOCKED");
     }
-    println!("master key:    {} ({})", if master.exists() { "present" } else { "absent" }, master.display());
+    println!(
+        "master key:    {} ({})",
+        if master.exists() { "present" } else { "absent" },
+        master.display()
+    );
     0
 }
 
@@ -438,7 +460,10 @@ fn cmd_fscrypt(args: &[String]) -> i32 {
             return 1;
         }
     };
-    let dir = o.dir.clone().unwrap_or_else(|| PathBuf::from(DEFAULT_DATA_DIR));
+    let dir = o
+        .dir
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_DATA_DIR));
     let result = apply_fscrypt_policy(&dir, &master);
     if result.applied {
         println!("fscrypt: {}", result.detail);
@@ -489,7 +514,11 @@ fn run_daemon() -> i32 {
                         if n >= 4 && &buf[..4] == &nilprotocol::PROTOCOL_MAGIC {
                             let mut cursor = std::io::Cursor::new(&buf[..n]);
                             if let Ok(frame) = nilprotocol::Frame::read_from(&mut cursor) {
-                                let resp = nilkeyd::handle_ipc_request(&frame, &default_record_path(), &default_master_key_path());
+                                let resp = nilkeyd::handle_ipc_request(
+                                    &frame,
+                                    &default_record_path(),
+                                    &default_master_key_path(),
+                                );
                                 let _ = resp.write_to(&mut s);
                                 continue;
                             }

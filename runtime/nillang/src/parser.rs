@@ -208,7 +208,10 @@ impl<'a> Parser<'a> {
             };
             self.consume_char(':');
             let field_type = self.next_word().unwrap_or("any").to_string();
-            fields.push(StructField { name: field_name, field_type });
+            fields.push(StructField {
+                name: field_name,
+                field_type,
+            });
             self.consume_char(';');
         }
 
@@ -232,7 +235,10 @@ impl<'a> Parser<'a> {
 
             let word = match self.peek_word() {
                 Some(w) => w,
-                None => { self.advance_char(); continue; }
+                None => {
+                    self.advance_char();
+                    continue;
+                }
             };
 
             if word == "@State" {
@@ -248,10 +254,16 @@ impl<'a> Parser<'a> {
                         vval = self.next_word().unwrap_or("").to_string();
                     }
                 }
-                state_vars.push(StateVar { name: vname, var_type: vtype, initial_value: vval });
+                state_vars.push(StateVar {
+                    name: vname,
+                    var_type: vtype,
+                    initial_value: vval,
+                });
             } else if word == "build" {
                 self.next_word();
-                if self.consume_char('(') { self.consume_char(')'); }
+                if self.consume_char('(') {
+                    self.consume_char(')');
+                }
                 if self.consume_char('{') {
                     if let Ok(ui) = self.parse_ui_element() {
                         root_ui = Some(ui);
@@ -270,11 +282,18 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(AppDef { name, state_vars, root_ui })
+        Ok(AppDef {
+            name,
+            state_vars,
+            root_ui,
+        })
     }
 
     fn parse_component(&mut self) -> Result<ComponentDef, String> {
-        let name = self.next_word().ok_or("Expected component name")?.to_string();
+        let name = self
+            .next_word()
+            .ok_or("Expected component name")?
+            .to_string();
         if !self.consume_char('{') {
             return Err("Expected '{' after component name".to_string());
         }
@@ -290,7 +309,10 @@ impl<'a> Parser<'a> {
 
             let word = match self.peek_word() {
                 Some(w) => w,
-                None => { self.advance_char(); continue; }
+                None => {
+                    self.advance_char();
+                    continue;
+                }
             };
 
             if word == "prop" {
@@ -298,10 +320,15 @@ impl<'a> Parser<'a> {
                 let pname = self.next_word().unwrap_or("").to_string();
                 self.consume_char(':');
                 let ptype = self.next_word().unwrap_or("any").to_string();
-                props.push(StructField { name: pname, field_type: ptype });
+                props.push(StructField {
+                    name: pname,
+                    field_type: ptype,
+                });
             } else if word == "build" {
                 self.next_word();
-                if self.consume_char('(') { self.consume_char(')'); }
+                if self.consume_char('(') {
+                    self.consume_char(')');
+                }
                 if self.consume_char('{') {
                     if let Ok(ui) = self.parse_ui_element() {
                         root_ui = Some(ui);
@@ -320,12 +347,19 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(ComponentDef { name, props, root_ui })
+        Ok(ComponentDef {
+            name,
+            props,
+            root_ui,
+        })
     }
 
     fn parse_ui_element(&mut self) -> Result<UIElement, String> {
         self.skip_whitespace();
-        let tag = self.next_word().ok_or("Expected UI element tag")?.to_string();
+        let tag = self
+            .next_word()
+            .ok_or("Expected UI element tag")?
+            .to_string();
         let mut text_content = None;
 
         if self.consume_char('(') {
@@ -348,11 +382,19 @@ impl<'a> Parser<'a> {
                 // Check if it's a child UI element or property
                 let word = match self.peek_word() {
                     Some(w) => w,
-                    None => { self.advance_char(); continue; }
+                    None => {
+                        self.advance_char();
+                        continue;
+                    }
                 };
 
                 // Common declarative tags
-                if ["Column", "Row", "Stack", "Text", "Button", "Input", "Progress", "WebView", "LazyList"].contains(&word) {
+                if [
+                    "Column", "Row", "Stack", "Text", "Button", "Input", "Progress", "WebView",
+                    "LazyList",
+                ]
+                .contains(&word)
+                {
                     if let Ok(child) = self.parse_ui_element() {
                         children.push(child);
                     }
@@ -364,12 +406,20 @@ impl<'a> Parser<'a> {
                         } else {
                             self.next_word().unwrap_or("").to_string()
                         };
-                        properties.push(UIProperty { name: prop_name, value: val });
+                        properties.push(UIProperty {
+                            name: prop_name,
+                            value: val,
+                        });
                     }
                 }
             }
         }
 
-        Ok(UIElement { tag, text_content, properties, children })
+        Ok(UIElement {
+            tag,
+            text_content,
+            properties,
+            children,
+        })
     }
 }

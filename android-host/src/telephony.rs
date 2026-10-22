@@ -34,36 +34,41 @@ impl AndroidHostTelephony {
     /// Process telephony events received from Android BroadcastReceivers
     pub fn handle_host_event(&mut self, event: &HostToGuestEvent) {
         match event {
-            HostToGuestEvent::IncomingCall { call_id, caller_number } => {
+            HostToGuestEvent::IncomingCall {
+                call_id,
+                caller_number,
+            } => {
                 self.active_call_id = Some(call_id.clone());
                 self.call_state = CallState::Ringing {
                     incoming_number: caller_number.clone(),
                 };
             }
-            HostToGuestEvent::CallStateChanged { call_id, state } => {
-                match state.as_str() {
-                    "ACTIVE" => {
-                        let num = match &self.call_state {
-                            CallState::Ringing { incoming_number } => incoming_number.clone(),
-                            CallState::Active { number, .. } => number.clone(),
-                            CallState::Dialing { number } => number.clone(),
-                            CallState::DialerPresented { number } => number.clone(),
-                            _ => "Unknown".to_string(),
-                        };
-                        self.active_call_id = Some(call_id.clone());
-                        self.call_state = CallState::Active {
-                            number: num,
-                            duration_secs: 0,
-                        };
-                    }
-                    "DISCONNECTED" | "IDLE" => {
-                        self.active_call_id = None;
-                        self.call_state = CallState::Idle;
-                    }
-                    _ => {}
+            HostToGuestEvent::CallStateChanged { call_id, state } => match state.as_str() {
+                "ACTIVE" => {
+                    let num = match &self.call_state {
+                        CallState::Ringing { incoming_number } => incoming_number.clone(),
+                        CallState::Active { number, .. } => number.clone(),
+                        CallState::Dialing { number } => number.clone(),
+                        CallState::DialerPresented { number } => number.clone(),
+                        _ => "Unknown".to_string(),
+                    };
+                    self.active_call_id = Some(call_id.clone());
+                    self.call_state = CallState::Active {
+                        number: num,
+                        duration_secs: 0,
+                    };
                 }
-            }
-            HostToGuestEvent::SmsReceived { sender, body, timestamp } => {
+                "DISCONNECTED" | "IDLE" => {
+                    self.active_call_id = None;
+                    self.call_state = CallState::Idle;
+                }
+                _ => {}
+            },
+            HostToGuestEvent::SmsReceived {
+                sender,
+                body,
+                timestamp,
+            } => {
                 self.received_messages.push(SmsMessage {
                     sender: sender.clone(),
                     body: body.clone(),
@@ -142,7 +147,10 @@ impl TelephonyHal for AndroidHostTelephony {
     }
 
     fn answer(&mut self, call_id: &str) -> Result<(), HalError> {
-        if let CallState::Ringing { ref incoming_number } = self.call_state {
+        if let CallState::Ringing {
+            ref incoming_number,
+        } = self.call_state
+        {
             self.call_state = CallState::Active {
                 number: incoming_number.clone(),
                 duration_secs: 0,
@@ -166,10 +174,14 @@ impl TelephonyHal for AndroidHostTelephony {
         let message_trim = message.trim();
 
         if recipient_trim.is_empty() {
-            return Err(HalError::UnsupportedOperation("SMS recipient cannot be empty".into()));
+            return Err(HalError::UnsupportedOperation(
+                "SMS recipient cannot be empty".into(),
+            ));
         }
         if message_trim.is_empty() {
-            return Err(HalError::UnsupportedOperation("SMS message body cannot be empty".into()));
+            return Err(HalError::UnsupportedOperation(
+                "SMS message body cannot be empty".into(),
+            ));
         }
 
         let now_sec = SystemTime::now()

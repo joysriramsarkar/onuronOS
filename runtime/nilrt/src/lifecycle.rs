@@ -283,8 +283,8 @@ mod tests {
 
     #[test]
     fn missing_executable_is_reported_not_launched() {
-        let root = std::env::temp_dir()
-            .join(format!("nilrt-lifecycle-missing-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("nilrt-lifecycle-missing-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let spec = LaunchSpec {
             app_id: "org.onuron.missing".into(),

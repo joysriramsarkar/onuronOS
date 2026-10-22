@@ -341,7 +341,6 @@ pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativeStartBridgeSe
     println!("[native_bridge] Bridge server initialized and listening for IPC");
 }
 
-
 #[no_mangle]
 pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativePollGuestCommand(
     _env: *mut c_void,
@@ -708,11 +707,13 @@ mod tests {
             );
 
             // Test null pointer rejected
-            assert!(!Java_org_onuron_mobile_NativeBridge_nativePushHostEventJson(
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                std::ptr::null(),
-            ));
+            assert!(
+                !Java_org_onuron_mobile_NativeBridge_nativePushHostEventJson(
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null(),
+                )
+            );
 
             // Test valid JSON event ingestion
             let valid_json = CString::new("{\"type\":\"HostResume\"}").unwrap();
@@ -724,11 +725,13 @@ mod tests {
 
             // Test malformed JSON rejected
             let bad_json = CString::new("{\"invalid\":123}").unwrap();
-            assert!(!Java_org_onuron_mobile_NativeBridge_nativePushHostEventJson(
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                bad_json.as_ptr(),
-            ));
+            assert!(
+                !Java_org_onuron_mobile_NativeBridge_nativePushHostEventJson(
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    bad_json.as_ptr(),
+                )
+            );
         }
     }
 }

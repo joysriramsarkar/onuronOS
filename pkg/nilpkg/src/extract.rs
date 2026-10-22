@@ -124,42 +124,142 @@ pub fn extract_tar(archive: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Extract a zip archive into `dest`, enforcing all safety checks.
+/// Extract a zip archive into `dest`, enforcing all safety checks (path traversal,
+/// symlink/special-file rejection, SUID/SGID mode stripping, and decompression limits)
+/// without depending on vulnerable external `zip` crate extractors.
 pub fn extract_zip(archive: &Path, dest: &Path) -> Result<(), String> {
-    let file = File::open(archive).map_err(|e| format!("Could not open archive: {e}"))?;
-    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("Invalid zip archive: {e}"))?;
-    let mut total_size: u64 = 0;
-
-    if zip.len() > MAX_ENTRIES {
-        return Err(format!("Archive exceeds maximum of {MAX_ENTRIES} entries"));
+    let data = fs::read(archive).map_err(|e| format!("Could not open archive: {e}"))?;
+    if data.len() < 22 {
+        return Err("Invalid zip archive: too small".into());
     }
 
-    for i in 0..zip.len() {
-        let mut entry = zip
-            .by_index(i)
-            .map_err(|e| format!("Corrupt zip entry {i}: {e}"))?;
-        let name = entry.name().to_string();
+    // Locate End of Central Directory (EOCD) signature PK\x05\x06 from the end
+    let min_eocd_pos = data.len().saturating_sub(65557);
+    let mut eocd_pos = None;
+    for pos in (min_eocd_pos..=data.len() - 22).rev() {
+        if &data[pos..pos + 4] == b"PK\x05\x06" {
+            eocd_pos = Some(pos);
+            break;
+        }
+    }
+    let eocd = eocd_pos.ok_or_else(|| "Invalid zip archive: missing EOCD".to_string())?;
+    let entry_count = u16::from_le_bytes([data[eocd + 10], data[eocd + 11]]) as usize;
+    let cd_size = u32::from_le_bytes([
+        data[eocd + 12],
+        data[eocd + 13],
+        data[eocd + 14],
+        data[eocd + 15],
+    ]) as usize;
+    let cd_offset = u32::from_le_bytes([
+        data[eocd + 16],
+        data[eocd + 17],
+        data[eocd + 18],
+        data[eocd + 19],
+    ]) as usize;
 
-        // Reject non-regular files.
-        if !entry.is_file() {
-            return Err(format!("Archive contains non-regular file: {name}"));
+    if entry_count > MAX_ENTRIES {
+        return Err(format!("Archive exceeds maximum of {MAX_ENTRIES} entries"));
+    }
+    if cd_offset.saturating_add(cd_size) > data.len() {
+        return Err("Invalid zip archive: central directory out of bounds".into());
+    }
+
+    let mut total_size: u64 = 0;
+    let mut pos = cd_offset;
+
+    for i in 0..entry_count {
+        if pos + 46 > data.len() || &data[pos..pos + 4] != b"PK\x01\x02" {
+            return Err(format!("Corrupt zip central directory entry {i}"));
+        }
+        let flags = u16::from_le_bytes([data[pos + 8], data[pos + 9]]);
+        if (flags & 0x01) != 0 {
+            return Err("Encrypted zip entries are not supported".into());
+        }
+        let method = u16::from_le_bytes([data[pos + 10], data[pos + 11]]);
+        let expected_crc = u32::from_le_bytes([
+            data[pos + 16],
+            data[pos + 17],
+            data[pos + 18],
+            data[pos + 19],
+        ]);
+        let comp_size = u32::from_le_bytes([
+            data[pos + 20],
+            data[pos + 21],
+            data[pos + 22],
+            data[pos + 23],
+        ]) as usize;
+        let uncomp_size = u32::from_le_bytes([
+            data[pos + 24],
+            data[pos + 25],
+            data[pos + 26],
+            data[pos + 27],
+        ]) as u64;
+        let name_len = u16::from_le_bytes([data[pos + 28], data[pos + 29]]) as usize;
+        let extra_len = u16::from_le_bytes([data[pos + 30], data[pos + 31]]) as usize;
+        let comment_len = u16::from_le_bytes([data[pos + 32], data[pos + 33]]) as usize;
+        let ext_attr = u32::from_le_bytes([
+            data[pos + 38],
+            data[pos + 39],
+            data[pos + 40],
+            data[pos + 41],
+        ]);
+        let lfh_offset = u32::from_le_bytes([
+            data[pos + 42],
+            data[pos + 43],
+            data[pos + 44],
+            data[pos + 45],
+        ]) as usize;
+
+        let name_end = pos + 46 + name_len;
+        let next_pos = name_end + extra_len + comment_len;
+        if next_pos > data.len() {
+            return Err(format!("Truncated zip central directory entry {i}"));
+        }
+        let name = std::str::from_utf8(&data[pos + 46..name_end])
+            .map_err(|_| format!("Non-UTF8 zip entry path at {i}"))?
+            .to_string();
+        pos = next_pos;
+
+        // Check Unix mode in upper 16 bits of external attributes (reject symlinks, devices, SUID/SGID)
+        let unix_mode = (ext_attr >> 16) & 0xFFFF;
+        let file_type_bits = unix_mode & 0o170000;
+        if name.ends_with('/')
+            || (file_type_bits != 0 && file_type_bits != 0o100000)
+            || (unix_mode & 0o6000) != 0
+        {
+            return Err(format!(
+                "Archive contains non-regular file or forbidden mode: {name}"
+            ));
         }
 
-        let target = safe_join(dest, &name)
-            .ok_or_else(|| format!("Unsafe path in archive: {name}"))?;
+        let target =
+            safe_join(dest, &name).ok_or_else(|| format!("Unsafe path in archive: {name}"))?;
 
-        let size = entry.size();
-        total_size += size;
+        total_size += uncomp_size;
         if total_size > MAX_UNCOMPRESSED_SIZE {
             return Err(format!(
                 "Archive exceeds maximum uncompressed size of {MAX_UNCOMPRESSED_SIZE} bytes"
             ));
         }
-        if size > MAX_FILE_SIZE {
+        if uncomp_size > MAX_FILE_SIZE {
             return Err(format!(
                 "Archive entry exceeds maximum file size of {MAX_FILE_SIZE} bytes: {name}"
             ));
         }
+
+        if lfh_offset + 30 > data.len() || &data[lfh_offset..lfh_offset + 4] != b"PK\x03\x04" {
+            return Err(format!("Corrupt local file header for {name}"));
+        }
+        let lfh_name_len =
+            u16::from_le_bytes([data[lfh_offset + 26], data[lfh_offset + 27]]) as usize;
+        let lfh_extra_len =
+            u16::from_le_bytes([data[lfh_offset + 28], data[lfh_offset + 29]]) as usize;
+        let payload_start = lfh_offset + 30 + lfh_name_len + lfh_extra_len;
+        let payload_end = payload_start.saturating_add(comp_size);
+        if payload_end > data.len() {
+            return Err(format!("Truncated zip payload for {name}"));
+        }
+        let compressed = &data[payload_start..payload_end];
 
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)
@@ -168,24 +268,59 @@ pub fn extract_zip(archive: &Path, dest: &Path) -> Result<(), String> {
 
         let mut out = File::create(&target)
             .map_err(|e| format!("Could not create {}: {e}", target.display()))?;
-        let mut buf = [0u8; 8192];
+        let mut hasher = crc32fast::Hasher::new();
         let mut written: u64 = 0;
-        loop {
-            let n = entry
-                .read(&mut buf)
-                .map_err(|e| format!("Read error on {name}: {e}"))?;
-            if n == 0 {
-                break;
+
+        match method {
+            0 => {
+                // Stored (uncompressed)
+                if compressed.len() as u64 > MAX_FILE_SIZE {
+                    let _ = fs::remove_file(&target);
+                    return Err(format!("Archive entry exceeds maximum file size: {name}"));
+                }
+                hasher.update(compressed);
+                out.write_all(compressed)
+                    .map_err(|e| format!("Write error on {}: {e}", target.display()))?;
+                written = compressed.len() as u64;
             }
-            written += n as u64;
-            if written > MAX_FILE_SIZE {
+            8 => {
+                // Deflate
+                let mut decoder = flate2::read::DeflateDecoder::new(compressed);
+                let mut buf = [0u8; 8192];
+                loop {
+                    let n = decoder
+                        .read(&mut buf)
+                        .map_err(|e| format!("Deflate error on {name}: {e}"))?;
+                    if n == 0 {
+                        break;
+                    }
+                    written += n as u64;
+                    if written > MAX_FILE_SIZE {
+                        let _ = fs::remove_file(&target);
+                        return Err(format!(
+                            "Archive entry exceeds maximum file size during extraction: {name}"
+                        ));
+                    }
+                    hasher.update(&buf[..n]);
+                    out.write_all(&buf[..n])
+                        .map_err(|e| format!("Write error on {}: {e}", target.display()))?;
+                }
+            }
+            other => {
                 let _ = fs::remove_file(&target);
                 return Err(format!(
-                    "Archive entry exceeds maximum file size during extraction: {name}"
+                    "Unsupported zip compression method {other} for {name}"
                 ));
             }
-            out.write_all(&buf[..n])
-                .map_err(|e| format!("Write error on {}: {e}", target.display()))?;
+        }
+
+        if written != uncomp_size {
+            let _ = fs::remove_file(&target);
+            return Err(format!("Uncompressed size mismatch for {name}"));
+        }
+        if hasher.finalize() != expected_crc {
+            let _ = fs::remove_file(&target);
+            return Err(format!("CRC32 integrity mismatch for {name}"));
         }
     }
 
@@ -294,7 +429,10 @@ mod tests {
         let result = extract_tar(&archive, &dest);
         assert!(result.is_err(), "traversal must be rejected");
         assert!(result.unwrap_err().contains("Unsafe path"));
-        assert!(!dir.join("escape.txt").exists(), "file must not escape dest");
+        assert!(
+            !dir.join("escape.txt").exists(),
+            "file must not escape dest"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -365,9 +503,83 @@ mod tests {
 
         let dest = dir.join("out");
         extract_tar(&archive, &dest).unwrap();
-        assert_eq!(fs::read_to_string(dest.join("bin/app")).unwrap(), "hello world");
+        assert_eq!(
+            fs::read_to_string(dest.join("bin/app")).unwrap(),
+            "hello world"
+        );
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Build a single-entry zip archive in memory for testing `extract_zip`.
+    fn make_raw_zip_entry(name: &str, payload: &[u8], unix_mode: u16, deflate: bool) -> Vec<u8> {
+        let mut crc_hasher = crc32fast::Hasher::new();
+        crc_hasher.update(payload);
+        let crc = crc_hasher.finalize();
+
+        let (method, compressed): (u16, Vec<u8>) = if deflate {
+            let mut enc =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+            enc.write_all(payload).unwrap();
+            (8, enc.finish().unwrap())
+        } else {
+            (0, payload.to_vec())
+        };
+
+        let name_bytes = name.as_bytes();
+        let comp_len = compressed.len() as u32;
+        let uncomp_len = payload.len() as u32;
+        let name_len = name_bytes.len() as u16;
+
+        let mut out = Vec::new();
+        // Local File Header (PK\x03\x04)
+        out.extend_from_slice(b"PK\x03\x04");
+        out.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        out.extend_from_slice(&0u16.to_le_bytes()); // flags
+        out.extend_from_slice(&method.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // mtime
+        out.extend_from_slice(&0u16.to_le_bytes()); // mdate
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&comp_len.to_le_bytes());
+        out.extend_from_slice(&uncomp_len.to_le_bytes());
+        out.extend_from_slice(&name_len.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // extra len
+        out.extend_from_slice(name_bytes);
+        out.extend_from_slice(&compressed);
+
+        // Central Directory Header (PK\x01\x02)
+        let cd_offset = out.len() as u32;
+        out.extend_from_slice(b"PK\x01\x02");
+        out.extend_from_slice(&0x0314u16.to_le_bytes()); // version made by Unix
+        out.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        out.extend_from_slice(&0u16.to_le_bytes()); // flags
+        out.extend_from_slice(&method.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // mtime
+        out.extend_from_slice(&0u16.to_le_bytes()); // mdate
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&comp_len.to_le_bytes());
+        out.extend_from_slice(&uncomp_len.to_le_bytes());
+        out.extend_from_slice(&name_len.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // extra len
+        out.extend_from_slice(&0u16.to_le_bytes()); // comment len
+        out.extend_from_slice(&0u16.to_le_bytes()); // disk number
+        out.extend_from_slice(&0u16.to_le_bytes()); // internal attr
+        let ext_attr = (unix_mode as u32) << 16;
+        out.extend_from_slice(&ext_attr.to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes()); // local header offset 0
+        out.extend_from_slice(name_bytes);
+        let cd_size = (out.len() as u32) - cd_offset;
+
+        // End of Central Directory (PK\x05\x06)
+        out.extend_from_slice(b"PK\x05\x06");
+        out.extend_from_slice(&0u16.to_le_bytes()); // disk
+        out.extend_from_slice(&0u16.to_le_bytes()); // cd start disk
+        out.extend_from_slice(&1u16.to_le_bytes()); // entries on disk
+        out.extend_from_slice(&1u16.to_le_bytes()); // total entries
+        out.extend_from_slice(&cd_size.to_le_bytes());
+        out.extend_from_slice(&cd_offset.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes()); // comment len
+        out
     }
 
     #[test]
@@ -377,17 +589,43 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
 
         let archive = dir.join("evil.zip");
-        let file = File::create(&archive).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
-        zip.start_file("../escape.txt", options).unwrap();
-        zip.write_all(b"evil").unwrap();
-        zip.finish().unwrap();
+        fs::write(
+            &archive,
+            make_raw_zip_entry("../escape.txt", b"evil", 0o100644, true),
+        )
+        .unwrap();
 
         let dest = dir.join("out");
         let result = extract_zip(&archive, &dest);
         assert!(result.is_err(), "zip traversal must be rejected");
         assert!(!dir.join("escape.txt").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_zip_rejects_symlinks_and_suid_modes() {
+        let dir = temp_dir("zip-symlink-suid");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // Symlink mode (0o120777) must be rejected
+        let sym_zip = dir.join("symlink.zip");
+        fs::write(
+            &sym_zip,
+            make_raw_zip_entry("bin/link", b"/etc/passwd", 0o120777, false),
+        )
+        .unwrap();
+        assert!(extract_zip(&sym_zip, &dir.join("out_sym")).is_err());
+
+        // SUID mode (0o104755) must be rejected
+        let suid_zip = dir.join("suid.zip");
+        fs::write(
+            &suid_zip,
+            make_raw_zip_entry("bin/rootsh", b"elf", 0o104755, false),
+        )
+        .unwrap();
+        assert!(extract_zip(&suid_zip, &dir.join("out_suid")).is_err());
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -399,16 +637,18 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
 
         let archive = dir.join("good.zip");
-        let file = File::create(&archive).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
-        zip.start_file("bin/app", options).unwrap();
-        zip.write_all(b"hello zip").unwrap();
-        zip.finish().unwrap();
+        fs::write(
+            &archive,
+            make_raw_zip_entry("bin/app", b"hello zip", 0o100755, true),
+        )
+        .unwrap();
 
         let dest = dir.join("out");
         extract_zip(&archive, &dest).unwrap();
-        assert_eq!(fs::read_to_string(dest.join("bin/app")).unwrap(), "hello zip");
+        assert_eq!(
+            fs::read_to_string(dest.join("bin/app")).unwrap(),
+            "hello zip"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -425,7 +665,9 @@ mod tests {
         header.set_size(3);
         header.set_mode(0o644);
         header.set_cksum();
-        builder.append_data(&mut header, "a.txt", &b"tar"[..]).unwrap();
+        builder
+            .append_data(&mut header, "a.txt", &b"tar"[..])
+            .unwrap();
         let tar_data = builder.into_inner().unwrap();
         let tar_archive = dir.join("test.tar");
         fs::write(&tar_archive, &tar_data).unwrap();
@@ -436,12 +678,11 @@ mod tests {
 
         // Zip file.
         let zip_archive = dir.join("test.zip");
-        let file = File::create(&zip_archive).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        let options: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
-        zip.start_file("b.txt", options).unwrap();
-        zip.write_all(b"zip").unwrap();
-        zip.finish().unwrap();
+        fs::write(
+            &zip_archive,
+            make_raw_zip_entry("b.txt", b"zip", 0o100644, true),
+        )
+        .unwrap();
 
         let dest2 = dir.join("out2");
         extract_archive(&zip_archive, &dest2).unwrap();

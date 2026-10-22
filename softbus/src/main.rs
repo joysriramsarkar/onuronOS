@@ -29,14 +29,20 @@ async fn main() {
     // ── 1. Generate self-signed TLS certificate ───────────────────────────────
     let (cert, key) = match quic::generate_self_signed_cert(&device_id) {
         Ok(pair) => pair,
-        Err(e) => { eprintln!("[nilbus] FATAL: cert generation failed: {e}"); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("[nilbus] FATAL: cert generation failed: {e}");
+            std::process::exit(1);
+        }
     };
 
     // ── 2. Bind QUIC server endpoint ──────────────────────────────────────────
     let bind_addr: SocketAddr = format!("0.0.0.0:{QUIC_PORT}").parse().unwrap();
     let endpoint = match quic::make_server_endpoint(bind_addr, cert, key) {
         Ok(ep) => Arc::new(ep),
-        Err(e) => { eprintln!("[nilbus] FATAL: QUIC bind failed: {e}"); std::process::exit(1); }
+        Err(e) => {
+            eprintln!("[nilbus] FATAL: QUIC bind failed: {e}");
+            std::process::exit(1);
+        }
     };
 
     // ── 3. Start mDNS-SD peer discovery ──────────────────────────────────────
@@ -100,10 +106,12 @@ const DEVICE_ID_FILE: &str = "/data/nilos/device_id";
 fn get_or_create_device_id() -> String {
     if let Ok(id) = std::fs::read_to_string(DEVICE_ID_FILE) {
         let id = id.trim().to_string();
-        if !id.is_empty() { return id; }
+        if !id.is_empty() {
+            return id;
+        }
     }
-    let hostname = std::fs::read_to_string("/etc/hostname")
-        .unwrap_or_else(|_| "nilos-device".to_string());
+    let hostname =
+        std::fs::read_to_string("/etc/hostname").unwrap_or_else(|_| "nilos-device".to_string());
     let id = format!("{}-bus", hostname.trim());
     let _ = std::fs::create_dir_all("/data/nilos");
     let _ = std::fs::write(DEVICE_ID_FILE, &id);

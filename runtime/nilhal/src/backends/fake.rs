@@ -252,7 +252,10 @@ impl TelephonyHal for FakeTelephony {
     }
 
     fn send_sms(&mut self, recipient: &str, message: &str) -> Result<(), HalError> {
-        self.sent_sms.lock().unwrap().push((recipient.to_string(), message.to_string()));
+        self.sent_sms
+            .lock()
+            .unwrap()
+            .push((recipient.to_string(), message.to_string()));
         Ok(())
     }
 

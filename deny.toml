@@ -17,11 +17,6 @@ yanked = "deny"
 # direct dependencies, so a new transitive one cannot slip in unnoticed.
 unmaintained = "all"
 ignore = [
-    # rustls-pemfile: thin PEM wrapper, archived Aug 2025; upstream points to
-    # rustls-pki-types' `PemObject`. No safe upgrade yet; `nilbus` must migrate.
-    # Owner: onuronOS/networking. Re-review by: 2026-12-31.
-    "RUSTSEC-2025-0134",
-
     # rustybuzz: text shaping, unmaintained; upstream suggests `harfrust`.
     # Pulled in by `nilsim`'s font stack. Owner: onuronOS/ui.
     # Re-review by: 2026-12-31.

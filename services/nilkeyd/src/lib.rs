@@ -19,11 +19,11 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use nilprotocol::{Frame, MessageType};
 use ring::aead;
 use ring::pbkdf2;
-use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
-use nilprotocol::{Frame, MessageType};
+use sha2::{Digest, Sha256};
 
 pub mod fscrypt;
 pub use fscrypt::{apply_fscrypt_policy, FscryptResult};
@@ -61,11 +61,7 @@ pub struct KeyStatusInfo {
 }
 
 /// Handle framed IPC requests for key management queries.
-pub fn handle_ipc_request(
-    frame: &Frame,
-    record_path: &Path,
-    master_path: &Path,
-) -> Frame {
+pub fn handle_ipc_request(frame: &Frame, record_path: &Path, master_path: &Path) -> Frame {
     let msg_type = MessageType::from(frame.message_type);
     match msg_type {
         MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
@@ -78,14 +74,30 @@ pub fn handle_ipc_request(
                 backend_name: "fscrypt-aes256gcm".to_string(),
                 uptime_secs: 0,
                 request_count: 1,
-                last_error: if unlocked { None } else { Some("locked".to_string()) },
+                last_error: if unlocked {
+                    None
+                } else {
+                    Some("locked".to_string())
+                },
             };
-            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
-                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+            Frame::with_json(
+                MessageType::ServiceStatusResponse,
+                frame.request_id,
+                &payload,
+            )
+            .unwrap_or_else(|_| {
+                Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    b"encode error".to_vec(),
+                )
+            })
         }
         MessageType::KeyGetStatus => {
             let unlocked = is_unlocked(record_path, master_path);
-            let fp = read_record(record_path).ok().map(|r| r.device_secret_fingerprint);
+            let fp = read_record(record_path)
+                .ok()
+                .map(|r| r.device_secret_fingerprint);
             let info = KeyStatusInfo {
                 unlocked,
                 record_present: record_path.exists(),
@@ -139,8 +151,12 @@ impl std::fmt::Display for UnwrapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UnwrapError::MissingDeviceSecret => write!(f, "device secret is missing"),
-            UnwrapError::DeviceSecretMismatch => write!(f, "device secret does not match key record"),
-            UnwrapError::DecryptionFailed => write!(f, "authentication failed (wrong PIN or tampered record)"),
+            UnwrapError::DeviceSecretMismatch => {
+                write!(f, "device secret does not match key record")
+            }
+            UnwrapError::DecryptionFailed => {
+                write!(f, "authentication failed (wrong PIN or tampered record)")
+            }
             UnwrapError::InvalidFormat(m) => write!(f, "invalid key record: {}", m),
             UnwrapError::Io(m) => write!(f, "i/o error: {}", m),
         }
@@ -302,7 +318,9 @@ pub fn load_device_secret(path: &Path) -> Result<Vec<u8>, UnwrapError> {
     }
     let bytes = std::fs::read(path).map_err(UnwrapError::from)?;
     if bytes.len() != KEY_LEN {
-        return Err(UnwrapError::InvalidFormat("device secret has wrong length".into()));
+        return Err(UnwrapError::InvalidFormat(
+            "device secret has wrong length".into(),
+        ));
     }
     Ok(bytes)
 }
@@ -442,7 +460,9 @@ pub fn unwrap_master_key(
         .map_err(|_| UnwrapError::DecryptionFailed)?;
 
     if plaintext.len() != KEY_LEN {
-        return Err(UnwrapError::InvalidFormat("unexpected master key length".into()));
+        return Err(UnwrapError::InvalidFormat(
+            "unexpected master key length".into(),
+        ));
     }
     let mut master = [0u8; KEY_LEN];
     master.copy_from_slice(plaintext);
@@ -544,8 +564,14 @@ pub fn rewrap_record(
     let master = unwrap_master_key(&record, old_pin, &device_secret)?;
 
     let salt = hex_decode(&record.kdf_salt)?;
-    let new_record = build_record(&master, new_pin, &device_secret, &salt, record.kdf_iterations)
-        .map_err(|e| UnwrapError::InvalidFormat(e.to_string()))?;
+    let new_record = build_record(
+        &master,
+        new_pin,
+        &device_secret,
+        &salt,
+        record.kdf_iterations,
+    )
+    .map_err(|e| UnwrapError::InvalidFormat(e.to_string()))?;
     write_record(record_path, &new_record)?;
     Ok(MasterKey(master))
 }
@@ -564,7 +590,10 @@ pub fn load_master_from_file(path: &Path) -> std::io::Result<[u8; KEY_LEN]> {
 }
 
 /// Encrypt an arbitrary data blob under the master key.
-pub fn encrypt_data(master: &[u8; KEY_LEN], plaintext: &[u8]) -> Result<EncryptedBlob, UnwrapError> {
+pub fn encrypt_data(
+    master: &[u8; KEY_LEN],
+    plaintext: &[u8],
+) -> Result<EncryptedBlob, UnwrapError> {
     let unbound = aead::UnboundKey::new(&aead::AES_256_GCM, master)
         .map_err(|_| UnwrapError::InvalidFormat("bad master key".into()))?;
     let sealing_key = aead::LessSafeKey::new(unbound);
@@ -613,8 +642,6 @@ pub fn decrypt_data(master: &[u8; KEY_LEN], blob: &EncryptedBlob) -> Result<Vec<
         .map_err(|_| UnwrapError::DecryptionFailed)?;
     Ok(plaintext.to_vec())
 }
-
-
 
 /// True when the wrapped key record and a same-boot unwrapped master key exist.
 pub fn is_unlocked(record_path: &Path, master_path: &Path) -> bool {
@@ -714,8 +741,14 @@ mod tests {
         let (record_path, secret_path, _) = setup(dir.path());
         fast_record(&record_path, &secret_path, "1234");
         std::fs::remove_file(&secret_path).unwrap();
-        let err = unwrap_to_file(&record_path, &secret_path, "1234", &dir.path().join("m"), false)
-            .unwrap_err();
+        let err = unwrap_to_file(
+            &record_path,
+            &secret_path,
+            "1234",
+            &dir.path().join("m"),
+            false,
+        )
+        .unwrap_err();
         assert_eq!(err, UnwrapError::MissingDeviceSecret);
     }
 
@@ -880,7 +913,10 @@ mod tests {
         // 2. Status when locked
         let stat_req = Frame::new(MessageType::KeyGetStatus, 2, vec![]);
         let stat_resp = handle_ipc_request(&stat_req, &record_path, &master_path);
-        assert_eq!(stat_resp.message_type, u16::from(MessageType::KeyStatusInfo));
+        assert_eq!(
+            stat_resp.message_type,
+            u16::from(MessageType::KeyStatusInfo)
+        );
         let info: KeyStatusInfo = serde_json::from_slice(&stat_resp.payload).unwrap();
         assert!(!info.unlocked);
         assert!(info.record_present);
@@ -897,7 +933,10 @@ mod tests {
         // 4. ServiceStatusRequest
         let svc_req = Frame::new(MessageType::ServiceStatusRequest, 3, vec![]);
         let svc_resp = handle_ipc_request(&svc_req, &record_path, &master_path);
-        assert_eq!(svc_resp.message_type, u16::from(MessageType::ServiceStatusResponse));
+        assert_eq!(
+            svc_resp.message_type,
+            u16::from(MessageType::ServiceStatusResponse)
+        );
         let svc_info: nilprotocol::ServiceStatusPayload = svc_resp.parse_json().unwrap();
         assert_eq!(svc_info.service_name, "nilkeyd");
         assert!(svc_info.is_ready);

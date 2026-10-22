@@ -1,8 +1,8 @@
 // runtime/nilhal/src/backends/mod.rs — NilHAL Backend Architecture
-pub mod qemu;
-pub mod linux;
 pub mod android;
 pub mod fake;
+pub mod linux;
+pub mod qemu;
 
 use serde::{Deserialize, Serialize};
 

@@ -33,7 +33,12 @@ impl Router {
     }
 
     /// Register a screen destination.
-    pub fn register<F: Fn() -> Component + 'static>(&mut self, name: &str, title: &str, builder: F) {
+    pub fn register<F: Fn() -> Component + 'static>(
+        &mut self,
+        name: &str,
+        title: &str,
+        builder: F,
+    ) {
         self.registered.insert(
             name.to_string(),
             Screen {

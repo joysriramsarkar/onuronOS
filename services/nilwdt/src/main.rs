@@ -52,8 +52,11 @@ impl WatchdogConfig {
 
         let max_failures = (timeout_secs / interval_secs).max(1) as u32;
 
-        let simulation_mode = env::var("NILWDT_SIMULATE").map(|v| v == "1").unwrap_or(false)
-            || !Path::new(WATCHDOG_DEV_PRIMARY).exists() && !Path::new(WATCHDOG_DEV_SECONDARY).exists();
+        let simulation_mode = env::var("NILWDT_SIMULATE")
+            .map(|v| v == "1")
+            .unwrap_or(false)
+            || !Path::new(WATCHDOG_DEV_PRIMARY).exists()
+                && !Path::new(WATCHDOG_DEV_SECONDARY).exists();
 
         Self {
             interval_secs,
@@ -81,7 +84,10 @@ impl HealthChecker {
 
         for path in required_paths {
             if !Path::new(path).exists() {
-                eprintln!("[nilwdt] Health check warning: required path missing: {}", path);
+                eprintln!(
+                    "[nilwdt] Health check warning: required path missing: {}",
+                    path
+                );
                 healthy = false;
             }
         }
@@ -244,4 +250,3 @@ mod tests {
         assert!(feeder.feed().is_ok());
     }
 }
-

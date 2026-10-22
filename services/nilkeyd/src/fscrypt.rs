@@ -107,8 +107,7 @@ pub fn apply_fscrypt_policy(dir: &std::path::Path, master: &[u8]) -> FscryptResu
 #[cfg(target_os = "linux")]
 mod linux {
     use super::{
-        derive_fscrypt_key, FscryptResult, FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER,
-        FSCRYPT_MAX_KEY_SIZE,
+        derive_fscrypt_key, FscryptResult, FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER, FSCRYPT_MAX_KEY_SIZE,
     };
     use std::os::unix::io::AsRawFd;
 
@@ -126,8 +125,11 @@ mod linux {
     /// is passed.
     pub const FS_IOC_SET_ENCRYPTION_POLICY: libc::c_ulong = ioc(IOC_READ, 19, 12);
     /// `FS_IOC_ADD_ENCRYPTION_KEY` — size is `sizeof(struct fscrypt_add_key_arg)`.
-    pub const FS_IOC_ADD_ENCRYPTION_KEY: libc::c_ulong =
-        ioc(IOC_READ | IOC_WRITE, 23, std::mem::size_of::<FscryptAddKeyArg>());
+    pub const FS_IOC_ADD_ENCRYPTION_KEY: libc::c_ulong = ioc(
+        IOC_READ | IOC_WRITE,
+        23,
+        std::mem::size_of::<FscryptAddKeyArg>(),
+    );
 
     /// Matches `struct fscrypt_key_specifier` (40 bytes: type, reserved,
     /// 32-byte union).
@@ -172,10 +174,16 @@ mod linux {
     fn unsupported(op: &str, err: std::io::Error) -> FscryptResult {
         let reason = match err.raw_os_error() {
             Some(libc::ENOTTY) => {
-                format!("{} unsupported: filesystem does not support fscrypt (ENOTTY)", op)
+                format!(
+                    "{} unsupported: filesystem does not support fscrypt (ENOTTY)",
+                    op
+                )
             }
             Some(libc::EOPNOTSUPP) => {
-                format!("{} unsupported: fscrypt not enabled on this filesystem (EOPNOTSUPP)", op)
+                format!(
+                    "{} unsupported: fscrypt not enabled on this filesystem (EOPNOTSUPP)",
+                    op
+                )
             }
             Some(libc::EINVAL) => format!("{} unsupported: invalid fscrypt configuration", op),
             Some(libc::EPERM) => format!("{} unsupported: requires root/CAP_SYS_ADMIN", op),

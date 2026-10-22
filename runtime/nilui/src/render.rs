@@ -67,10 +67,14 @@ impl RenderBackend for SoftwareFramebufferBackend {
     fn draw_rect(&mut self, x: i32, y: i32, w: u32, h: u32, color_argb: u32) {
         for dy in 0..h {
             let cur_y = y + dy as i32;
-            if cur_y < 0 || cur_y >= self.height as i32 { continue; }
+            if cur_y < 0 || cur_y >= self.height as i32 {
+                continue;
+            }
             for dx in 0..w {
                 let cur_x = x + dx as i32;
-                if cur_x < 0 || cur_x >= self.width as i32 { continue; }
+                if cur_x < 0 || cur_x >= self.width as i32 {
+                    continue;
+                }
                 self.draw_pixel(cur_x as u32, cur_y as u32, color_argb);
             }
         }
@@ -155,10 +159,14 @@ impl RenderBackend for AndroidSurfaceBackend {
     fn draw_rect(&mut self, x: i32, y: i32, w: u32, h: u32, color_argb: u32) {
         for dy in 0..h {
             let cur_y = y + dy as i32;
-            if cur_y < 0 || cur_y >= self.height as i32 { continue; }
+            if cur_y < 0 || cur_y >= self.height as i32 {
+                continue;
+            }
             for dx in 0..w {
                 let cur_x = x + dx as i32;
-                if cur_x < 0 || cur_x >= self.width as i32 { continue; }
+                if cur_x < 0 || cur_x >= self.width as i32 {
+                    continue;
+                }
                 self.draw_pixel(cur_x as u32, cur_y as u32, color_argb);
             }
         }
@@ -339,7 +347,8 @@ pub fn render_element_and_collect_targets(
             let mut cur_y = y;
             let mut max_x = x;
             for child in children {
-                let (cx, cy) = render_element_and_collect_targets(backend, child, x, cur_y, targets);
+                let (cx, cy) =
+                    render_element_and_collect_targets(backend, child, x, cur_y, targets);
                 max_x = max_x.max(cx);
                 cur_y = cy + 8; // Spacing
             }
@@ -349,7 +358,8 @@ pub fn render_element_and_collect_targets(
             let mut cur_x = x;
             let mut max_y = y;
             for child in children {
-                let (cx, cy) = render_element_and_collect_targets(backend, child, cur_x, y, targets);
+                let (cx, cy) =
+                    render_element_and_collect_targets(backend, child, cur_x, y, targets);
                 cur_x = cx + 12; // Spacing
                 max_y = max_y.max(cy);
             }
@@ -471,9 +481,15 @@ mod tests {
         assert!(final_y > 10);
 
         let white_pixels = fb.buffer().iter().filter(|&&p| p == 0xFFFFFFFF).count();
-        assert!(white_pixels > 0, "Rendered UI must paint white text on screen");
+        assert!(
+            white_pixels > 0,
+            "Rendered UI must paint white text on screen"
+        );
 
         let blue_pixels = fb.buffer().iter().filter(|&&p| p == 0xFF1E3A8A).count();
-        assert!(blue_pixels > 0, "Rendered UI must paint blue button on screen");
+        assert!(
+            blue_pixels > 0,
+            "Rendered UI must paint blue button on screen"
+        );
     }
 }

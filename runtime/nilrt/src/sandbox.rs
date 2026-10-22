@@ -146,11 +146,7 @@ pub fn plan_sandbox_mounts(config: &SandboxConfig) -> Vec<SandboxMount> {
 }
 
 #[cfg(target_os = "linux")]
-pub fn spawn_sandboxed(
-    config: &SandboxConfig,
-    cmd: &str,
-    args: &[String],
-) -> std::io::Result<()> {
+pub fn spawn_sandboxed(config: &SandboxConfig, cmd: &str, args: &[String]) -> std::io::Result<()> {
     use nix::sched::{unshare, CloneFlags};
     use nix::sys::prctl;
     use std::os::unix::process::CommandExt;
@@ -184,15 +180,21 @@ pub fn spawn_sandboxed(
     // Kernel-level Network Isolation:
     // If the app is NOT granted network permissions, isolate it in a private
     // network namespace (CLONE_NEWNET) where outside access is physically blocked.
-    let has_network = config.permissions.iter().any(|p| p == "network" || p == "net.internet");
+    let has_network = config
+        .permissions
+        .iter()
+        .any(|p| p == "network" || p == "net.internet");
     if !has_network {
         flags |= CloneFlags::CLONE_NEWNET;
     }
 
     if let Err(e) = unshare(flags) {
-        let is_unprivileged_test_env = std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref() == Ok("1")
+        let is_unprivileged_test_env = std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref()
+            == Ok("1")
             || std::env::var("CI").as_deref() == Ok("true");
-        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES) && is_unprivileged_test_env {
+        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES)
+            && is_unprivileged_test_env
+        {
             eprintln!(
                 "[nilrt:sandbox] WARNING: unshare() not permitted ({e}); unprivileged test container detected. Falling back to direct launch."
             );
@@ -213,9 +215,12 @@ pub fn spawn_sandboxed(
         nix::mount::MsFlags::MS_REC | nix::mount::MsFlags::MS_PRIVATE,
         None::<&str>,
     ) {
-        let is_unprivileged_test_env = std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref() == Ok("1")
+        let is_unprivileged_test_env = std::env::var("NILRT_ALLOW_INSECURE_DEV").as_deref()
+            == Ok("1")
             || std::env::var("CI").as_deref() == Ok("true");
-        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES) && is_unprivileged_test_env {
+        if (e == nix::errno::Errno::EPERM || e == nix::errno::Errno::EACCES)
+            && is_unprivileged_test_env
+        {
             eprintln!(
                 "[nilrt:sandbox] WARNING: mount --make-rprivate not permitted ({e}); unprivileged test container detected. Falling back to direct launch."
             );
@@ -305,11 +310,7 @@ fn attach_child_cgroup(app_id: &str, pid: u32) -> Option<std::path::PathBuf> {
 }
 
 #[cfg(target_os = "linux")]
-fn spawn_unprivileged(
-    config: &SandboxConfig,
-    cmd: &str,
-    args: &[String],
-) -> std::io::Result<()> {
+fn spawn_unprivileged(config: &SandboxConfig, cmd: &str, args: &[String]) -> std::io::Result<()> {
     println!(
         "[nilrt:sandbox] unprivileged environment: direct launch of {} (app {}, without namespace isolation)",
         cmd, config.app_id
@@ -357,9 +358,8 @@ fn run_in_sandbox(config: &SandboxConfig) -> std::io::Result<()> {
         apply_permission_restrictions(&policy)?;
         // Apply seccomp last: it blocks the privileged syscalls (mount,
         // setuid, chroot, …) this function still needs.
-        crate::seccomp::apply_app_seccomp().map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::PermissionDenied, e)
-        })?;
+        crate::seccomp::apply_app_seccomp()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
     }
 
     drop_privileges(config.gid, config.uid)?;
@@ -460,7 +460,11 @@ fn apply_mount_plan(mounts: &[SandboxMount]) -> std::io::Result<()> {
             flags |= MsFlags::MS_BIND;
         }
 
-        let fstype = if m.flags.bind { None } else { m.fstype.as_deref() };
+        let fstype = if m.flags.bind {
+            None
+        } else {
+            m.fstype.as_deref()
+        };
         match mount(
             Some(m.source.as_str()),
             m.target.as_str(),
@@ -586,11 +590,7 @@ fn nix_err(e: nix::errno::Errno) -> std::io::Error {
 /// Graceful passthrough for the Windows/macOS dev host. No isolation is
 /// applied; this exists so the launcher compiles and runs for development.
 #[cfg(not(target_os = "linux"))]
-pub fn spawn_sandboxed(
-    config: &SandboxConfig,
-    cmd: &str,
-    args: &[String],
-) -> std::io::Result<()> {
+pub fn spawn_sandboxed(config: &SandboxConfig, cmd: &str, args: &[String]) -> std::io::Result<()> {
     println!(
         "[nilrt:sandbox] non-Linux host: passthrough launch of {} (app {}, no isolation)",
         cmd, config.app_id

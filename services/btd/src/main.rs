@@ -181,28 +181,30 @@ pub fn handle_ipc_request(frame: &Frame, manager: &mut BluetoothManager) -> Fram
 
         MessageType::BtGetState => {
             let state = manager.get_state();
-            Frame::with_json(MessageType::BtStateInfo, frame.request_id, &state)
-                .unwrap_or_else(|e| {
+            Frame::with_json(MessageType::BtStateInfo, frame.request_id, &state).unwrap_or_else(
+                |e| {
                     Frame::new(
                         MessageType::ErrorResponse,
                         frame.request_id,
                         e.to_string().into_bytes(),
                     )
-                })
+                },
+            )
         }
 
         MessageType::BtSetPower => {
             if let Ok(payload) = frame.parse_json::<BtSetPowerPayload>() {
                 manager.set_power(payload.enabled);
                 let state = manager.get_state();
-                Frame::with_json(MessageType::BtStateInfo, frame.request_id, &state)
-                    .unwrap_or_else(|e| {
+                Frame::with_json(MessageType::BtStateInfo, frame.request_id, &state).unwrap_or_else(
+                    |e| {
                         Frame::new(
                             MessageType::ErrorResponse,
                             frame.request_id,
                             e.to_string().into_bytes(),
                         )
-                    })
+                    },
+                )
             } else {
                 Frame::new(
                     MessageType::ErrorResponse,
@@ -215,28 +217,30 @@ pub fn handle_ipc_request(frame: &Frame, manager: &mut BluetoothManager) -> Fram
         MessageType::BtScan => {
             let devices = manager.start_scan();
             let payload = BtScanResultPayload { devices };
-            Frame::with_json(MessageType::BtScanResult, frame.request_id, &payload)
-                .unwrap_or_else(|e| {
+            Frame::with_json(MessageType::BtScanResult, frame.request_id, &payload).unwrap_or_else(
+                |e| {
                     Frame::new(
                         MessageType::ErrorResponse,
                         frame.request_id,
                         e.to_string().into_bytes(),
                     )
-                })
+                },
+            )
         }
 
         MessageType::BtConnect => {
             if let Ok(payload) = frame.parse_json::<BtConnectPayload>() {
                 let _ok = manager.connect(&payload.address);
                 let state = manager.get_state();
-                Frame::with_json(MessageType::BtStateInfo, frame.request_id, &state)
-                    .unwrap_or_else(|e| {
+                Frame::with_json(MessageType::BtStateInfo, frame.request_id, &state).unwrap_or_else(
+                    |e| {
                         Frame::new(
                             MessageType::ErrorResponse,
                             frame.request_id,
                             e.to_string().into_bytes(),
                         )
-                    })
+                    },
+                )
             } else {
                 Frame::new(
                     MessageType::ErrorResponse,
@@ -264,7 +268,11 @@ fn main() {
         "[btd] Adapter: {} ({}) | Initial State: {}",
         manager.lock().unwrap().adapter_name,
         manager.lock().unwrap().address,
-        if manager.lock().unwrap().enabled { "ENABLED" } else { "DISABLED" }
+        if manager.lock().unwrap().enabled {
+            "ENABLED"
+        } else {
+            "DISABLED"
+        }
     );
 
     #[cfg(unix)]
@@ -300,7 +308,11 @@ fn main() {
                 });
             }
             Err(e) => {
-                eprintln!("[btd] Notice: could not bind Unix socket {}: {}", sock_path.display(), e);
+                eprintln!(
+                    "[btd] Notice: could not bind Unix socket {}: {}",
+                    sock_path.display(),
+                    e
+                );
             }
         }
     }
@@ -341,12 +353,18 @@ mod tests {
         assert!(connected);
 
         let state = mgr.get_state();
-        assert!(state.connected_devices.iter().any(|d| d.address == target_addr));
+        assert!(state
+            .connected_devices
+            .iter()
+            .any(|d| d.address == target_addr));
 
         let disconnected = mgr.disconnect(target_addr);
         assert!(disconnected);
         let state_after = mgr.get_state();
-        assert!(!state_after.connected_devices.iter().any(|d| d.address == target_addr));
+        assert!(!state_after
+            .connected_devices
+            .iter()
+            .any(|d| d.address == target_addr));
     }
 
     #[test]
@@ -367,7 +385,12 @@ mod tests {
         assert!(state.enabled);
 
         // 3. BtSetPower (disable)
-        let set_pwr = Frame::with_json(MessageType::BtSetPower, 3, &BtSetPowerPayload { enabled: false }).unwrap();
+        let set_pwr = Frame::with_json(
+            MessageType::BtSetPower,
+            3,
+            &BtSetPowerPayload { enabled: false },
+        )
+        .unwrap();
         let pwr_resp = handle_ipc_request(&set_pwr, &mut mgr);
         assert_eq!(pwr_resp.message_type, u16::from(MessageType::BtStateInfo));
         let state_pwr: BtStatePayload = pwr_resp.parse_json().unwrap();

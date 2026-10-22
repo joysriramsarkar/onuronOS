@@ -1,20 +1,20 @@
 // alap/src/lib.rs — Alap (আলাপ) Declarative Native Mobile Framework for OnuronOS
 pub mod component;
-pub mod state;
 pub mod lifecycle;
 pub mod router;
-pub mod services;
 pub mod runtime;
+pub mod services;
+pub mod state;
 
 pub use component::{Alignment, Component, ScrollDirection};
 
 pub mod prelude {
     pub use crate::component::{Alignment, Component, ScrollDirection};
-    pub use crate::state::{State, StateId, StateStore};
     pub use crate::lifecycle::{AppLifecycle, LifecycleState};
     pub use crate::router::{Router, Screen};
     pub use crate::runtime::AlapApp;
     pub use crate::services::{ServiceError, ServiceResult, ServiceStatus};
+    pub use crate::state::{State, StateId, StateStore};
 }
 
 #[cfg(test)]
@@ -98,7 +98,9 @@ mod tests {
     fn test_router_navigation_stack() {
         let mut router = Router::new();
         router.register("home", "Home Screen", || Component::text("Home Content"));
-        router.register("settings", "Settings Screen", || Component::text("Settings Content"));
+        router.register("settings", "Settings Screen", || {
+            Component::text("Settings Content")
+        });
 
         assert_eq!(router.depth(), 0);
         assert!(!router.can_pop());

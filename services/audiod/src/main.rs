@@ -218,26 +218,44 @@ impl AudioServer {
 pub fn handle_ipc_request(server: &mut AudioServer, frame: &Frame) -> Frame {
     let msg_type = MessageType::from(frame.message_type);
     match msg_type {
-        MessageType::Ping => {
-            Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec())
-        }
+        MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
         MessageType::ServiceStatusRequest => {
             let payload = nilprotocol::ServiceStatusPayload {
                 service_name: "audiod".to_string(),
                 is_ready: true,
                 is_simulated: !server.hardware_detected,
-                backend_name: if server.hardware_detected { "alsa".to_string() } else { "simulated".to_string() },
+                backend_name: if server.hardware_detected {
+                    "alsa".to_string()
+                } else {
+                    "simulated".to_string()
+                },
                 uptime_secs: 0,
                 request_count: 1,
                 last_error: None,
             };
-            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
-                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+            Frame::with_json(
+                MessageType::ServiceStatusResponse,
+                frame.request_id,
+                &payload,
+            )
+            .unwrap_or_else(|_| {
+                Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    b"encode error".to_vec(),
+                )
+            })
         }
         MessageType::AudioGetStatus => {
             let payload = server.get_status_payload();
             Frame::with_json(MessageType::AudioStatusInfo, frame.request_id, &payload)
-                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+                .unwrap_or_else(|_| {
+                    Frame::new(
+                        MessageType::ErrorResponse,
+                        frame.request_id,
+                        b"encode error".to_vec(),
+                    )
+                })
         }
         MessageType::AudioSetVolume => {
             if let Ok(req) = frame.parse_json::<AudioSetVolumePayload>() {
@@ -245,7 +263,13 @@ pub fn handle_ipc_request(server: &mut AudioServer, frame: &Frame) -> Frame {
             }
             let payload = server.get_status_payload();
             Frame::with_json(MessageType::AudioStatusInfo, frame.request_id, &payload)
-                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+                .unwrap_or_else(|_| {
+                    Frame::new(
+                        MessageType::ErrorResponse,
+                        frame.request_id,
+                        b"encode error".to_vec(),
+                    )
+                })
         }
         MessageType::AudioSetMute => {
             if let Ok(req) = frame.parse_json::<AudioSetMutePayload>() {
@@ -253,7 +277,13 @@ pub fn handle_ipc_request(server: &mut AudioServer, frame: &Frame) -> Frame {
             }
             let payload = server.get_status_payload();
             Frame::with_json(MessageType::AudioStatusInfo, frame.request_id, &payload)
-                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+                .unwrap_or_else(|_| {
+                    Frame::new(
+                        MessageType::ErrorResponse,
+                        frame.request_id,
+                        b"encode error".to_vec(),
+                    )
+                })
         }
         MessageType::AudioSetRoute => {
             if let Ok(req) = frame.parse_json::<AudioSetRoutePayload>() {
@@ -261,9 +291,19 @@ pub fn handle_ipc_request(server: &mut AudioServer, frame: &Frame) -> Frame {
             }
             let payload = server.get_status_payload();
             Frame::with_json(MessageType::AudioStatusInfo, frame.request_id, &payload)
-                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+                .unwrap_or_else(|_| {
+                    Frame::new(
+                        MessageType::ErrorResponse,
+                        frame.request_id,
+                        b"encode error".to_vec(),
+                    )
+                })
         }
-        _ => Frame::new(MessageType::ErrorResponse, frame.request_id, b"unsupported msg".to_vec()),
+        _ => Frame::new(
+            MessageType::ErrorResponse,
+            frame.request_id,
+            b"unsupported msg".to_vec(),
+        ),
     }
 }
 
@@ -285,7 +325,10 @@ fn main() {
             let _ = fs::remove_file(path);
 
             if let Ok(listener) = UnixListener::bind(path) {
-                println!("\x1b[1;32m[audiod] [  OK  ]\x1b[0m Listening on {}", path.display());
+                println!(
+                    "\x1b[1;32m[audiod] [  OK  ]\x1b[0m Listening on {}",
+                    path.display()
+                );
                 let server_clone = Arc::clone(&server);
                 thread::spawn(move || {
                     for mut sock in listener.incoming().flatten() {
@@ -309,7 +352,10 @@ fn main() {
 
     #[cfg(not(unix))]
     {
-        println!("[audiod] Host simulation active: default volume {}%", server.lock().unwrap().volume);
+        println!(
+            "[audiod] Host simulation active: default volume {}%",
+            server.lock().unwrap().volume
+        );
     }
 
     let _ = nilsd::notify_ready("audiod", Some("/run/onuron/audio.sock"));
@@ -371,7 +417,9 @@ mod tests {
         let route_req = Frame::with_json(
             MessageType::AudioSetRoute,
             4,
-            &AudioSetRoutePayload { route: "Bluetooth".to_string() },
+            &AudioSetRoutePayload {
+                route: "Bluetooth".to_string(),
+            },
         )
         .unwrap();
         let resp = handle_ipc_request(&mut server, &route_req);
@@ -436,10 +484,14 @@ mod tests {
         let mut server = AudioServer::new();
         let frame = Frame::new(MessageType::ServiceStatusRequest, 99, vec![]);
         let resp = handle_ipc_request(&mut server, &frame);
-        assert_eq!(resp.message_type, u16::from(MessageType::ServiceStatusResponse));
-        let status = resp.parse_json::<nilprotocol::ServiceStatusPayload>().unwrap();
+        assert_eq!(
+            resp.message_type,
+            u16::from(MessageType::ServiceStatusResponse)
+        );
+        let status = resp
+            .parse_json::<nilprotocol::ServiceStatusPayload>()
+            .unwrap();
         assert_eq!(status.service_name, "audiod");
         assert!(status.is_ready);
     }
 }
-

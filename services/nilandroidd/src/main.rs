@@ -4,11 +4,11 @@
 pub mod isolation;
 
 use isolation::ContainerProfile;
+use nilprotocol::{Frame, MessageType};
 #[cfg(unix)]
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::net::UnixListener;
-use nilprotocol::{Frame, MessageType};
 
 fn main() {
     println!("\x1b[1;36m[nilandroidd]\x1b[0m Android Container Bridge & LifeCycle Manager Initializing...");
@@ -26,7 +26,9 @@ fn main() {
     {
         let _ = std::fs::remove_file("/run/nilos/android.sock");
         if let Ok(listener) = UnixListener::bind("/run/nilos/android.sock") {
-            println!("\x1b[1;32m[nilandroidd] [  OK  ]\x1b[0m Listening on /run/nilos/android.sock");
+            println!(
+                "\x1b[1;32m[nilandroidd] [  OK  ]\x1b[0m Listening on /run/nilos/android.sock"
+            );
             let policy = nilsd::auth::load_default_policy();
             for stream in listener.incoming() {
                 if let Ok(mut s) = stream {
