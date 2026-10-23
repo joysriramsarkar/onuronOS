@@ -1,7 +1,7 @@
 // apps/a11y/src/main.rs — OnuronOS Accessibility
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -50,19 +50,35 @@ pub fn view(state: &A11yState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: "♿ Accessibility".to_string() },
-            Element::Text { content: format!("Text Size: {}%", state.text_size) },
+            Element::Text {
+                content: "♿ Accessibility".to_string(),
+            },
+            Element::Text {
+                content: format!("Text Size: {}%", state.text_size),
+            },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "A+".into(), on_click_id: 1 },
-                    Element::Button { label: "A-".into(), on_click_id: 2 },
+                    Element::Button {
+                        label: "A+".into(),
+                        on_click_id: 1,
+                    },
+                    Element::Button {
+                        label: "A-".into(),
+                        on_click_id: 2,
+                    },
                 ],
             },
             Element::Text {
-                content: format!("High Contrast: {}", if state.high_contrast { "ON" } else { "OFF" }),
+                content: format!(
+                    "High Contrast: {}",
+                    if state.high_contrast { "ON" } else { "OFF" }
+                ),
             },
             Element::Text {
-                content: format!("Screen Reader: {}", if state.screen_reader { "ON" } else { "OFF" }),
+                content: format!(
+                    "Screen Reader: {}",
+                    if state.screen_reader { "ON" } else { "OFF" }
+                ),
             },
             Element::Text {
                 content: format!("Haptics: {}", if state.haptics { "ON" } else { "OFF" }),

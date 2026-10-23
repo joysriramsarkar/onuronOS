@@ -1,7 +1,7 @@
 // apps/launcher/src/main.rs — OnuronOS Home Launcher (Design System)
 // Uses the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette, Spacing, Typography};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -22,21 +22,61 @@ impl Default for LauncherState {
             theme: true,
             installed_apps: vec![
                 ("phone".to_string(), "Phone".to_string(), "📞".to_string()),
-                ("messages".to_string(), "Messages".to_string(), "💬".to_string()),
-                ("browser".to_string(), "Browser".to_string(), "🌐".to_string()),
-                ("settings".to_string(), "Settings".to_string(), "⚙️".to_string()),
+                (
+                    "messages".to_string(),
+                    "Messages".to_string(),
+                    "💬".to_string(),
+                ),
+                (
+                    "browser".to_string(),
+                    "Browser".to_string(),
+                    "🌐".to_string(),
+                ),
+                (
+                    "settings".to_string(),
+                    "Settings".to_string(),
+                    "⚙️".to_string(),
+                ),
                 // Keep launcher IDs aligned with the signed Store manifests so a
                 // selected app can be handed directly to nilrt/nilpkg.
-                ("org.onuron.notes".to_string(), "Notes".to_string(), "📝".to_string()),
-                ("org.onuron.calculator".to_string(), "Alap Calculator".to_string(), "🧮".to_string()),
+                (
+                    "org.onuron.notes".to_string(),
+                    "Notes".to_string(),
+                    "📝".to_string(),
+                ),
+                (
+                    "org.onuron.calculator".to_string(),
+                    "Alap Calculator".to_string(),
+                    "🧮".to_string(),
+                ),
                 ("camera".to_string(), "Camera".to_string(), "📷".to_string()),
                 ("wifi".to_string(), "WiFi".to_string(), "📡".to_string()),
-                ("bluetooth".to_string(), "Bluetooth".to_string(), "🔵".to_string()),
+                (
+                    "bluetooth".to_string(),
+                    "Bluetooth".to_string(),
+                    "🔵".to_string(),
+                ),
                 ("sound".to_string(), "Sound".to_string(), "🔊".to_string()),
-                ("display".to_string(), "Display".to_string(), "🖥️".to_string()),
-                ("security".to_string(), "Security".to_string(), "🔒".to_string()),
-                ("storage".to_string(), "Storage".to_string(), "💾".to_string()),
-                ("language".to_string(), "Language".to_string(), "🌐".to_string()),
+                (
+                    "display".to_string(),
+                    "Display".to_string(),
+                    "🖥️".to_string(),
+                ),
+                (
+                    "security".to_string(),
+                    "Security".to_string(),
+                    "🔒".to_string(),
+                ),
+                (
+                    "storage".to_string(),
+                    "Storage".to_string(),
+                    "💾".to_string(),
+                ),
+                (
+                    "language".to_string(),
+                    "Language".to_string(),
+                    "🌐".to_string(),
+                ),
                 ("vpn".to_string(), "VPN".to_string(), "🛡️".to_string()),
                 ("backup".to_string(), "Backup".to_string(), "💾".to_string()),
             ],
@@ -49,15 +89,15 @@ pub fn update(state: &mut LauncherState, ev: Ev) {
         Ev::Click(id) if (1..=34).contains(&id) => {
             if let Some((app_id, _, _)) = state.installed_apps.get((id - 1) as usize) {
                 state.selected_app = Some(app_id.clone());
-                    }
-                }
-                Ev::Click(100) => state.current_page = 0,
-                Ev::Click(101) => state.current_page = 1,
-                Ev::Click(102) => state.current_page = 2,
-                Ev::Ime(text) => state.search_query = text,
-                _ => {}
-                }
-                }
+            }
+        }
+        Ev::Click(100) => state.current_page = 0,
+        Ev::Click(101) => state.current_page = 1,
+        Ev::Click(102) => state.current_page = 2,
+        Ev::Ime(text) => state.search_query = text,
+        _ => {}
+    }
+}
 
 pub fn view(state: &LauncherState) -> Element {
     let _ds = DesignSystem::new();
@@ -106,11 +146,9 @@ pub fn view(state: &LauncherState) -> Element {
             label_lower.contains(&query) || icon_lower.contains(&query)
         })
         .enumerate()
-        .map(|(idx, (_, label, icon))| {
-            Element::Button {
-                label: format!("  {}  {}\n  📱", icon, label),
-                on_click_id: (idx + 1) as u32,
-            }
+        .map(|(idx, (_, label, icon))| Element::Button {
+            label: format!("  {}  {}\n  📱", icon, label),
+            on_click_id: (idx + 1) as u32,
         })
         .collect();
 

@@ -1,7 +1,7 @@
 // apps/browser/src/main.rs — OnuronOS NilZar Browser
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -59,16 +59,27 @@ pub fn view(state: &BrowserState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: state.title.clone() },
+            Element::Text {
+                content: state.title.clone(),
+            },
             Element::Input {
                 placeholder: "ঠিকানা লিখুন বা খুঁজুন...".into(),
                 text: state.url.clone(),
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "📖 বুকমার্ক".into(), on_click_id: 1 },
-                    Element::Button { label: "🔍 সন্ধান".into(), on_click_id: 2 },
-                    Element::Button { label: "🗺️ মানচিত্র".into(), on_click_id: 3 },
+                    Element::Button {
+                        label: "📖 বুকমার্ক".into(),
+                        on_click_id: 1,
+                    },
+                    Element::Button {
+                        label: "🔍 সন্ধান".into(),
+                        on_click_id: 2,
+                    },
+                    Element::Button {
+                        label: "🗺️ মানচিত্র".into(),
+                        on_click_id: 3,
+                    },
                 ],
             },
             Element::Text {

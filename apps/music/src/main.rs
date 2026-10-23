@@ -1,7 +1,7 @@
 // apps/music/src/main.rs — OnuronOS Music Player
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -56,37 +56,71 @@ pub fn view(state: &MusicState) -> Element {
     let ds = DesignSystem::new();
     let palette = Palette::dark();
 
-    let track_bg = if palette.dark_bg == 0xFF1E1236 { palette.dark_card } else { palette.light_card };
-    let text_color = if palette.dark_bg == 0xFF1E1236 { palette.dark_text } else { palette.light_text };
-    let accent = if palette.dark_bg == 0xFF1E1236 { palette.dark_accent_green } else { palette.light_accent_green };
+    let track_bg = if palette.dark_bg == 0xFF1E1236 {
+        palette.dark_card
+    } else {
+        palette.light_card
+    };
+    let text_color = if palette.dark_bg == 0xFF1E1236 {
+        palette.dark_text
+    } else {
+        palette.light_text
+    };
+    let accent = if palette.dark_bg == 0xFF1E1236 {
+        palette.dark_accent_green
+    } else {
+        palette.light_accent_green
+    };
 
-fn format_time(t: f32) -> String {
+    fn format_time(t: f32) -> String {
         let s = t as u64;
         format!("{:02}:{:02}", s / 60, s % 60)
     };
 
     Element::Column {
         children: vec![
-            Element::Text { content: "🎵 Music Player".to_string() },
+            Element::Text {
+                content: "🎵 Music Player".to_string(),
+            },
             Element::Text {
                 content: state.current_track.clone(),
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "⏮".into(), on_click_id: 2 },
-                    if state.is_playing {
-                        Element::Button { label: "⏸".into(), on_click_id: 1 }
-                    } else {
-                        Element::Button { label: "▶".into(), on_click_id: 1 }
+                    Element::Button {
+                        label: "⏮".into(),
+                        on_click_id: 2,
                     },
-                    Element::Button { label: "⏭".into(), on_click_id: 3 },
-                    Element::Button { label: "🔊".into(), on_click_id: 3 },
+                    if state.is_playing {
+                        Element::Button {
+                            label: "⏸".into(),
+                            on_click_id: 1,
+                        }
+                    } else {
+                        Element::Button {
+                            label: "▶".into(),
+                            on_click_id: 1,
+                        }
+                    },
+                    Element::Button {
+                        label: "⏭".into(),
+                        on_click_id: 3,
+                    },
+                    Element::Button {
+                        label: "🔊".into(),
+                        on_click_id: 3,
+                    },
                 ],
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "⏰".into(), on_click_id: 4 },
-                    Element::Text { content: format!("{} / 3:20", format_time(state.current_time)) },
+                    Element::Button {
+                        label: "⏰".into(),
+                        on_click_id: 4,
+                    },
+                    Element::Text {
+                        content: format!("{} / 3:20", format_time(state.current_time)),
+                    },
                 ],
             },
             Element::Text {

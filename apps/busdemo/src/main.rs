@@ -1,7 +1,7 @@
 // apps/busdemo/src/main.rs — SoftBus Cross-Device Mesh Client
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -13,7 +13,10 @@ pub struct BusAppState {
 impl Default for BusAppState {
     fn default() -> Self {
         Self {
-            peers: vec!["peer1.onuron.local".to_string(), "peer2.onuron.local".to_string()],
+            peers: vec![
+                "peer1.onuron.local".to_string(),
+                "peer2.onuron.local".to_string(),
+            ],
             status: "Connected to 2 peers".to_string(),
         }
     }
@@ -22,7 +25,10 @@ impl Default for BusAppState {
 pub fn update(state: &mut BusAppState, ev: Ev) {
     match ev {
         Ev::Click(1) => {
-            state.peers = vec!["peer3.onuron.local".to_string(), "peer4.onuron.local".to_string()];
+            state.peers = vec![
+                "peer3.onuron.local".to_string(),
+                "peer4.onuron.local".to_string(),
+            ];
             state.status = "Discovered 2 new peers".to_string();
         }
         Ev::Click(2) => {
@@ -44,13 +50,26 @@ pub fn view(state: &BusAppState) -> Element {
         Element::Text {
             content: "🔄 SoftBus Cross-Device Mesh Client".into(),
         },
-        Element::Text { content: format!("Status: {}", state.status) },
-        Element::Text { content: format!("Peers: {} detected", state.peers.len()) },
+        Element::Text {
+            content: format!("Status: {}", state.status),
+        },
+        Element::Text {
+            content: format!("Peers: {} detected", state.peers.len()),
+        },
         Element::Row {
             children: vec![
-                Element::Button { label: "Scan Peers".into(), on_click_id: 1 },
-                Element::Button { label: "Clear List".into(), on_click_id: 2 },
-                Element::Button { label: "Broadcast".into(), on_click_id: 3 },
+                Element::Button {
+                    label: "Scan Peers".into(),
+                    on_click_id: 1,
+                },
+                Element::Button {
+                    label: "Clear List".into(),
+                    on_click_id: 2,
+                },
+                Element::Button {
+                    label: "Broadcast".into(),
+                    on_click_id: 3,
+                },
             ],
         },
     ];

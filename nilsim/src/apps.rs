@@ -45,7 +45,11 @@ pub fn render_app_phone(p: &mut FramePainter, state: &SimState) {
             .map(|(n, t, missed)| {
                 (
                     n.clone(),
-                    if *missed { format!("মিসড কল · {}", t) } else { format!("কল · {}", t) },
+                    if *missed {
+                        format!("মিসড কল · {}", t)
+                    } else {
+                        format!("কল · {}", t)
+                    },
                 )
             })
             .collect(),
@@ -55,7 +59,11 @@ pub fn render_app_phone(p: &mut FramePainter, state: &SimState) {
             .map(|(n, t, missed)| {
                 (
                     n.clone(),
-                    if *missed { format!("মিসড কল · {}", t) } else { format!("কল · {}", t) },
+                    if *missed {
+                        format!("মিসড কল · {}", t)
+                    } else {
+                        format!("কল · {}", t)
+                    },
                 )
             })
             .collect(),
@@ -97,10 +105,42 @@ pub fn render_app_messages(p: &mut FramePainter, state: &SimState) {
     if state.sms_composing {
         screen_title(p, "নতুন বার্তা", Some("back"));
         card_full(p, 104, 44);
-        text(p, 34, 117, 13.0, if state.sms_input_to.is_empty() { "প্রাপক" } else { &state.sms_input_to }, th.text, false);
+        text(
+            p,
+            34,
+            117,
+            13.0,
+            if state.sms_input_to.is_empty() {
+                "প্রাপক"
+            } else {
+                &state.sms_input_to
+            },
+            th.text,
+            false,
+        );
         card_full(p, 160, 160);
-        text(p, 34, 175, 13.0, if state.sms_input_body.is_empty() { "বার্তা লিখুন…" } else { &state.sms_input_body }, th.text, false);
-        text_right(p, SW - 34, 298, 11.0, &format!("{} অক্ষর", bn(state.sms_input_body.chars().count())), th.dim, false);
+        text(
+            p,
+            34,
+            175,
+            13.0,
+            if state.sms_input_body.is_empty() {
+                "বার্তা লিখুন…"
+            } else {
+                &state.sms_input_body
+            },
+            th.text,
+            false,
+        );
+        text_right(
+            p,
+            SW - 34,
+            298,
+            11.0,
+            &format!("{} অক্ষর", bn(state.sms_input_body.chars().count())),
+            th.dim,
+            false,
+        );
         primary_button(p, 708, "পাঠান", "sms:send");
         return;
     }
@@ -152,7 +192,19 @@ pub fn render_app_files(p: &mut FramePainter, state: &SimState) {
         icon_tile(p, 35, y + 16, if *is_dir { "folder" } else { "file" });
         text(p, 85, y + 13, 14.5, name, th.text, true);
         text(p, 85, y + 38, 11.5, meta, th.med, false);
-        text_right(p, SW - 34, y + 26, 11.5, if *is_dir { "ফোল্ডার" } else { "ফাইল" }, th.med, false);
+        text_right(
+            p,
+            SW - 34,
+            y + 26,
+            11.5,
+            if *is_dir {
+                "ফোল্ডার"
+            } else {
+                "ফাইল"
+            },
+            th.med,
+            false,
+        );
         let id = format!("files:open{}", i);
         p.register_button(16, y, CARD_W, 72, &id);
     }
@@ -166,7 +218,19 @@ pub fn render_app_notes(p: &mut FramePainter, state: &SimState) {
     if state.notes_editing {
         screen_title(p, "নোট সম্পাদনা", Some("note:cancel"));
         card_full(p, 104, 44);
-        text(p, 34, 117, 14.0, if state.notes_edit_title.is_empty() { "শিরোনাম" } else { &state.notes_edit_title }, th.text, true);
+        text(
+            p,
+            34,
+            117,
+            14.0,
+            if state.notes_edit_title.is_empty() {
+                "শিরোনাম"
+            } else {
+                &state.notes_edit_title
+            },
+            th.text,
+            true,
+        );
         card_full(p, 160, 300);
         let mut y = 176;
         for line in state.notes_edit_content.split('\n').take(12) {
@@ -235,8 +299,16 @@ pub fn render_app_calculator(p: &mut FramePainter, state: &SimState) {
     let th = t(p.dark_mode);
     clear(p);
 
-    let expr = if state.calc_expr.is_empty() { "0" } else { &state.calc_expr };
-    let result = if state.calc_result.is_empty() { "০" } else { &state.calc_result };
+    let expr = if state.calc_expr.is_empty() {
+        "0"
+    } else {
+        &state.calc_expr
+    };
+    let result = if state.calc_result.is_empty() {
+        "০"
+    } else {
+        &state.calc_result
+    };
     text_right(p, SW - 24, 100, 15.0, expr, th.med, false);
     text_right(p, SW - 24, 132, 44.0, result, th.text, true);
 
@@ -332,13 +404,24 @@ pub fn render_app_music(p: &mut FramePainter, state: &SimState) {
 
     let total = 342i16;
     rr(p, 24, 432, total as u16, 5, 3, th.track);
-    let played = if state.music_playing { (state.media_progress_ticks as i16) % total } else { 0 };
+    let played = if state.music_playing {
+        (state.media_progress_ticks as i16) % total
+    } else {
+        0
+    };
     rr(p, 24, 432, played.max(6) as u16, 5, 3, th.accent);
 
     icon(p, "prev", (SW / 2 - 62) as f32, 500.0, 22.0, th.text);
     p.register_button(SW / 2 - 74, 474, 44, 44, "music:prev");
     disc(p, (SW / 2) as f32, 500.0, 32.0, th.accent);
-    icon(p, if state.music_playing { "pause" } else { "play" }, (SW / 2) as f32, 500.0, 22.0, th.on_accent);
+    icon(
+        p,
+        if state.music_playing { "pause" } else { "play" },
+        (SW / 2) as f32,
+        500.0,
+        22.0,
+        th.on_accent,
+    );
     p.register_button(SW / 2 - 32, 468, 64, 64, "music:toggle");
     icon(p, "next", (SW / 2 + 62) as f32, 500.0, 22.0, th.text);
     p.register_button(SW / 2 + 40, 474, 44, 44, "music:next");
@@ -387,7 +470,11 @@ pub fn render_app_browser(p: &mut FramePainter, state: &SimState) {
     } else {
         &state.browser_url
     };
-    let addr_color = if state.browser_url.is_empty() { th.med } else { th.text };
+    let addr_color = if state.browser_url.is_empty() {
+        th.med
+    } else {
+        th.text
+    };
     text(p, 60, 117, 13.5, addr, addr_color, false);
     if state.browser_page_open {
         // close (back to start page)
@@ -419,7 +506,12 @@ pub fn render_app_browser(p: &mut FramePainter, state: &SimState) {
     p.register_button(16, 104, CARD_W - 40, 44, "browser:omni");
 
     let shortcuts = [
-        ("bookmark", "বুকমার্ক", "https://bn.m.wikipedia.org", "উইকিপিডিয়া"),
+        (
+            "bookmark",
+            "বুকমার্ক",
+            "https://bn.m.wikipedia.org",
+            "উইকিপিডিয়া",
+        ),
         ("globe", "স্ক্রিন", "https://www.google.com", "Google"),
         ("note", "সংবাদ", "https://news.google.com", "সংবাদ"),
         ("globe", "মানচিত্র", "https://www.openstreetmap.org", "মানচিত্র"),
@@ -451,7 +543,15 @@ pub fn render_app_browser(p: &mut FramePainter, state: &SimState) {
         icon_tile(p, 35, y + 16, "globe");
         text(p, 85, y + 13, 14.0, title, th.text, true);
         text(p, 85, y + 38, 11.0, url, th.med, false);
-        text_right(p, SW - 34, y + 15, 11.0, if i == 0 { "আজ" } else { "গতকাল" }, th.med, false);
+        text_right(
+            p,
+            SW - 34,
+            y + 15,
+            11.0,
+            if i == 0 { "আজ" } else { "গতকাল" },
+            th.med,
+            false,
+        );
         let id = format!("browser:hist{}", i);
         p.register_button(16, y, CARD_W, 72, &id);
     }
@@ -479,7 +579,19 @@ pub fn render_app_camera(p: &mut FramePainter, state: &SimState) {
     let tabs = ["ছবি", "ভিডিও"];
     for (i, label) in tabs.iter().enumerate() {
         let x = SW / 2 - 70 + i as i16 * 78;
-        text(p, x, 610, 14.0, label, if state.camera_mode == i { th.text } else { th.med }, true);
+        text(
+            p,
+            x,
+            610,
+            14.0,
+            label,
+            if state.camera_mode == i {
+                th.text
+            } else {
+                th.med
+            },
+            true,
+        );
         let id = format!("camera:mode{}", i);
         p.register_button(x - 12, 600, 70, 30, &id);
     }
@@ -507,7 +619,18 @@ pub fn render_app_softbus(p: &mut FramePainter, state: &SimState) {
 
     card_full(p, 104, 76);
     text(p, 34, 118, 15.0, "আপনার ডিভাইস", th.text, true);
-    text(p, 34, 144, 12.5, &format!("নিকটবর্তী ডিভাইস দেখা যাচ্ছে: {}টি", bn(state.softbus_peers.len())), th.med, false);
+    text(
+        p,
+        34,
+        144,
+        12.5,
+        &format!(
+            "নিকটবর্তী ডিভাইস দেখা যাচ্ছে: {}টি",
+            bn(state.softbus_peers.len())
+        ),
+        th.med,
+        false,
+    );
 
     card_full(p, 196, (state.softbus_peers.len() as u16 * 72).max(72));
     for (i, (name, status)) in state.softbus_peers.iter().enumerate() {
@@ -520,7 +643,13 @@ pub fn render_app_softbus(p: &mut FramePainter, state: &SimState) {
         p.register_button(16, y, CARD_W, 72, &id);
     }
 
-    switch_card(p, 196 + (state.softbus_peers.len() as i16 * 72).max(72) + 12, "ক্লিপবোর্ড সিঙ্ক", state.clipboard_sync, "tg:clipboard");
+    switch_card(
+        p,
+        196 + (state.softbus_peers.len() as i16 * 72).max(72) + 12,
+        "ক্লিপবোর্ড সিঙ্ক",
+        state.clipboard_sync,
+        "tg:clipboard",
+    );
     fab(p, "ফাইল পাঠান", "softbus:send");
 }
 
@@ -556,7 +685,19 @@ pub fn render_app_nilpkg(p: &mut FramePainter, state: &SimState) {
     let cy = 206 + (pkgs.len() as i16 * 72).min(288) + 8;
     card_full(p, cy, 54);
     text(p, 34, cy + 18, 15.0, "প্রকাশকের কী", th.text, true);
-    text_right(p, SW - 34, cy + 19, 13.5, if state.publisher_verified { "যাচাই করা" } else { "যাচাই বাকি" }, th.med, false);
+    text_right(
+        p,
+        SW - 34,
+        cy + 19,
+        13.5,
+        if state.publisher_verified {
+            "যাচাই করা"
+        } else {
+            "যাচাই বাকি"
+        },
+        th.med,
+        false,
+    );
     p.register_button(16, cy, CARD_W, 54, "nilpkg:key");
 }
 
@@ -565,7 +706,13 @@ pub fn render_app_android(p: &mut FramePainter, state: &SimState) {
     let th = t(p.dark_mode);
     clear(p);
     screen_title(p, "অ্যান্ড্রয়েড", None);
-    switch_card(p, 104, "অ্যান্ড্রয়েড কম্প্যাটিবিলিটি", state.android_enabled, "tg:android");
+    switch_card(
+        p,
+        104,
+        "অ্যান্ড্রয়েড কম্প্যাটিবিলিটি",
+        state.android_enabled,
+        "tg:android",
+    );
 
     let apps = state.android_installed_apps();
     let card_h = 300i16;
@@ -585,7 +732,15 @@ pub fn render_app_android(p: &mut FramePainter, state: &SimState) {
         p.register_button(16, y, CARD_W, 72, &id);
     }
     if apps.is_empty() {
-        text_center(p, SW / 2, 230, 13.0, "কোনো অ্যান্ড্রয়েড আ্যাপ ইনস্টল নেই", th.dim, false);
+        text_center(
+            p,
+            SW / 2,
+            230,
+            13.0,
+            "কোনো অ্যান্ড্রয়েড আ্যাপ ইনস্টল নেই",
+            th.dim,
+            false,
+        );
     }
 
     fab(p, "APK ইনস্টল", "android:apk");
@@ -675,7 +830,9 @@ fn go_back(state: &mut SimState) {
 
 fn push_recent(state: &mut SimState, id: &str, name: &str) {
     state.recent_apps.retain(|(a, _, _, _)| a != id);
-    state.recent_apps.insert(0, (id.to_string(), name.to_string(), String::new(), 0));
+    state
+        .recent_apps
+        .insert(0, (id.to_string(), name.to_string(), String::new(), 0));
     state.recent_apps.truncate(8);
 }
 
@@ -762,7 +919,11 @@ fn toggle(state: &mut SimState, key: &str) -> bool {
 
 fn do_backup(state: &mut SimState) {
     let stamp = get_ist_date_str();
-    let dir = state.storage_root.join("var").join("backups").join("latest");
+    let dir = state
+        .storage_root
+        .join("var")
+        .join("backups")
+        .join("latest");
     let _ = fs::remove_dir_all(&dir);
     let mut copied = 0usize;
     if fs::create_dir_all(&dir).is_ok() {
@@ -778,7 +939,11 @@ fn do_backup(state: &mut SimState) {
                 }
             }
         }
-        let docs = state.storage_root.join("home").join("joy").join("Documents");
+        let docs = state
+            .storage_root
+            .join("home")
+            .join("joy")
+            .join("Documents");
         let dst = dir.join("Documents");
         let _ = fs::create_dir_all(&dst);
         if let Ok(rd) = fs::read_dir(&docs) {
@@ -1141,7 +1306,12 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
     }
     if let Some(rest) = id.strip_prefix("browser:hist") {
         let idx: usize = rest.parse().unwrap_or(0);
-        let entry = state.browser_history.iter().rev().nth(idx).map(|h| (h.url.clone(), h.title.clone()));
+        let entry = state
+            .browser_history
+            .iter()
+            .rev()
+            .nth(idx)
+            .map(|h| (h.url.clone(), h.title.clone()));
         if let Some((url, title)) = entry {
             browser_open(state, &url, &title);
         }
@@ -1200,7 +1370,11 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
         return true;
     }
     if id == "camera:switch" {
-        state.camera_zoom = if state.camera_zoom == "১X" { "২X".into() } else { "১X".into() };
+        state.camera_zoom = if state.camera_zoom == "১X" {
+            "২X".into()
+        } else {
+            "১X".into()
+        };
         return true;
     }
     if id == "camera:gallery" {
@@ -1221,7 +1395,9 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
     }
     if id == "nilpkg:key" {
         let key_dir = state.storage_root.join("etc").join("keys");
-        state.publisher_verified = fs::read_dir(&key_dir).map(|r| r.count() > 0).unwrap_or(false);
+        state.publisher_verified = fs::read_dir(&key_dir)
+            .map(|r| r.count() > 0)
+            .unwrap_or(false);
         state.toast(if state.publisher_verified {
             "প্রকাশকের কী যাচাই করা হয়েছে"
         } else {
@@ -1269,7 +1445,11 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
             "g2048" => "com.gabriele.2048",
             _ => "",
         };
-        if let Some(idx) = state.android_store_apps.iter().position(|a| a.pkg_id == pkg) {
+        if let Some(idx) = state
+            .android_store_apps
+            .iter()
+            .position(|a| a.pkg_id == pkg)
+        {
             state.android_running_app = Some(idx);
             state.android_search_focused = false;
             push_recent(state, "app_android", rest);

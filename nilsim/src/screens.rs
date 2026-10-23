@@ -20,36 +20,144 @@ pub struct NativeApp {
 
 /// Everything the device can launch (the designed home grid shows the first 12).
 pub const ALL_APPS: [NativeApp; 15] = [
-    NativeApp { id: "phone", label: "ফোন", icon: "phone" },
-    NativeApp { id: "browser", label: "ব্রাউজার", icon: "globe" },
-    NativeApp { id: "messages", label: "বার্তা", icon: "chat" },
-    NativeApp { id: "files", label: "ফাইল", icon: "folder" },
-    NativeApp { id: "settings", label: "সেটিংস", icon: "sliders" },
-    NativeApp { id: "terminal", label: "টার্মিনাল", icon: "terminal" },
-    NativeApp { id: "softbus", label: "সফটবাস", icon: "triangle" },
-    NativeApp { id: "memories", label: "স্মৃতি", icon: "image" },
-    NativeApp { id: "notes", label: "নোট", icon: "note" },
-    NativeApp { id: "calculator", label: "ক্যালকুলেটর", icon: "keypad" },
-    NativeApp { id: "nilpkg", label: "নীলপ্যাক", icon: "cube" },
-    NativeApp { id: "music", label: "মিউজিক", icon: "music" },
-    NativeApp { id: "camera", label: "ক্যামেরা", icon: "camera" },
-    NativeApp { id: "android", label: "অ্যান্ড্রয়েড", icon: "cube" },
-    NativeApp { id: "update", label: "আপডেট", icon: "tv" },
+    NativeApp {
+        id: "phone",
+        label: "ফোন",
+        icon: "phone",
+    },
+    NativeApp {
+        id: "browser",
+        label: "ব্রাউজার",
+        icon: "globe",
+    },
+    NativeApp {
+        id: "messages",
+        label: "বার্তা",
+        icon: "chat",
+    },
+    NativeApp {
+        id: "files",
+        label: "ফাইল",
+        icon: "folder",
+    },
+    NativeApp {
+        id: "settings",
+        label: "সেটিংস",
+        icon: "sliders",
+    },
+    NativeApp {
+        id: "terminal",
+        label: "টার্মিনাল",
+        icon: "terminal",
+    },
+    NativeApp {
+        id: "softbus",
+        label: "সফটবাস",
+        icon: "triangle",
+    },
+    NativeApp {
+        id: "memories",
+        label: "স্মৃতি",
+        icon: "image",
+    },
+    NativeApp {
+        id: "notes",
+        label: "নোট",
+        icon: "note",
+    },
+    NativeApp {
+        id: "calculator",
+        label: "ক্যালকুলেটর",
+        icon: "keypad",
+    },
+    NativeApp {
+        id: "nilpkg",
+        label: "নীলপ্যাক",
+        icon: "cube",
+    },
+    NativeApp {
+        id: "music",
+        label: "মিউজিক",
+        icon: "music",
+    },
+    NativeApp {
+        id: "camera",
+        label: "ক্যামেরা",
+        icon: "camera",
+    },
+    NativeApp {
+        id: "android",
+        label: "অ্যান্ড্রয়েড",
+        icon: "cube",
+    },
+    NativeApp {
+        id: "update",
+        label: "আপডেট",
+        icon: "tv",
+    },
 ];
 
 pub const NATIVE_APPS: [NativeApp; 12] = [
-    NativeApp { id: "phone", label: "ফোন", icon: "phone" },
-    NativeApp { id: "browser", label: "ব্রাউজার", icon: "globe" },
-    NativeApp { id: "messages", label: "বার্তা", icon: "chat" },
-    NativeApp { id: "files", label: "ফাইল", icon: "folder" },
-    NativeApp { id: "settings", label: "সেটিংস", icon: "sliders" },
-    NativeApp { id: "terminal", label: "টার্মিনাল", icon: "terminal" },
-    NativeApp { id: "softbus", label: "সফটবাস", icon: "triangle" },
-    NativeApp { id: "memories", label: "স্মৃতি", icon: "image" },
-    NativeApp { id: "notes", label: "নোট", icon: "note" },
-    NativeApp { id: "calculator", label: "ক্যালকুলেটর", icon: "keypad" },
-    NativeApp { id: "nilpkg", label: "নীলপ্যাক", icon: "cube" },
-    NativeApp { id: "android", label: "অ্যান্ড্রয়েড", icon: "cube" },
+    NativeApp {
+        id: "phone",
+        label: "ফোন",
+        icon: "phone",
+    },
+    NativeApp {
+        id: "browser",
+        label: "ব্রাউজার",
+        icon: "globe",
+    },
+    NativeApp {
+        id: "messages",
+        label: "বার্তা",
+        icon: "chat",
+    },
+    NativeApp {
+        id: "files",
+        label: "ফাইল",
+        icon: "folder",
+    },
+    NativeApp {
+        id: "settings",
+        label: "সেটিংস",
+        icon: "sliders",
+    },
+    NativeApp {
+        id: "terminal",
+        label: "টার্মিনাল",
+        icon: "terminal",
+    },
+    NativeApp {
+        id: "softbus",
+        label: "সফটবাস",
+        icon: "triangle",
+    },
+    NativeApp {
+        id: "memories",
+        label: "স্মৃতি",
+        icon: "image",
+    },
+    NativeApp {
+        id: "notes",
+        label: "নোট",
+        icon: "note",
+    },
+    NativeApp {
+        id: "calculator",
+        label: "ক্যালকুলেটর",
+        icon: "keypad",
+    },
+    NativeApp {
+        id: "nilpkg",
+        label: "নীলপ্যাক",
+        icon: "cube",
+    },
+    NativeApp {
+        id: "android",
+        label: "অ্যান্ড্রয়েড",
+        icon: "cube",
+    },
 ];
 
 // ─── Small helpers ──────────────────────────────────────────────────────────
@@ -68,15 +176,34 @@ fn app_tile(p: &mut FramePainter, x: i16, y: i16, icon_name: &str, label: &str, 
     let s = 59u16;
     rr(p, x, y, s, s, 18, th.card);
     rrb(p, x, y, s, s, 18, th.border);
-    icon(p, icon_name, (x + 30) as f32, (y + 30) as f32, 25.0, th.icon);
+    icon(
+        p,
+        icon_name,
+        (x + 30) as f32,
+        (y + 30) as f32,
+        25.0,
+        th.icon,
+    );
     text_center(p, x + 30, y + 66, 12.0, label, th.text, true);
     p.register_button(x, y, s, s + 18, id);
 }
 
-fn android_tile(p: &mut FramePainter, x: i16, y: i16, label: &str, short: &str, color: u32, id: &str) {
+fn android_tile(
+    p: &mut FramePainter,
+    x: i16,
+    y: i16,
+    label: &str,
+    short: &str,
+    color: u32,
+    id: &str,
+) {
     let th = t(p.dark_mode);
     rr(p, x, y, 59, 59, 18, color);
-    let sz = if short.chars().count() > 2 { 12.0 } else { 16.0 };
+    let sz = if short.chars().count() > 2 {
+        12.0
+    } else {
+        16.0
+    };
     text_center(p, x + 30, y + 18, sz, short, 0xFFFFFF, true);
     text_center(p, x + 30, y + 66, 11.5, label, th.text, false);
     p.register_button(x, y, 59, 78, id);
@@ -91,7 +218,15 @@ pub fn render_home(p: &mut FramePainter, state: &SimState) {
     let th = t(p.dark_mode);
     clear(p);
 
-    text(p, 24, 41, 12.0, "OnuronOS 1.7.0 • Alap Native", th.med, false);
+    text(
+        p,
+        24,
+        41,
+        12.0,
+        "OnuronOS 1.7.0 • Alap Native",
+        th.med,
+        false,
+    );
 
     let (hh, mm) = get_ist_time_parts();
     let clock = format!("{}:{}", bn(format!("{:02}", hh)), bn(format!("{:02}", mm)));
@@ -173,7 +308,15 @@ pub fn render_lockscreen(p: &mut FramePainter, state: &SimState) {
         }
     }
     if state.lock_error {
-        text_center(p, SW / 2, 382, 11.5, "ভুল পিন, আবার চেষ্টা করুন", th.danger, false);
+        text_center(
+            p,
+            SW / 2,
+            382,
+            11.5,
+            "ভুল পিন, আবার চেষ্টা করুন",
+            th.danger,
+            false,
+        );
     }
 
     let keys = ["১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯", "*", "০", "#"];
@@ -210,7 +353,15 @@ pub fn render_control_center(p: &mut FramePainter, state: &SimState) {
             rrb(p, x, y, 62, 62, 18, th.border);
             icon(p, ic, (x + 31) as f32, (y + 31) as f32, 24.0, th.icon);
         }
-        text_center(p, x + 31, y + 68, 11.5, label, if *on { th.text } else { th.med }, false);
+        text_center(
+            p,
+            x + 31,
+            y + 68,
+            11.5,
+            label,
+            if *on { th.text } else { th.med },
+            false,
+        );
         p.register_button(x, y, 62, 82, id);
     }
 
@@ -242,7 +393,15 @@ pub fn render_control_center(p: &mut FramePainter, state: &SimState) {
     }
     if state.notifications.is_empty() {
         card_full(p, y, 90);
-        text_center(p, SW / 2, y + 36, 13.5, "কোনো নোটিফিকেশন নেই", th.dim, false);
+        text_center(
+            p,
+            SW / 2,
+            y + 36,
+            13.5,
+            "কোনো নোটিফিকেশন নেই",
+            th.dim,
+            false,
+        );
     }
 
     primary_button(p, 709, "সব মুছুন", "notif_clear");
@@ -266,7 +425,15 @@ pub fn render_recents(p: &mut FramePainter, state: &SimState) {
         outline(p, x, y, w, h, th.border);
         text(p, x + 22, y + 20, 15.0, name, th.text, true);
         // Live thumbnail placeholder tinted with the app accent.
-        rr(p, x + 18, y + 52, w - 36, h - 78, 18, if p.dark_mode { 0x3B2C5C } else { 0xEFE7FF });
+        rr(
+            p,
+            x + 18,
+            y + 52,
+            w - 36,
+            h - 78,
+            18,
+            if p.dark_mode { 0x3B2C5C } else { 0xEFE7FF },
+        );
         let id = format!("rec:{}", app_id);
         p.register_button(x, y, w, h, &id);
         x += 286;
@@ -305,7 +472,15 @@ pub fn render_oobe(p: &mut FramePainter, state: &SimState, step: u8) {
             rrb(p, 130, 171, 129, 130, 34, th.border);
             text_center(p, SW / 2, 200, 62.0, "অ", th.icon, true);
             text_center(p, SW / 2, 336, 29.0, "স্বাগতম", th.text, true);
-            text_center(p, SW / 2, 388, 13.5, "অনুরণ ওএস-এ আপনাকে স্বাগতম", th.med, false);
+            text_center(
+                p,
+                SW / 2,
+                388,
+                13.5,
+                "অনুরণ ওএস-এ আপনাকে স্বাগতম",
+                th.med,
+                false,
+            );
             dots(p, 429, 3, 0);
             primary_button(p, 708, "শুরু করুন", "oobe_next");
         }
@@ -329,12 +504,26 @@ pub fn render_oobe(p: &mut FramePainter, state: &SimState, step: u8) {
         }
         _ => {
             text(p, 24, 60, 27.0, "পিন সেট করুন", th.text, true);
-            text_center(p, SW / 2, 118, 13.5, "আপনার ফোন সুরক্ষিত রাখতে একটি পিন দিন", th.med, false);
+            text_center(
+                p,
+                SW / 2,
+                118,
+                13.5,
+                "আপনার ফোন সুরক্ষিত রাখতে একটি পিন দিন",
+                th.med,
+                false,
+            );
             let filled = state.oobe_pin.chars().count().min(4);
             for i in 0..4 {
                 let cx = SW / 2 - 33 + i as i16 * 22;
                 if i < filled {
-                    disc(p, cx as f32, 160.0, 5.5, if p.dark_mode { 0xD9C6FF } else { 0xB79BFF });
+                    disc(
+                        p,
+                        cx as f32,
+                        160.0,
+                        5.5,
+                        if p.dark_mode { 0xD9C6FF } else { 0xB79BFF },
+                    );
                 } else {
                     circle(p, cx as f32, 160.0, 5.0, 1.6, th.dim);
                 }
@@ -373,17 +562,72 @@ struct SettingRow {
 }
 
 const SETTINGS_ROWS: [SettingRow; 11] = [
-    SettingRow { icon: "globe", title: "নেটওয়ার্ক", sub: "ওয়াই-ফাই, ভিপিএন", id: "set:wifi" },
-    SettingRow { icon: "bluetooth", title: "ব্লুটুথ", sub: "সংযুক্ত ডিভাইস", id: "set:bluetooth" },
-    SettingRow { icon: "sliders", title: "ডিসপ্লে", sub: "থিম, উজ্জ্বলতা", id: "set:display" },
-    SettingRow { icon: "music", title: "শব্দ", sub: "রিংটোন, ভলিউম", id: "set:sound" },
-    SettingRow { icon: "keypad", title: "নিরাপত্তা", sub: "পিন, অনুমতি", id: "set:security" },
-    SettingRow { icon: "plus", title: "ব্যাটারি", sub: "ব্যবহার, সাশ্রয়", id: "set:battery" },
-    SettingRow { icon: "folder", title: "স্টোরেজ ও ব্যাকআপ", sub: "/data", id: "set:storage" },
-    SettingRow { icon: "search", title: "ভাষা ও কিবোর্ড", sub: "বাংলা", id: "set:language" },
-    SettingRow { icon: "tv", title: "অ্যাক্সেসিবিলিটি", sub: "লেখা, কন্ট্রাস্ট", id: "set:accessibility" },
-    SettingRow { icon: "download", title: "সিস্টেম আপডেট", sub: "সংস্করণ ১.৭.০", id: "set:update" },
-    SettingRow { icon: "shield", title: "অনুরণ সম্পর্কে", sub: "সংস্করণ ও লাইসেন্স", id: "set:about" },
+    SettingRow {
+        icon: "globe",
+        title: "নেটওয়ার্ক",
+        sub: "ওয়াই-ফাই, ভিপিএন",
+        id: "set:wifi",
+    },
+    SettingRow {
+        icon: "bluetooth",
+        title: "ব্লুটুথ",
+        sub: "সংযুক্ত ডিভাইস",
+        id: "set:bluetooth",
+    },
+    SettingRow {
+        icon: "sliders",
+        title: "ডিসপ্লে",
+        sub: "থিম, উজ্জ্বলতা",
+        id: "set:display",
+    },
+    SettingRow {
+        icon: "music",
+        title: "শব্দ",
+        sub: "রিংটোন, ভলিউম",
+        id: "set:sound",
+    },
+    SettingRow {
+        icon: "keypad",
+        title: "নিরাপত্তা",
+        sub: "পিন, অনুমতি",
+        id: "set:security",
+    },
+    SettingRow {
+        icon: "plus",
+        title: "ব্যাটারি",
+        sub: "ব্যবহার, সাশ্রয়",
+        id: "set:battery",
+    },
+    SettingRow {
+        icon: "folder",
+        title: "স্টোরেজ ও ব্যাকআপ",
+        sub: "/data",
+        id: "set:storage",
+    },
+    SettingRow {
+        icon: "search",
+        title: "ভাষা ও কিবোর্ড",
+        sub: "বাংলা",
+        id: "set:language",
+    },
+    SettingRow {
+        icon: "tv",
+        title: "অ্যাক্সেসিবিলিটি",
+        sub: "লেখা, কন্ট্রাস্ট",
+        id: "set:accessibility",
+    },
+    SettingRow {
+        icon: "download",
+        title: "সিস্টেম আপডেট",
+        sub: "সংস্করণ ১.৭.০",
+        id: "set:update",
+    },
+    SettingRow {
+        icon: "shield",
+        title: "অনুরণ সম্পর্কে",
+        sub: "সংস্করণ ও লাইসেন্স",
+        id: "set:about",
+    },
 ];
 
 pub const SETTINGS_CARD_TOP: i16 = 130;
@@ -416,7 +660,14 @@ pub fn render_app_settings(p: &mut FramePainter, state: &SimState) {
         icon_tile(p, 35, y + 16, row.icon);
         text(p, 85, y + 13, 15.5, row.title, th.text, true);
         text(p, 85, y + 38, 12.5, row.sub, th.med, false);
-        icon(p, "chevron_r", (SW - 38) as f32, (y + 36) as f32, 14.0, th.dim);
+        icon(
+            p,
+            "chevron_r",
+            (SW - 38) as f32,
+            (y + 36) as f32,
+            14.0,
+            th.dim,
+        );
         p.register_button(MARGIN, y, CARD_W, SETTINGS_ROW_H as u16, row.id);
     }
 
@@ -431,7 +682,11 @@ pub fn render_app_settings(p: &mut FramePainter, state: &SimState) {
         rr(p, track_x, track_top, 2, track_h, 1, th.track);
         let visible = (SETTINGS_CARD_H - 20) as f32 / (max_scroll + SETTINGS_CARD_H - 20) as f32;
         let thumb_h = ((track_h as f32) * visible).max(28.0) as u16;
-        let t = if max_scroll > 0 { off as f32 / max_scroll as f32 } else { 0.0 };
+        let t = if max_scroll > 0 {
+            off as f32 / max_scroll as f32
+        } else {
+            0.0
+        };
         let ty = track_top + ((track_h - thumb_h) as f32 * t) as i16;
         rr(p, track_x - 1, ty, 4, thumb_h, 2, th.dim);
     }
@@ -471,7 +726,10 @@ pub fn render_settings_bluetooth(p: &mut FramePainter, state: &SimState) {
     switch_card(p, 104, "ব্লুটুথ", state.bt_enabled, "tg:bt");
 
     card_full(p, 170, 144);
-    for (i, (name, sub)) in [("ডিভাইস ক", "সংযুক্ত"), ("ডিভাইস খ", "জোড়া আছে")].iter().enumerate() {
+    for (i, (name, sub)) in [("ডিভাইস ক", "সংযুক্ত"), ("ডিভাইস খ", "জোড়া আছে")]
+        .iter()
+        .enumerate()
+    {
         let y = 170 + i as i16 * 72;
         icon_tile(p, 35, y + 16, "bluetooth");
         text(p, 85, y + 13, 15.0, name, th.text, true);
@@ -505,9 +763,25 @@ pub fn render_settings_display(p: &mut FramePainter, state: &SimState) {
     slider_card(p, 330, "লেখার আকার", state.font_size_pct, "sl:font");
 
     card_full(p, 410, 116);
-    value_row(p, 16, 414, CARD_W, "রিফ্রেশ রেট", &format!("{} Hz", bn(state.refresh_hz)), "opt:refresh");
+    value_row(
+        p,
+        16,
+        414,
+        CARD_W,
+        "রিফ্রেশ রেট",
+        &format!("{} Hz", bn(state.refresh_hz)),
+        "opt:refresh",
+    );
     divider(p, 34, 470, CARD_W - 36);
-    value_row(p, 16, 470, CARD_W, "স্ক্রিন বন্ধ হবে", &format!("{} সেকেন্ড", bn(state.screen_timeout)), "opt:timeout");
+    value_row(
+        p,
+        16,
+        470,
+        CARD_W,
+        "স্ক্রিন বন্ধ হবে",
+        &format!("{} সেকেন্ড", bn(state.screen_timeout)),
+        "opt:timeout",
+    );
 }
 
 // ─── Settings: Sound ────────────────────────────────────────────────────────
@@ -520,7 +794,15 @@ pub fn render_settings_sound(p: &mut FramePainter, state: &SimState) {
     switch_card(p, 366, "কস্পন", state.vibration_enabled, "tg:vibration");
     card_full(p, 430, 54);
     text(p, 34, 448, 15.0, "রিংটোন", t(p.dark_mode).text, true);
-    text_right(p, SW - 34, 449, 14.0, &state.ringtone, t(p.dark_mode).med, false);
+    text_right(
+        p,
+        SW - 34,
+        449,
+        14.0,
+        &state.ringtone,
+        t(p.dark_mode).med,
+        false,
+    );
     p.register_button(16, 430, CARD_W, 54, "opt:ringtone");
 }
 
@@ -541,17 +823,46 @@ pub fn render_settings_security(p: &mut FramePainter, state: &SimState) {
         icon_tile(p, 35, y + 16, ic);
         text(p, 85, y + 13, 15.0, title, th.text, true);
         text(p, 85, y + 38, 12.0, sub, th.med, false);
-        icon(p, "chevron_r", (SW - 38) as f32, (y + 36) as f32, 14.0, th.dim);
+        icon(
+            p,
+            "chevron_r",
+            (SW - 38) as f32,
+            (y + 36) as f32,
+            14.0,
+            th.dim,
+        );
         p.register_button(16, y, CARD_W, 72, id);
     }
 
     switch_card(p, 336, "ডেটা এনক্রিপশন", state.encrypt_data, "tg:encrypt");
-    switch_card(p, 400, "লক স্ক্রিনে নোটিফিকেশন", state.lock_notifications, "tg:locknotif");
+    switch_card(
+        p,
+        400,
+        "লক স্ক্রিনে নোটিফিকেশন",
+        state.lock_notifications,
+        "tg:locknotif",
+    );
 
     if state.perm_dialog {
         card_full(p, 480, 120);
-        text(p, 34, 496, 13.5, "আ্যাপ অনুমতি (SELinux + seccomp)", th.text, true);
-        text(p, 34, 522, 12.0, "ক্যামেরা · মাইক · ফাইল — অনুমতি ছাড়া বন্ধ", th.med, false);
+        text(
+            p,
+            34,
+            496,
+            13.5,
+            "আ্যাপ অনুমতি (SELinux + seccomp)",
+            th.text,
+            true,
+        );
+        text(
+            p,
+            34,
+            522,
+            12.0,
+            "ক্যামেরা · মাইক · ফাইল — অনুমতি ছাড়া বন্ধ",
+            th.med,
+            false,
+        );
         p.register_button(16, 480, CARD_W, 120, "sec:perm-close");
     }
 }
@@ -565,14 +876,14 @@ pub fn render_settings_battery(p: &mut FramePainter, state: &SimState) {
     card_full(p, 104, 170);
     let pct = format!("{}%", bn(state.battery_level));
     text_center(p, SW / 2, 132, 52.0, &pct, th.text, true);
-    let sub = if state.battery_charging { "চার্জ হচ্ছে" } else { "চার্জ হচ্ছে না" };
+    let sub = if state.battery_charging {
+        "চার্জ হচ্ছে"
+    } else {
+        "চার্জ হচ্ছে না"
+    };
     text_center(p, SW / 2, 214, 13.0, sub, th.med, false);
 
-    let usage = [
-        ("ডিসপ্লে", 40u8),
-        ("নেটওয়ার্ক", 20u8),
-        ("আ্যাপ", 45u8),
-    ];
+    let usage = [("ডিসপ্লে", 40u8), ("নেটওয়ার্ক", 20u8), ("আ্যাপ", 45u8)];
     for (i, (label, pct)) in usage.iter().enumerate() {
         slider_card(p, 290 + i as i16 * 82, label, *pct, "noop");
     }
@@ -589,7 +900,11 @@ pub fn render_settings_storage(p: &mut FramePainter, state: &SimState) {
     text(p, 34, 118, 13.5, "/data ব্যবহার", th.text, false);
     let (used, total) = state.storage_usage();
     let (apps, media, rest) = state.storage_breakdown();
-    let ratio = if total > 0 { (used as f32 / total as f32).min(1.0) } else { 0.0 };
+    let ratio = if total > 0 {
+        (used as f32 / total as f32).min(1.0)
+    } else {
+        0.0
+    };
     let bx = 34;
     let bw = SW - 68;
     let filled = (bw as f32 * ratio) as i16;
@@ -610,7 +925,15 @@ pub fn render_settings_storage(p: &mut FramePainter, state: &SimState) {
         rr(p, bx + a + m, 148, r.max(1) as u16, 8, 4, 0x7C4DD8);
     }
     let used_mb = used as f64 / (1024.0 * 1024.0);
-    text_right(p, SW - 34, 162, 11.5, &format!("{:.1} MB ব্যবহৃত", used_mb), th.med, false);
+    text_right(
+        p,
+        SW - 34,
+        162,
+        11.5,
+        &format!("{:.1} MB ব্যবহৃত", used_mb),
+        th.med,
+        false,
+    );
 
     card_full(p, 196, 216);
     let rows = [
@@ -653,21 +976,59 @@ pub fn render_settings_language(p: &mut FramePainter, state: &SimState) {
 
     card_full(p, 104, 216);
     let rows = [
-        ("globe", "ভাষা", if state.lang == 0 { "বাংলা" } else { "English" }, "opt:lang"),
-        ("search", "কিবোর্ড লেআউট", &state.keyboard_layout, "opt:layout"),
-        ("search", "দ্বিতীয় কিবোর্ড", &state.secondary_keyboard, "opt:layout2"),
+        (
+            "globe",
+            "ভাষা",
+            if state.lang == 0 {
+                "বাংলা"
+            } else {
+                "English"
+            },
+            "opt:lang",
+        ),
+        (
+            "search",
+            "কিবোর্ড লেআউট",
+            &state.keyboard_layout,
+            "opt:layout",
+        ),
+        (
+            "search",
+            "দ্বিতীয় কিবোর্ড",
+            &state.secondary_keyboard,
+            "opt:layout2",
+        ),
     ];
     for (i, (ic, title, sub, id)) in rows.iter().enumerate() {
         let y = 104 + i as i16 * 72;
         icon_tile(p, 35, y + 16, ic);
         text(p, 85, y + 13, 15.0, title, th.text, true);
         text(p, 85, y + 38, 12.0, sub, th.med, false);
-        icon(p, "chevron_r", (SW - 38) as f32, (y + 36) as f32, 14.0, th.dim);
+        icon(
+            p,
+            "chevron_r",
+            (SW - 38) as f32,
+            (y + 36) as f32,
+            14.0,
+            th.dim,
+        );
         p.register_button(16, y, CARD_W, 72, id);
     }
 
-    switch_card(p, 336, "স্বয়ংক্রিয় সংশোধন", state.auto_correct, "tg:autocorrect");
-    switch_card(p, 400, "শব্দ সাজেশন", state.word_suggestions, "tg:suggestions");
+    switch_card(
+        p,
+        336,
+        "স্বয়ংক্রিয় সংশোধন",
+        state.auto_correct,
+        "tg:autocorrect",
+    );
+    switch_card(
+        p,
+        400,
+        "শব্দ সাজেশন",
+        state.word_suggestions,
+        "tg:suggestions",
+    );
 }
 
 // ─── Settings: Accessibility ────────────────────────────────────────────────
@@ -677,7 +1038,13 @@ pub fn render_settings_accessibility(p: &mut FramePainter, state: &SimState) {
     slider_card(p, 104, "লেখার আকার", state.font_size_pct, "sl:font");
     switch_card(p, 190, "উচ্চ কন্ট্রাস্ট", state.high_contrast, "tg:contrast");
     switch_card(p, 254, "স্ক্রিন রিডার", state.screen_reader, "tg:reader");
-    switch_card(p, 318, "কস্পন প্রতিক্রিয়া", state.vibration_enabled, "tg:vibration");
+    switch_card(
+        p,
+        318,
+        "কস্পন প্রতিক্রিয়া",
+        state.vibration_enabled,
+        "tg:vibration",
+    );
 }
 
 // ─── Settings: VPN ──────────────────────────────────────────────────────────
@@ -690,7 +1057,19 @@ pub fn render_settings_vpn(p: &mut FramePainter, state: &SimState) {
     card_full(p, 170, 72);
     icon_tile(p, 35, 186, "keypad");
     text(p, 85, 183, 15.0, "প্রোফাইল", th.text, true);
-    text(p, 85, 208, 12.0, if state.vpn_profile.is_empty() { "যুক্ত নেই" } else { &state.vpn_profile }, th.med, false);
+    text(
+        p,
+        85,
+        208,
+        12.0,
+        if state.vpn_profile.is_empty() {
+            "যুক্ত নেই"
+        } else {
+            &state.vpn_profile
+        },
+        th.med,
+        false,
+    );
     icon(p, "chevron_r", (SW - 38) as f32, 206.0, 14.0, th.dim);
     p.register_button(16, 170, CARD_W, 72, "vpn:profile");
 
@@ -733,7 +1112,14 @@ pub fn render_settings_about(p: &mut FramePainter, state: &SimState) {
         ("বিল্ড", "sim-x86_64-2026.10"),
         ("কার্নেল", "Linux LTS ৬.৬"),
         ("লাইসেন্স", "AGPL-3.0"),
-        ("ডিভাইসের নাম", if state.user_name.is_empty() { "Onuron" } else { &state.user_name }),
+        (
+            "ডিভাইসের নাম",
+            if state.user_name.is_empty() {
+                "Onuron"
+            } else {
+                &state.user_name
+            },
+        ),
     ];
     for (i, (k, v)) in rows.iter().enumerate() {
         let y = 258 + i as i16 * 58;

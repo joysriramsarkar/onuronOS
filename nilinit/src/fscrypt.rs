@@ -51,7 +51,9 @@ impl KeyDescriptor {
                     ));
                 }
                 let bytes = hex::decode(value).map_err(|e| e.to_string())?;
-                descriptor = bytes.try_into().map_err(|_| "key_descriptor wrong length".to_string())?;
+                descriptor = bytes
+                    .try_into()
+                    .map_err(|_| "key_descriptor wrong length".to_string())?;
             } else if key == "hash_specifier" {
                 if value.len() != 32 {
                     return Err(format!(
@@ -60,7 +62,9 @@ impl KeyDescriptor {
                     ));
                 }
                 let bytes = hex::decode(value).map_err(|e| e.to_string())?;
-                hash_specifier = bytes.try_into().map_err(|_| "hash_specifier wrong length".to_string())?;
+                hash_specifier = bytes
+                    .try_into()
+                    .map_err(|_| "hash_specifier wrong length".to_string())?;
             }
         }
 
@@ -85,7 +89,8 @@ pub fn request_key(sock_path: &str, descriptor: &[u8; 32]) -> Result<Vec<u8>, St
             .map_err(|e| format!("cannot connect to keyd socket {}: {}", sock_path, e))?;
 
         let request = format!("GET_KEY {:x}\n", hex::encode(&descriptor));
-        stream.write_all(request.as_bytes())
+        stream
+            .write_all(request.as_bytes())
             .map_err(|e| format!("cannot write to keyd socket: {}", e))?;
 
         let mut response = [0u8; 512];

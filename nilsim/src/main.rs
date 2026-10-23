@@ -3,10 +3,10 @@
 
 mod apps;
 mod memories;
-mod screens;
-mod ui;
 #[cfg(target_os = "windows")]
 mod nilbrowser;
+mod screens;
+mod ui;
 
 #[cfg(target_os = "windows")]
 #[link(name = "user32")]
@@ -2324,7 +2324,14 @@ impl SimState {
             Ok(rd) => rd.flatten().map(|e| e.path()).collect(),
             Err(_) => Vec::new(),
         };
-        items.sort_by_key(|p| (!p.is_dir(), p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default()));
+        items.sort_by_key(|p| {
+            (
+                !p.is_dir(),
+                p.file_name()
+                    .map(|n| n.to_string_lossy().to_lowercase())
+                    .unwrap_or_default(),
+            )
+        });
         let mut out = Vec::new();
         for p in items.into_iter().take(12) {
             let name = match p.file_name() {
@@ -2343,7 +2350,10 @@ impl SimState {
                 if sz >= 1_000_000 {
                     format!("{:.1} এমবি", sz as f64 / 1e6)
                 } else {
-                    format!("{} কেবি", to_bengali_digits(&((sz / 1024).max(1)).to_string()))
+                    format!(
+                        "{} কেবি",
+                        to_bengali_digits(&((sz / 1024).max(1)).to_string())
+                    )
                 }
             };
             out.push((name, meta, is_dir));
@@ -2362,16 +2372,27 @@ impl SimState {
                 .map(|e| e.path())
                 .filter(|p| {
                     matches!(
-                        p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase().as_str(),
+                        p.extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase()
+                            .as_str(),
                         "mp3" | "wav" | "flac" | "ogg" | "m4a"
                     )
                 })
                 .collect();
             files.sort();
             for f in files {
-                let name = f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                let name = f
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
                 let secs = fs::metadata(&f).map(|m| m.len() / 32000).unwrap_or(0);
-                let dur = format!("{}:{:02}", to_bengali_digits(&(secs / 60).to_string()), to_bengali_digits(&format!("{:02}", secs % 60)));
+                let dur = format!(
+                    "{}:{:02}",
+                    to_bengali_digits(&(secs / 60).to_string()),
+                    to_bengali_digits(&format!("{:02}", secs % 60))
+                );
                 out.push((name, dur));
             }
         }
@@ -2389,7 +2410,11 @@ impl SimState {
             out.push((p.clone(), "স্বাক্ষরিত .nilax".into(), "খুলুন".into()));
         }
         if out.is_empty() {
-            for p in ["org.onuron.notes", "org.onuron.calculator", "org.onuron.music"] {
+            for p in [
+                "org.onuron.notes",
+                "org.onuron.calculator",
+                "org.onuron.music",
+            ] {
                 out.push((p.into(), "বিল্ট-ইন আ্যাপ".into(), "খুলুন".into()));
             }
         }
@@ -2529,7 +2554,12 @@ impl SimState {
         };
         let b = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
         let u = |k: &str, d: u64| v.get(k).and_then(|x| x.as_u64()).unwrap_or(d);
-        let s = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).map(|x| x.to_string()).unwrap_or_else(|| d.to_string());
+        let s = |k: &str, d: &str| {
+            v.get(k)
+                .and_then(|x| x.as_str())
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| d.to_string())
+        };
 
         self.theme_mode = u("theme_mode", self.theme_mode as u64) as u8;
         self.brightness_level = u("brightness", self.brightness_level as u64) as u8;
@@ -8236,7 +8266,9 @@ fn paint_screen(mut painter: &mut FramePainter, state: &SimState) {
         Screen::SettingsBattery => screens::render_settings_battery(&mut painter, &state),
         Screen::SettingsStorage => screens::render_settings_storage(&mut painter, &state),
         Screen::SettingsLanguage => screens::render_settings_language(&mut painter, &state),
-        Screen::SettingsAccessibility => screens::render_settings_accessibility(&mut painter, &state),
+        Screen::SettingsAccessibility => {
+            screens::render_settings_accessibility(&mut painter, &state)
+        }
         Screen::SettingsVpn => screens::render_settings_vpn(&mut painter, &state),
         Screen::SettingsBackup => screens::render_settings_backup(&mut painter, &state),
         Screen::SettingsUpdate => screens::render_settings_update(&mut painter, &state),
@@ -8267,7 +8299,13 @@ fn paint_screen(mut painter: &mut FramePainter, state: &SimState) {
     // Invisible edge gestures: left edge = back, bottom edge = home. They are
     // registered last so screen content always wins the hit test.
     painter.register_button(0, 40, 14, (SCREEN_HEIGHT as u16) - 60, "gesture:back");
-    painter.register_button(0, (SCREEN_HEIGHT as i16) - 8, SCREEN_WIDTH as u16, 8, "gesture:home");
+    painter.register_button(
+        0,
+        (SCREEN_HEIGHT as i16) - 8,
+        SCREEN_WIDTH as u16,
+        8,
+        "gesture:home",
+    );
 
     if state.toast_ticks > 0 && !state.toast_msg.is_empty() {
         let th = get_theme(state.dark_mode);
@@ -8276,7 +8314,15 @@ fn paint_screen(mut painter: &mut FramePainter, state: &SimState) {
         let x = (SCREEN_WIDTH as i16 - w as i16) / 2;
         let y = SCREEN_HEIGHT as i16 - 150;
         painter.fill_rounded_rect(x, y, w, 36, 18, th.surface_alt);
-        painter.draw_text_ex(x + 18, y + 10, 12.5, &state.toast_msg, th.text_high, false, false);
+        painter.draw_text_ex(
+            x + 18,
+            y + 10,
+            12.5,
+            &state.toast_msg,
+            th.text_high,
+            false,
+            false,
+        );
     }
 }
 
@@ -8443,7 +8489,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_app_phone(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -8455,7 +8507,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_app_phone(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -8475,7 +8533,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_app_notes(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -8488,7 +8552,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_home(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -8501,7 +8571,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_app_android(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -8513,7 +8589,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_app_browser(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -8528,7 +8610,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_control_center(&mut p, &state);
             render_status_bar(&mut p, &state);
         }
@@ -8539,7 +8627,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_recents(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -8552,7 +8646,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_lockscreen(&mut p, &state);
             render_status_bar(&mut p, &state);
         }
@@ -8564,7 +8664,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_lockscreen(&mut p, &state);
             render_status_bar(&mut p, &state);
         }
@@ -8575,7 +8681,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_app_calculator(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -8587,7 +8699,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_app_settings(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -8600,7 +8718,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+            let mut p = FramePainter::new(
+                &mut buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                &fonts,
+                state.dark_mode,
+            );
             render_control_center(&mut p, &state);
             render_status_bar(&mut p, &state);
         }
@@ -9169,7 +9293,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let th_bg = get_theme(state.dark_mode).bg;
         buffer.fill(th_bg);
 
-        let mut painter = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
+        let mut painter = FramePainter::new(
+            &mut buffer,
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            &fonts,
+            state.dark_mode,
+        );
 
         paint_screen(&mut painter, &state);
 
@@ -9411,11 +9541,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     } else if id == "disp_bright_slider" {
                         let card_w = ((SCREEN_WIDTH as i16) - 48).max(1) as u32;
-                        let ratio = (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(15, 100);
+                        let ratio =
+                            (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(15, 100);
                         state.brightness_level = ratio as u8;
                     } else if id == "disp_font_slider" {
                         let card_w = ((SCREEN_WIDTH as i16) - 48).max(1) as u32;
-                        let ratio = (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(25, 150);
+                        let ratio =
+                            (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(25, 150);
                         state.font_size_pct = ratio as u8;
                     } else if id == "theme_light" {
                         state.dark_mode = false;
@@ -10477,10 +10609,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // button when that path has not created a sandbox yet.
             if let Some(pkg_id) = active_android_pkg.as_deref() {
                 if !android_sandboxes.contains_key(pkg_id) {
-                    if let Some(app) = state
-                        .android_store_apps
-                        .iter()
-                        .find(|a| a.pkg_id == pkg_id)
+                    if let Some(app) = state.android_store_apps.iter().find(|a| a.pkg_id == pkg_id)
                     {
                         let sandbox_dir = state
                             .storage_root
@@ -10596,7 +10725,11 @@ fn run_selftest() -> i32 {
     };
 
     let storage = ensure_nilos_storage().0;
-    let notes_path = storage.join("home").join("joy").join("Documents").join("notes.json");
+    let notes_path = storage
+        .join("home")
+        .join("joy")
+        .join("Documents")
+        .join("notes.json");
     let prefs_path = storage.join("etc").join("prefs.json");
     let notes_before = fs::read(&notes_path).ok();
     let prefs_before = fs::read(&prefs_path).ok();
@@ -10693,11 +10826,17 @@ fn run_selftest() -> i32 {
     for d in ['9', '9', '9', '9'] {
         apps_mod_handle(&mut st, &format!("pin_{}", digit_index(d)));
     }
-    check("wrong PIN rejected", st.lock_error && st.screen == Screen::Lockscreen);
+    check(
+        "wrong PIN rejected",
+        st.lock_error && st.screen == Screen::Lockscreen,
+    );
     for d in ['1', '2', '3', '4'] {
         apps_mod_handle(&mut st, &format!("pin_{}", digit_index(d)));
     }
-    check("correct PIN unlocks", st.screen == Screen::Home && !st.lock_error);
+    check(
+        "correct PIN unlocks",
+        st.screen == Screen::Home && !st.lock_error,
+    );
 
     // Salted PIN record: no plaintext on disk, verification still works.
     st.set_pin("2468");
@@ -10730,7 +10869,10 @@ fn run_selftest() -> i32 {
 
     // Update check reaches a verdict
     apps_mod_handle(&mut st, "update:check");
-    check("update check reports a status", !st.update_status.is_empty());
+    check(
+        "update check reports a status",
+        !st.update_status.is_empty(),
+    );
 
     // Toast must expire on its own (it used to stick to every screen).
     st.toast("পরীক্ষা");
@@ -10744,7 +10886,10 @@ fn run_selftest() -> i32 {
     let max_scroll = screens::settings_max_scroll();
     st.scroll_y = 9999;
     let clamped = st.scroll_y.clamp(0, max_scroll);
-    check("settings list scrolls (11 rows)", max_scroll > 0 && clamped == max_scroll);
+    check(
+        "settings list scrolls (11 rows)",
+        max_scroll > 0 && clamped == max_scroll,
+    );
     st.scroll_y = 0;
 
     // Every sound slider responds, not just media.

@@ -7,9 +7,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 mod activate;
+mod fscrypt;
 mod recovery;
 mod supervisor;
-mod fscrypt;
 use activate::SocketActivationManager;
 use recovery::BootDecision;
 use supervisor::{ServiceSpec, Supervisor};
@@ -387,7 +387,10 @@ fn load_fscrypt_key() {
     let policy = match fs::read_to_string(policy_path) {
         Ok(p) => p,
         Err(e) => {
-            log_info(&format!("fscrypt policy not found at {}: {}", policy_path, e));
+            log_info(&format!(
+                "fscrypt policy not found at {}: {}",
+                policy_path, e
+            ));
             return;
         }
     };
@@ -695,11 +698,20 @@ fn main() {
     // existence via supervisor.check_core_health instead.
     let readiness_probes: [(&str, Option<&std::path::Path>); 6] = [
         ("nild", Some(std::path::Path::new("/run/onuron/ready/nild"))),
-        ("nilkeyd", Some(std::path::Path::new("/run/nilos/keyd.sock"))),
+        (
+            "nilkeyd",
+            Some(std::path::Path::new("/run/nilos/keyd.sock")),
+        ),
         ("nilbus", Some(std::path::Path::new("/run/nilos/bus.sock"))),
         ("netd", Some(std::path::Path::new("/run/onuron/net.sock"))),
-        ("audiod", Some(std::path::Path::new("/run/onuron/audio.sock"))),
-        ("powerd", Some(std::path::Path::new("/run/onuron/power.sock"))),
+        (
+            "audiod",
+            Some(std::path::Path::new("/run/onuron/audio.sock")),
+        ),
+        (
+            "powerd",
+            Some(std::path::Path::new("/run/onuron/power.sock")),
+        ),
     ];
 
     // Bounded retry loop for readiness checks

@@ -1,7 +1,7 @@
 // apps/notes/src/main.rs — OnuronOS NilLang Notes
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -96,31 +96,55 @@ pub fn view(state: &NotesState) -> Element {
     let palette = Palette::dark();
 
     let q = state.search_query.to_lowercase();
-    let filtered: Vec<&Note> = state.notes.iter().filter(|n| {
-        q.is_empty() || n.title.to_lowercase().contains(&q) || n.content.to_lowercase().contains(&q)
-    }).collect();
+    let filtered: Vec<&Note> = state
+        .notes
+        .iter()
+        .filter(|n| {
+            q.is_empty()
+                || n.title.to_lowercase().contains(&q)
+                || n.content.to_lowercase().contains(&q)
+        })
+        .collect();
 
-    let mut children = vec![
-        Element::Text { content: "📝 NilLang Notes".to_string() },
-    ];
+    let mut children = vec![Element::Text {
+        content: "📝 NilLang Notes".to_string(),
+    }];
 
     if !state.new_title.trim().is_empty() {
-        children.push(Element::Text { content: "✏️ নতুন নোট সংরক্ষণ করুন".to_string() });
-        children.push(Element::Text { content: state.new_title.clone() });
-        children.push(Element::Text { content: state.new_content.clone() });
+        children.push(Element::Text {
+            content: "✏️ নতুন নোট সংরক্ষণ করুন".to_string(),
+        });
+        children.push(Element::Text {
+            content: state.new_title.clone(),
+        });
+        children.push(Element::Text {
+            content: state.new_content.clone(),
+        });
         children.push(Element::Row {
             children: vec![
-                Element::Button { label: "💾 সংরক্ষণ".into(), on_click_id: 2 },
-                Element::Button { label: "❌ বাতিল".into(), on_click_id: 3 },
+                Element::Button {
+                    label: "💾 সংরক্ষণ".into(),
+                    on_click_id: 2,
+                },
+                Element::Button {
+                    label: "❌ বাতিল".into(),
+                    on_click_id: 3,
+                },
             ],
         });
     } else {
-        children.push(Element::Text { content: format!("নোট {}: {}", state.notes.len(), "")});
+        children.push(Element::Text {
+            content: format!("নোট {}: {}", state.notes.len(), ""),
+        });
         for note in &filtered {
             children.push(Element::Row {
                 children: vec![
-                    Element::Text { content: format!("📄 {}", note.title) },
-                    Element::Text { content: format!("  {}", note.created) },
+                    Element::Text {
+                        content: format!("📄 {}", note.title),
+                    },
+                    Element::Text {
+                        content: format!("  {}", note.created),
+                    },
                 ],
             });
         }

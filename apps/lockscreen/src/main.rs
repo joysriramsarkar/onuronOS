@@ -1,7 +1,7 @@
 // apps/lockscreen/src/main.rs — OnuronOS PIN & Swipe-to-Unlock Lockscreen
 // Uses the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -31,7 +31,9 @@ pub fn update(state: &mut LockscreenState, ev: Ev) {
     match ev {
         Ev::Click(d) if d <= 9 => {
             if state.entered_pin.len() < 8 {
-                state.entered_pin.push(char::from_digit(d, 10).unwrap_or('0'));
+                state
+                    .entered_pin
+                    .push(char::from_digit(d, 10).unwrap_or('0'));
             }
         }
         Ev::Click(10) => {
@@ -56,9 +58,22 @@ pub fn update(state: &mut LockscreenState, ev: Ev) {
     }
 }
 
-fn view_pin_row(state: &LockscreenState, ds: &DesignSystem, palette: Palette, start_num: u32) -> Element {
-    let bg = if palette.dark_bg == 0xFF1E1236 { palette.dark_card } else { palette.light_card };
-    let text_color = if palette.dark_bg == 0xFF1E1236 { palette.dark_text } else { palette.light_text };
+fn view_pin_row(
+    state: &LockscreenState,
+    ds: &DesignSystem,
+    palette: Palette,
+    start_num: u32,
+) -> Element {
+    let bg = if palette.dark_bg == 0xFF1E1236 {
+        palette.dark_card
+    } else {
+        palette.light_card
+    };
+    let text_color = if palette.dark_bg == 0xFF1E1236 {
+        palette.dark_text
+    } else {
+        palette.light_text
+    };
 
     Element::Row {
         children: vec![
@@ -100,9 +115,7 @@ pub fn view(state: &LockscreenState) -> Element {
             Element::Text {
                 content: "OnuronOS Lockscreen".into(),
             },
-            Element::Text {
-                content: status,
-            },
+            Element::Text { content: status },
             Element::Text {
                 content: format!("PIN: [{}]", masked),
             },

@@ -1,7 +1,7 @@
 // apps/sysupdate/src/main.rs — OnuronOS System Update
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -50,13 +50,25 @@ pub fn view(state: &UpdateState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: "🔄 System Update".to_string() },
-            Element::Text { content: format!("Current Version: {}", state.current_version) },
-            Element::Text { content: state.status.clone() },
+            Element::Text {
+                content: "🔄 System Update".to_string(),
+            },
+            Element::Text {
+                content: format!("Current Version: {}", state.current_version),
+            },
+            Element::Text {
+                content: state.status.clone(),
+            },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "🔄 চেক আপডেট".into(), on_click_id: 1 },
-                    Element::Button { label: "⬇️ ডাউনলোড".into(), on_click_id: 2 },
+                    Element::Button {
+                        label: "🔄 চেক আপডেট".into(),
+                        on_click_id: 1,
+                    },
+                    Element::Button {
+                        label: "⬇️ ডাউনলোড".into(),
+                        on_click_id: 2,
+                    },
                 ],
             },
         ],

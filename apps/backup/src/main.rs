@@ -1,7 +1,7 @@
 // apps/backup/src/main.rs — OnuronOS Backup Manager
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -27,7 +27,11 @@ pub fn update(state: &mut BackupState, ev: Ev) {
     match ev {
         Ev::Click(1) => {
             state.auto_backup = !state.auto_backup;
-            state.status = if state.auto_backup { "Auto Backup ON".to_string() } else { "Auto Backup OFF".to_string() };
+            state.status = if state.auto_backup {
+                "Auto Backup ON".to_string()
+            } else {
+                "Auto Backup OFF".to_string()
+            };
         }
         Ev::Click(2) => {
             state.last_backup = "Now".to_string();
@@ -43,14 +47,31 @@ pub fn view(state: &BackupState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: "💾 Backup".to_string() },
-            Element::Text { content: format!("Last Backup: {}", state.last_backup) },
-            Element::Text { content: format!("Storage Used: {}", state.storage_used) },
-            Element::Text { content: format!("Auto Backup: {}", if state.auto_backup { "ON" } else { "OFF" }) },
+            Element::Text {
+                content: "💾 Backup".to_string(),
+            },
+            Element::Text {
+                content: format!("Last Backup: {}", state.last_backup),
+            },
+            Element::Text {
+                content: format!("Storage Used: {}", state.storage_used),
+            },
+            Element::Text {
+                content: format!(
+                    "Auto Backup: {}",
+                    if state.auto_backup { "ON" } else { "OFF" }
+                ),
+            },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "🔄 Backup Now".into(), on_click_id: 2 },
-                    Element::Button { label: "⚙️ Auto Backup".into(), on_click_id: 1 },
+                    Element::Button {
+                        label: "🔄 Backup Now".into(),
+                        on_click_id: 2,
+                    },
+                    Element::Button {
+                        label: "⚙️ Auto Backup".into(),
+                        on_click_id: 1,
+                    },
                 ],
             },
         ],

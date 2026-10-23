@@ -1,7 +1,7 @@
 // apps/animdemo/src/main.rs — 120Hz Spring Animation & Fling Physics Engine
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev, FlingDecay, SpringConfig, SpringState};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev, FlingDecay, SpringConfig, SpringState};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -60,7 +60,12 @@ pub fn view(state: &AnimState) -> Element {
                 content: format!("Animated Spring: {:.2}", state.position),
             },
             Element::Button {
-                label: if state.target >= 100.0 { "◀ Animate Left" } else { "Animate Right ▶" }.into(),
+                label: if state.target >= 100.0 {
+                    "◀ Animate Left"
+                } else {
+                    "Animate Right ▶"
+                }
+                .into(),
                 on_click_id: 1,
             },
             Element::Text {

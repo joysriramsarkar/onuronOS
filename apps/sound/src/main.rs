@@ -1,7 +1,7 @@
 // apps/sound/src/main.rs — OnuronOS Sound & Audio Manager
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -64,12 +64,24 @@ pub fn view(state: &SoundState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: "🔊 Sound".to_string() },
-            Element::Text { content: format!("🔔 Ringtone: {}", state.ringtone) },
-            Element::Text { content: format!("📢 Ringtone Volume: {}%", state.ringtone_volume) },
-            Element::Text { content: format!("🎵 Media Volume: {}%", state.media_volume) },
-            Element::Text { content: format!("⏰ Alarm Volume: {}%", state.alarm_volume) },
-            Element::Text { content: format!("📳 Haptics: {}", if state.haptics { "ON" } else { "OFF" }) },
+            Element::Text {
+                content: "🔊 Sound".to_string(),
+            },
+            Element::Text {
+                content: format!("🔔 Ringtone: {}", state.ringtone),
+            },
+            Element::Text {
+                content: format!("📢 Ringtone Volume: {}%", state.ringtone_volume),
+            },
+            Element::Text {
+                content: format!("🎵 Media Volume: {}%", state.media_volume),
+            },
+            Element::Text {
+                content: format!("⏰ Alarm Volume: {}%", state.alarm_volume),
+            },
+            Element::Text {
+                content: format!("📳 Haptics: {}", if state.haptics { "ON" } else { "OFF" }),
+            },
         ],
     }
 }

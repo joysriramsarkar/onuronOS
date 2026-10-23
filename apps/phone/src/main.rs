@@ -1,7 +1,7 @@
 // apps/phone/src/main.rs — OnuronOS Phone & Dialer
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -51,40 +51,82 @@ pub fn view(state: &PhoneState) -> Element {
     let masked = if state.entered.len() <= 4 {
         "*".repeat(state.entered.len())
     } else {
-        format!("{}...", &state.entered[..state.entered.len()-4])
+        format!("{}...", &state.entered[..state.entered.len() - 4])
     };
 
     Element::Column {
         children: vec![
-            Element::Text { content: format!("📞 ফোন ({})", state.mode) },
-            Element::Text { content: format!("📞 [{}]", masked) },
-            Element::Text { content: format!("📞 ফোন নম্বর: {}", state.contact) },
+            Element::Text {
+                content: format!("📞 ফোন ({})", state.mode),
+            },
+            Element::Text {
+                content: format!("📞 [{}]", masked),
+            },
+            Element::Text {
+                content: format!("📞 ফোন নম্বর: {}", state.contact),
+            },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "1".into(), on_click_id: 1 },
-                    Element::Button { label: "2".into(), on_click_id: 2 },
-                    Element::Button { label: "3".into(), on_click_id: 3 },
+                    Element::Button {
+                        label: "1".into(),
+                        on_click_id: 1,
+                    },
+                    Element::Button {
+                        label: "2".into(),
+                        on_click_id: 2,
+                    },
+                    Element::Button {
+                        label: "3".into(),
+                        on_click_id: 3,
+                    },
                 ],
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "4".into(), on_click_id: 4 },
-                    Element::Button { label: "5".into(), on_click_id: 5 },
-                    Element::Button { label: "6".into(), on_click_id: 6 },
+                    Element::Button {
+                        label: "4".into(),
+                        on_click_id: 4,
+                    },
+                    Element::Button {
+                        label: "5".into(),
+                        on_click_id: 5,
+                    },
+                    Element::Button {
+                        label: "6".into(),
+                        on_click_id: 6,
+                    },
                 ],
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "7".into(), on_click_id: 7 },
-                    Element::Button { label: "8".into(), on_click_id: 8 },
-                    Element::Button { label: "9".into(), on_click_id: 9 },
+                    Element::Button {
+                        label: "7".into(),
+                        on_click_id: 7,
+                    },
+                    Element::Button {
+                        label: "8".into(),
+                        on_click_id: 8,
+                    },
+                    Element::Button {
+                        label: "9".into(),
+                        on_click_id: 9,
+                    },
                 ],
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "Clear".into(), on_click_id: 10 },
-                    Element::Button { label: "0".into(), on_click_id: 13 },
-                    Element::Button { label: "Dial".into(), on_click_id: 11 },
+                    Element::Button {
+                        label: "Clear".into(),
+                        on_click_id: 10,
+                    },
+                    Element::Button {
+                        label: "0".into(),
+                        on_click_id: 13,
+                    },
+                    Element::Button {
+                        label: "Dial".into(),
+                        on_click_id: 11,
+                    },
                 ],
             },
         ],

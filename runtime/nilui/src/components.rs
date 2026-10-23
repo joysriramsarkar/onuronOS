@@ -3,7 +3,7 @@
 // Mirrors screen structure from the design folder (PNG) and PDF (same content).
 
 use crate::design::DesignSystem;
-use crate::{Element};
+use crate::Element;
 
 /// Status bar: time + network + date
 pub struct StatusBar<'a> {
@@ -22,18 +22,16 @@ impl<'a> StatusBar<'a> {
         };
 
         Element::Column {
-            children: vec![
-                Element::Row {
-                    children: vec![
-                        Element::Text {
-                            content: self.time.to_string(),
-                        },
-                        Element::Text {
-                            content: format!("  {}  {}", self.network, self.date),
-                        },
-                    ],
-                },
-            ],
+            children: vec![Element::Row {
+                children: vec![
+                    Element::Text {
+                        content: self.time.to_string(),
+                    },
+                    Element::Text {
+                        content: format!("  {}  {}", self.network, self.date),
+                    },
+                ],
+            }],
         }
     }
 }
@@ -68,9 +66,7 @@ impl AppCard {
             });
         }
 
-        Element::Column {
-            children,
-        }
+        Element::Column { children }
     }
 }
 

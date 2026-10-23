@@ -1,7 +1,7 @@
 // apps/wifi/src/main.rs — OnuronOS WiFi Manager
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -26,9 +26,24 @@ impl Default for WifiState {
         Self {
             enabled: true,
             networks: vec![
-                WifiNetwork { ssid: "Home Network".to_string(), status: "সংযুক্ত · সুরক্ষিত".to_string().to_string(), security: "WPA3".to_string().to_string(), hidden: false },
-                WifiNetwork { ssid: "ক্যাফে-ফ্রি".to_string(), status: "খোলা".to_string(), security: "Open".to_string(), hidden: false },
-                WifiNetwork { ssid: "প্রতিবেশী-নেট".to_string(), status: "সুরক্ষিত".to_string(), security: "WPA2".to_string(), hidden: true },
+                WifiNetwork {
+                    ssid: "Home Network".to_string(),
+                    status: "সংযুক্ত · সুরক্ষিত".to_string().to_string(),
+                    security: "WPA3".to_string().to_string(),
+                    hidden: false,
+                },
+                WifiNetwork {
+                    ssid: "ক্যাফে-ফ্রি".to_string(),
+                    status: "খোলা".to_string(),
+                    security: "Open".to_string(),
+                    hidden: false,
+                },
+                WifiNetwork {
+                    ssid: "প্রতিবেশী-নেট".to_string(),
+                    status: "সুরক্ষিত".to_string(),
+                    security: "WPA2".to_string(),
+                    hidden: true,
+                },
             ],
             selected: None,
             status: "WiFi disabled".to_string(),
@@ -65,23 +80,54 @@ pub fn view(state: &WifiState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: "📶 WiFi".to_string() },
             Element::Text {
-                content: format!("WiFi: {}", if state.enabled { "Enabled" } else { "Disabled" }),
+                content: "📶 WiFi".to_string(),
+            },
+            Element::Text {
+                content: format!(
+                    "WiFi: {}",
+                    if state.enabled { "Enabled" } else { "Disabled" }
+                ),
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "🔍 স্ক্যান".into(), on_click_id: 5 },
-                    Element::Button { label: "📶 নেটওয়ার্ক".into(), on_click_id: 1 },
+                    Element::Button {
+                        label: "🔍 স্ক্যান".into(),
+                        on_click_id: 5,
+                    },
+                    Element::Button {
+                        label: "📶 নেটওয়ার্ক".into(),
+                        on_click_id: 1,
+                    },
                 ],
             },
-            Element::Text { content: "হোম নেটওয়ার্ক".to_string() },
             Element::Text {
-                content: format!("📡 {}-{}", if state.enabled { "সংযুক্ত" } else { "খোলা" }, if state.enabled { "সুরক্ষিত" } else { "খোলা" }),
+                content: "হোম নেটওয়ার্ক".to_string(),
             },
-            Element::Text { content: "✓ সুরক্ষিত".to_string() },
-            Element::Text { content: "✓ প্রতিবেশী-নেট".to_string() },
-            Element::Text { content: "✓ ক্যাফে-ফ্রি".to_string() },
+            Element::Text {
+                content: format!(
+                    "📡 {}-{}",
+                    if state.enabled {
+                        "সংযুক্ত"
+                    } else {
+                        "খোলা"
+                    },
+                    if state.enabled {
+                        "সুরক্ষিত"
+                    } else {
+                        "খোলা"
+                    }
+                ),
+            },
+            Element::Text {
+                content: "✓ সুরক্ষিত".to_string(),
+            },
+            Element::Text {
+                content: "✓ প্রতিবেশী-নেট".to_string(),
+            },
+            Element::Text {
+                content: "✓ ক্যাফে-ফ্রি".to_string(),
+            },
         ],
     }
 }

@@ -1,7 +1,7 @@
 // apps/calculator/src/main.rs — OnuronOS Alap Calculator
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::Palette;
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -31,7 +31,11 @@ pub fn calculate(a: f64, b: f64, op: char) -> f64 {
         '-' => a - b,
         '*' => a * b,
         '/' => {
-            if b == 0.0 { f64::NAN } else { a / b }
+            if b == 0.0 {
+                f64::NAN
+            } else {
+                a / b
+            }
         }
         _ => b,
     }
@@ -47,7 +51,8 @@ pub fn update(state: &mut CalcState, ev: Ev) {
                 state.display.push_str(&d.to_string());
             }
         }
-        Ev::Click(46) => {  // '.'
+        Ev::Click(46) => {
+            // '.'
             if !state.display.contains('.') {
                 if state.waiting_for_operand {
                     state.display = "0.".to_string();
@@ -57,7 +62,8 @@ pub fn update(state: &mut CalcState, ev: Ev) {
                 }
             }
         }
-        Ev::Click(43) | Ev::Click(45) | Ev::Click(42) | Ev::Click(47) => {  // + - * /
+        Ev::Click(43) | Ev::Click(45) | Ev::Click(42) | Ev::Click(47) => {
+            // + - * /
             let op = match ev {
                 Ev::Click(43) => '+',
                 Ev::Click(45) => '-',
@@ -67,7 +73,8 @@ pub fn update(state: &mut CalcState, ev: Ev) {
             };
             if let Ok(val) = state.display.parse::<f64>() {
                 if let Some(op) = state.operation {
-                    let result = calculate(state.prev_operand, state.display.parse().unwrap_or(0.0), op);
+                    let result =
+                        calculate(state.prev_operand, state.display.parse().unwrap_or(0.0), op);
                     if result.is_nan() {
                         state.display = "Error".to_string();
                     } else {
@@ -82,11 +89,16 @@ pub fn update(state: &mut CalcState, ev: Ev) {
                 }
             }
         }
-        Ev::Click(61) => {  // '='
+        Ev::Click(61) => {
+            // '='
             if let Some(op) = state.operation {
                 if let Ok(val) = state.display.parse::<f64>() {
                     let result = calculate(state.prev_operand, val, op);
-                    state.display = if result.is_nan() { "Error".to_string() } else { result.to_string() };
+                    state.display = if result.is_nan() {
+                        "Error".to_string()
+                    } else {
+                        result.to_string()
+                    };
                     state.expression = format!("{} = {}", state.expression, result);
                     state.prev_operand = result;
                 }
@@ -94,17 +106,21 @@ pub fn update(state: &mut CalcState, ev: Ev) {
             state.operation = None;
             state.waiting_for_operand = true;
         }
-        Ev::Click(67) => {  // 'C'
+        Ev::Click(67) => {
+            // 'C'
             state.display = "0".to_string();
             state.expression.clear();
             state.prev_operand = 0.0;
             state.operation = None;
             state.waiting_for_operand = true;
         }
-        Ev::Click(8324) => {  // ⌫
+        Ev::Click(8324) => {
+            // ⌫
             if !state.waiting_for_operand {
                 state.display.pop();
-                if state.display.is_empty() { state.display = "0".into(); }
+                if state.display.is_empty() {
+                    state.display = "0".into();
+                }
             }
         }
         _ => {}
@@ -121,8 +137,12 @@ pub fn view(state: &CalcState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: state.expression.clone() },
-            Element::Text { content: state.display.clone() },
+            Element::Text {
+                content: state.expression.clone(),
+            },
+            Element::Text {
+                content: state.display.clone(),
+            },
             Element::Row {
                 children: vec![
                     button('C', 100),
@@ -156,10 +176,7 @@ pub fn view(state: &CalcState) -> Element {
                 ],
             },
             Element::Row {
-                children: vec![
-                    button('0', 116),
-                    button('.', 117),
-                ],
+                children: vec![button('0', 116), button('.', 117)],
             },
         ],
     }

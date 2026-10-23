@@ -1,7 +1,7 @@
 // apps/camera/src/main.rs — OnuronOS Camera Viewfinder
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -28,7 +28,11 @@ impl Default for CameraState {
 pub fn update(state: &mut CameraState, ev: Ev) {
     match ev {
         Ev::Click(1) => {
-            state.facing = if state.facing == "back" { "front".to_string() } else { "back".to_string() };
+            state.facing = if state.facing == "back" {
+                "front".to_string()
+            } else {
+                "back".to_string()
+            };
         }
         Ev::Click(2) => {
             state.torch = !state.torch;
@@ -67,9 +71,18 @@ pub fn view(state: &CameraState) -> Element {
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "📸 Capture".into(), on_click_id: 5 },
-                    Element::Button { label: "🔄 Flip".into(), on_click_id: 1 },
-                    Element::Button { label: "🔦 Torch".into(), on_click_id: 2 },
+                    Element::Button {
+                        label: "📸 Capture".into(),
+                        on_click_id: 5,
+                    },
+                    Element::Button {
+                        label: "🔄 Flip".into(),
+                        on_click_id: 1,
+                    },
+                    Element::Button {
+                        label: "🔦 Torch".into(),
+                        on_click_id: 2,
+                    },
                 ],
             },
         ],

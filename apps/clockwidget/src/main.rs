@@ -1,7 +1,7 @@
 // apps/clockwidget/src/main.rs — OnuronOS Live Clock & Stopwatch Widget
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -85,8 +85,14 @@ pub fn view(state: &ClockState) -> Element {
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "24h".into(), on_click_id: 1 },
-                    Element::Button { label: "Stopwatch".into(), on_click_id: 2 },
+                    Element::Button {
+                        label: "24h".into(),
+                        on_click_id: 1,
+                    },
+                    Element::Button {
+                        label: "Stopwatch".into(),
+                        on_click_id: 2,
+                    },
                 ],
             },
         ],

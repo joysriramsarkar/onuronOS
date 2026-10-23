@@ -1,7 +1,7 @@
 // apps/messages/src/main.rs — OnuronOS Encrypted SMS
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -24,12 +24,42 @@ impl Default for MessagesState {
     fn default() -> Self {
         Self {
             messages: vec![
-                Message { contact: "সুমিত্রা".to_string(), time: "06:40".to_string(), text: "ছবিগুলো পাঠিয়ে দিলাম".to_string(), new: true },
-                Message { contact: "মা".to_string(), time: "05:15".to_string(), text: "খেয়ে নিস, রাত হয়ে গেছে".to_string(), new: true },
-                Message { contact: "রাজদীপ".to_string(), time: "গতকাল".to_string(), text: "ঠিক আছে, দেখা হবে".to_string(), new: false },
-                Message { contact: "তনুশ্রী".to_string(), time: "গতকাল".to_string(), text: "ধন্যবাদ!".to_string(), new: false },
-                Message { contact: "সুমিত্রা".to_string(), time: "০৭:১২".to_string(), text: "কালকের মিটিং কটায়?".to_string(), new: true },
-                Message { contact: "মা".to_string(), time: "১৪:০০".to_string(), text: "সকাল".to_string(), new: false },
+                Message {
+                    contact: "সুমিত্রা".to_string(),
+                    time: "06:40".to_string(),
+                    text: "ছবিগুলো পাঠিয়ে দিলাম".to_string(),
+                    new: true,
+                },
+                Message {
+                    contact: "মা".to_string(),
+                    time: "05:15".to_string(),
+                    text: "খেয়ে নিস, রাত হয়ে গেছে".to_string(),
+                    new: true,
+                },
+                Message {
+                    contact: "রাজদীপ".to_string(),
+                    time: "গতকাল".to_string(),
+                    text: "ঠিক আছে, দেখা হবে".to_string(),
+                    new: false,
+                },
+                Message {
+                    contact: "তনুশ্রী".to_string(),
+                    time: "গতকাল".to_string(),
+                    text: "ধন্যবাদ!".to_string(),
+                    new: false,
+                },
+                Message {
+                    contact: "সুমিত্রা".to_string(),
+                    time: "০৭:১২".to_string(),
+                    text: "কালকের মিটিং কটায়?".to_string(),
+                    new: true,
+                },
+                Message {
+                    contact: "মা".to_string(),
+                    time: "১৪:০০".to_string(),
+                    text: "সকাল".to_string(),
+                    new: false,
+                },
             ],
             selected_contact: Some("সুমিত্রা".to_string()),
             draft: String::new(),
@@ -79,7 +109,9 @@ pub fn view(state: &MessagesState) -> Element {
     let ds = DesignSystem::new();
     let palette = Palette::dark();
 
-    let mut list_children = vec![Element::Text { content: "বার্তা · এখন".to_string() }];
+    let mut list_children = vec![Element::Text {
+        content: "বার্তা · এখন".to_string(),
+    }];
 
     for msg in &state.messages {
         let is_selected = state.selected_contact.as_ref() == Some(&msg.contact);
@@ -101,17 +133,30 @@ pub fn view(state: &MessagesState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: "বার্তা".to_string() },
-            Element::Column { children: list_children },
+            Element::Text {
+                content: "বার্তা".to_string(),
+            },
+            Element::Column {
+                children: list_children,
+            },
             Element::Input {
                 placeholder: "একটি বার্তা লিখুন...".into(),
                 text: state.draft.clone(),
             },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "📷 ছবি যোগ করুন".into(), on_click_id: 1 },
-                    Element::Button { label: "🎤 ভয়েস মেসেজ".into(), on_click_id: 2 },
-                    Element::Button { label: "📎 ফাইল যোগ করুন".into(), on_click_id: 3 },
+                    Element::Button {
+                        label: "📷 ছবি যোগ করুন".into(),
+                        on_click_id: 1,
+                    },
+                    Element::Button {
+                        label: "🎤 ভয়েস মেসেজ".into(),
+                        on_click_id: 2,
+                    },
+                    Element::Button {
+                        label: "📎 ফাইল যোগ করুন".into(),
+                        on_click_id: 3,
+                    },
                 ],
             },
         ],

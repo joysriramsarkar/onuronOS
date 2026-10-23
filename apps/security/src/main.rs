@@ -1,7 +1,7 @@
 // apps/security/src/main.rs — OnuronOS Security & Privacy
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -62,14 +62,30 @@ pub fn view(state: &SecurityState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: "🛡️ Security".to_string() },
-            Element::Text { content: "PIN Change".to_string() },
-            Element::Text { content: "Lock Screen PIN".to_string() },
-            Element::Text { content: "Screen Lock Timeout".to_string() },
-            Element::Text { content: "Camera Permission".to_string() },
-            Element::Text { content: "Microphone Permission".to_string() },
-            Element::Text { content: "File Permission".to_string() },
-            Element::Text { content: "Data Encryption".to_string() },
+            Element::Text {
+                content: "🛡️ Security".to_string(),
+            },
+            Element::Text {
+                content: "PIN Change".to_string(),
+            },
+            Element::Text {
+                content: "Lock Screen PIN".to_string(),
+            },
+            Element::Text {
+                content: "Screen Lock Timeout".to_string(),
+            },
+            Element::Text {
+                content: "Camera Permission".to_string(),
+            },
+            Element::Text {
+                content: "Microphone Permission".to_string(),
+            },
+            Element::Text {
+                content: "File Permission".to_string(),
+            },
+            Element::Text {
+                content: "Data Encryption".to_string(),
+            },
         ],
     }
 }

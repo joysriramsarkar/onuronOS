@@ -127,7 +127,15 @@ pub fn disc(p: &mut FramePainter, cx: f32, cy: f32, r: f32, color: u32) {
 }
 
 /// Elliptical arc sampled into a polyline.
-pub fn arc_points(cx: f32, cy: f32, rx: f32, ry: f32, a0: f32, a1: f32, steps: usize) -> Vec<(f32, f32)> {
+pub fn arc_points(
+    cx: f32,
+    cy: f32,
+    rx: f32,
+    ry: f32,
+    a0: f32,
+    a1: f32,
+    steps: usize,
+) -> Vec<(f32, f32)> {
     let mut v = Vec::with_capacity(steps + 1);
     for i in 0..=steps {
         let a = a0 + (a1 - a0) * (i as f32 / steps as f32);
@@ -136,7 +144,17 @@ pub fn arc_points(cx: f32, cy: f32, rx: f32, ry: f32, a0: f32, a1: f32, steps: u
     v
 }
 
-pub fn arc(p: &mut FramePainter, cx: f32, cy: f32, rx: f32, ry: f32, a0: f32, a1: f32, w: f32, color: u32) {
+pub fn arc(
+    p: &mut FramePainter,
+    cx: f32,
+    cy: f32,
+    rx: f32,
+    ry: f32,
+    a0: f32,
+    a1: f32,
+    w: f32,
+    color: u32,
+) {
     let pts = arc_points(cx, cy, rx, ry, a0, a1, 22);
     stroke(p, &pts, w, color);
 }
@@ -157,11 +175,22 @@ pub fn rrb(p: &mut FramePainter, x: i16, y: i16, w: u16, h: u16, r: i16, color: 
     let y0 = y as f32 + 0.5;
     let x1 = (x + w as i16) as f32 - 0.5;
     let y1 = (y + h as i16) as f32 - 0.5;
-    let rad = (r as f32).min((w as f32) / 2.0).min((h as f32) / 2.0).max(0.0);
+    let rad = (r as f32)
+        .min((w as f32) / 2.0)
+        .min((h as f32) / 2.0)
+        .max(0.0);
     let pi = std::f32::consts::PI;
     let mut pts: Vec<(f32, f32)> = Vec::new();
     pts.extend(arc_points(x0 + rad, y0 + rad, rad, rad, pi, 1.5 * pi, 6));
-    pts.extend(arc_points(x1 - rad, y0 + rad, rad, rad, 1.5 * pi, 2.0 * pi, 6));
+    pts.extend(arc_points(
+        x1 - rad,
+        y0 + rad,
+        rad,
+        rad,
+        1.5 * pi,
+        2.0 * pi,
+        6,
+    ));
     pts.extend(arc_points(x1 - rad, y1 - rad, rad, rad, 0.0, 0.5 * pi, 6));
     pts.extend(arc_points(x0 + rad, y1 - rad, rad, rad, 0.5 * pi, pi, 6));
     if let Some(first) = pts.first().cloned() {
@@ -188,7 +217,15 @@ pub fn divider(p: &mut FramePainter, x: i16, y: i16, w: u16) {
 
 // ─── Text helpers ───────────────────────────────────────────────────────────
 
-pub fn text(p: &mut FramePainter, x: i16, y: i16, size: f32, s: &str, color: u32, bold: bool) -> i16 {
+pub fn text(
+    p: &mut FramePainter,
+    x: i16,
+    y: i16,
+    size: f32,
+    s: &str,
+    color: u32,
+    bold: bool,
+) -> i16 {
     p.draw_text_ex(x, y, size, s, color, bold, false)
 }
 
@@ -196,12 +233,28 @@ pub fn text_w(p: &FramePainter, size: f32, s: &str, bold: bool) -> i16 {
     p.text_w_ex(size, s, bold, false)
 }
 
-pub fn text_center(p: &mut FramePainter, cx: i16, y: i16, size: f32, s: &str, color: u32, bold: bool) {
+pub fn text_center(
+    p: &mut FramePainter,
+    cx: i16,
+    y: i16,
+    size: f32,
+    s: &str,
+    color: u32,
+    bold: bool,
+) {
     let w = text_w(p, size, s, bold);
     text(p, cx - w / 2, y, size, s, color, bold);
 }
 
-pub fn text_right(p: &mut FramePainter, right: i16, y: i16, size: f32, s: &str, color: u32, bold: bool) {
+pub fn text_right(
+    p: &mut FramePainter,
+    right: i16,
+    y: i16,
+    size: f32,
+    s: &str,
+    color: u32,
+    bold: bool,
+) {
     let w = text_w(p, size, s, bold);
     text(p, right - w, y, size, s, color, bold);
 }
@@ -252,10 +305,26 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
             circle(p, cx, cy, 9.2 * k, w, color);
             path!(&[(12.0, 2.8), (12.0, 21.2)]);
             path!(&[(2.8, 12.0), (21.2, 12.0)]);
-            let e1: Vec<(f32, f32)> = arc_points(12.0, 12.0, 4.4, 9.2, -std::f32::consts::PI / 2.0, std::f32::consts::PI / 2.0, 16);
+            let e1: Vec<(f32, f32)> = arc_points(
+                12.0,
+                12.0,
+                4.4,
+                9.2,
+                -std::f32::consts::PI / 2.0,
+                std::f32::consts::PI / 2.0,
+                16,
+            );
             let mapped: Vec<(f32, f32)> = e1.iter().map(|(x, y)| (px(*x), py(*y))).collect();
             stroke(p, &mapped, w, color);
-            let e2: Vec<(f32, f32)> = arc_points(12.0, 12.0, 4.4, 9.2, std::f32::consts::PI / 2.0, 3.0 * std::f32::consts::PI / 2.0, 16);
+            let e2: Vec<(f32, f32)> = arc_points(
+                12.0,
+                12.0,
+                4.4,
+                9.2,
+                std::f32::consts::PI / 2.0,
+                3.0 * std::f32::consts::PI / 2.0,
+                16,
+            );
             let mapped: Vec<(f32, f32)> = e2.iter().map(|(x, y)| (px(*x), py(*y))).collect();
             stroke(p, &mapped, w, color);
         }
@@ -325,7 +394,13 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
                 (4.4, 5.4),
             ]);
             circle(p, px(8.8), py(10.0), 1.7 * k, w, color);
-            path!(&[(4.4, 17.4), (9.8, 12.4), (13.8, 16.2), (16.6, 13.4), (19.4, 16.4)]);
+            path!(&[
+                (4.4, 17.4),
+                (9.8, 12.4),
+                (13.8, 16.2),
+                (16.6, 13.4),
+                (19.4, 16.4)
+            ]);
         }
         "note" => {
             path!(&[
@@ -351,12 +426,27 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
                 (5.6, 4.2),
                 (7.2, 2.6),
             ]);
-            for (gx, gy) in [(9.6, 7.2), (14.4, 7.2), (9.6, 12.0), (14.4, 12.0), (9.6, 16.8), (14.4, 16.8)] {
+            for (gx, gy) in [
+                (9.6, 7.2),
+                (14.4, 7.2),
+                (9.6, 12.0),
+                (14.4, 12.0),
+                (9.6, 16.8),
+                (14.4, 16.8),
+            ] {
                 disc(p, px(gx), py(gy), 1.15 * k, color);
             }
         }
         "cube" => {
-            path!(&[(12.0, 2.6), (20.4, 7.2), (20.4, 16.8), (12.0, 21.4), (3.6, 16.8), (3.6, 7.2), (12.0, 2.6)]);
+            path!(&[
+                (12.0, 2.6),
+                (20.4, 7.2),
+                (20.4, 16.8),
+                (12.0, 21.4),
+                (3.6, 16.8),
+                (3.6, 7.2),
+                (12.0, 2.6)
+            ]);
             path!(&[(3.6, 7.2), (12.0, 12.0), (20.4, 7.2)]);
             path!(&[(12.0, 12.0), (12.0, 21.4)]);
         }
@@ -411,7 +501,15 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
                 (3.8, 11.8),
                 (5.2, 10.4),
             ]);
-            path!(&[(8.0, 10.4), (8.0, 7.6), (9.4, 5.2), (12.0, 4.4), (14.6, 5.2), (16.0, 7.6), (16.0, 10.4)]);
+            path!(&[
+                (8.0, 10.4),
+                (8.0, 7.6),
+                (9.4, 5.2),
+                (12.0, 4.4),
+                (14.6, 5.2),
+                (16.0, 7.6),
+                (16.0, 10.4)
+            ]);
         }
         "search" => {
             circle(p, px(10.4), py(10.4), 6.8 * k, w, color);
@@ -490,7 +588,13 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
         }
         "torch" => {
             path!(&[(8.8, 3.4), (15.2, 3.4), (14.4, 8.6), (9.6, 8.6), (8.8, 3.4)]);
-            path!(&[(9.2, 8.6), (14.8, 8.6), (14.0, 20.8), (10.0, 20.8), (9.2, 8.6)]);
+            path!(&[
+                (9.2, 8.6),
+                (14.8, 8.6),
+                (14.0, 20.8),
+                (10.0, 20.8),
+                (9.2, 8.6)
+            ]);
         }
         "bell_off" => {
             path!(&[
@@ -542,7 +646,15 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
                 let x = 4.6 + i as f32 * 4.8;
                 let x0 = px(x) as i16;
                 let y0 = py(20.0 - h) as i16;
-                rr(p, x0, y0, (2.8 * k).max(2.0) as u16, (h * k) as u16, (0.8 * k) as i16, color);
+                rr(
+                    p,
+                    x0,
+                    y0,
+                    (2.8 * k).max(2.0) as u16,
+                    (h * k) as u16,
+                    (0.8 * k) as i16,
+                    color,
+                );
             }
         }
         "leaf" => {
@@ -585,22 +697,84 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
                 (2.6, 7.2),
                 (4.4, 5.4),
             ]);
-            path!(&[(4.2, 17.0), (9.6, 12.2), (13.4, 15.6), (16.0, 13.0), (19.6, 16.4)]);
+            path!(&[
+                (4.2, 17.0),
+                (9.6, 12.2),
+                (13.4, 15.6),
+                (16.0, 13.0),
+                (19.6, 16.4)
+            ]);
         }
         "play" => {
-            fill_triangle(p, [(px(8.2), py(4.6)), (px(18.6), py(12.0)), (px(8.2), py(19.4))], color);
+            fill_triangle(
+                p,
+                [
+                    (px(8.2), py(4.6)),
+                    (px(18.6), py(12.0)),
+                    (px(8.2), py(19.4)),
+                ],
+                color,
+            );
         }
         "pause" => {
-            rr(p, px(8.0) as i16, py(5.2) as i16, (3.0 * k).max(2.0) as u16, (13.6 * k) as u16, (1.0 * k) as i16, color);
-            rr(p, px(13.4) as i16, py(5.2) as i16, (3.0 * k).max(2.0) as u16, (13.6 * k) as u16, (1.0 * k) as i16, color);
+            rr(
+                p,
+                px(8.0) as i16,
+                py(5.2) as i16,
+                (3.0 * k).max(2.0) as u16,
+                (13.6 * k) as u16,
+                (1.0 * k) as i16,
+                color,
+            );
+            rr(
+                p,
+                px(13.4) as i16,
+                py(5.2) as i16,
+                (3.0 * k).max(2.0) as u16,
+                (13.6 * k) as u16,
+                (1.0 * k) as i16,
+                color,
+            );
         }
         "prev" => {
-            rr(p, px(5.4) as i16, py(5.4) as i16, (2.0 * k).max(2.0) as u16, (13.2 * k) as u16, (1.0 * k) as i16, color);
-            fill_triangle(p, [(px(18.6), py(5.4)), (px(18.6), py(18.6)), (px(8.4), py(12.0))], color);
+            rr(
+                p,
+                px(5.4) as i16,
+                py(5.4) as i16,
+                (2.0 * k).max(2.0) as u16,
+                (13.2 * k) as u16,
+                (1.0 * k) as i16,
+                color,
+            );
+            fill_triangle(
+                p,
+                [
+                    (px(18.6), py(5.4)),
+                    (px(18.6), py(18.6)),
+                    (px(8.4), py(12.0)),
+                ],
+                color,
+            );
         }
         "next" => {
-            rr(p, px(16.6) as i16, py(5.4) as i16, (2.0 * k).max(2.0) as u16, (13.2 * k) as u16, (1.0 * k) as i16, color);
-            fill_triangle(p, [(px(5.4), py(5.4)), (px(5.4), py(18.6)), (px(15.6), py(12.0))], color);
+            rr(
+                p,
+                px(16.6) as i16,
+                py(5.4) as i16,
+                (2.0 * k).max(2.0) as u16,
+                (13.2 * k) as u16,
+                (1.0 * k) as i16,
+                color,
+            );
+            fill_triangle(
+                p,
+                [
+                    (px(5.4), py(5.4)),
+                    (px(5.4), py(18.6)),
+                    (px(15.6), py(12.0)),
+                ],
+                color,
+            );
         }
         "sun" => {
             circle(p, cx, cy, 4.4 * k, w, color);
@@ -639,7 +813,14 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
             path!(&[(13.6, 3.0), (13.6, 7.0), (17.6, 7.0)]);
         }
         "bookmark" => {
-            path!(&[(6.0, 3.4), (18.0, 3.4), (18.0, 20.6), (12.0, 15.6), (6.0, 20.6), (6.0, 3.4)]);
+            path!(&[
+                (6.0, 3.4),
+                (18.0, 3.4),
+                (18.0, 20.6),
+                (12.0, 15.6),
+                (6.0, 20.6),
+                (6.0, 3.4)
+            ]);
         }
         "settings" => {
             circle(p, cx, cy, 3.6 * k, w, color);
@@ -693,7 +874,11 @@ fn fill_triangle(p: &mut FramePainter, v: [(f32, f32); 3], color: u32) {
 pub fn status_bar(p: &mut FramePainter, state: &SimState) {
     let th = t(p.dark_mode);
     let (hh, mm) = crate::get_ist_time_parts();
-    let clock = format!("{}:{}", to_bengali_digits(&format!("{:02}", hh)), to_bengali_digits(&format!("{:02}", mm)));
+    let clock = format!(
+        "{}:{}",
+        to_bengali_digits(&format!("{:02}", hh)),
+        to_bengali_digits(&format!("{:02}", mm))
+    );
     text(p, 22, 8, 15.0, &clock, th.text, true);
 
     // The status bar itself is the notification-panel handle, exactly as in the
@@ -706,13 +891,38 @@ pub fn status_bar(p: &mut FramePainter, state: &SimState) {
 
     // Right cluster: location, bluetooth, wifi, signal, battery.
     let mut x = 236.0f32;
-    icon(p, "pin", x, 19.0, 15.0, if state.location_enabled { th.text } else { th.dim });
+    icon(
+        p,
+        "pin",
+        x,
+        19.0,
+        15.0,
+        if state.location_enabled {
+            th.text
+        } else {
+            th.dim
+        },
+    );
     p.register_button((x - 9.0) as i16, 8, 18, 22, "status_location");
     x += 24.0;
-    icon(p, "bluetooth", x, 19.0, 14.0, if state.bt_enabled { th.text } else { th.dim });
+    icon(
+        p,
+        "bluetooth",
+        x,
+        19.0,
+        14.0,
+        if state.bt_enabled { th.text } else { th.dim },
+    );
     p.register_button((x - 9.0) as i16, 8, 18, 22, "status_bt");
     x += 23.0;
-    icon(p, "wifi", x, 19.5, 16.0, if state.wifi_enabled { th.text } else { th.dim });
+    icon(
+        p,
+        "wifi",
+        x,
+        19.5,
+        16.0,
+        if state.wifi_enabled { th.text } else { th.dim },
+    );
     p.register_button((x - 10.0) as i16, 8, 20, 22, "status_wifi");
     x += 21.0;
     icon(p, "signal", x + 3.0, 19.0, 16.0, th.text);
@@ -744,7 +954,14 @@ pub fn screen_title(p: &mut FramePainter, label: &str, back: Option<&str>) {
 pub fn icon_tile(p: &mut FramePainter, x: i16, y: i16, kind: &str) {
     let th = t(p.dark_mode);
     rr(p, x, y, TILE as u16, TILE as u16, TILE_R, th.tile);
-    icon(p, kind, (x + TILE / 2) as f32, (y + TILE / 2) as f32, 22.0, th.icon);
+    icon(
+        p,
+        kind,
+        (x + TILE / 2) as f32,
+        (y + TILE / 2) as f32,
+        22.0,
+        th.icon,
+    );
 }
 
 pub enum Trail<'a> {
@@ -776,8 +993,22 @@ pub fn row(
         text(p, tx, y + 37, 12.5, sub, th.med, false);
     }
     match trail {
-        Trail::Chevron => icon(p, "chevron_r", (x + w as i16) as f32 - 26.0, (y + ROW_H / 2) as f32, 14.0, th.dim),
-        Trail::Check => icon(p, "check", (x + w as i16) as f32 - 26.0, (y + ROW_H / 2) as f32, 15.0, th.text),
+        Trail::Chevron => icon(
+            p,
+            "chevron_r",
+            (x + w as i16) as f32 - 26.0,
+            (y + ROW_H / 2) as f32,
+            14.0,
+            th.dim,
+        ),
+        Trail::Check => icon(
+            p,
+            "check",
+            (x + w as i16) as f32 - 26.0,
+            (y + ROW_H / 2) as f32,
+            15.0,
+            th.text,
+        ),
         Trail::Value(v) => text_right(p, x + w as i16 - 18, y + 23, 12.5, v, th.med, false),
         Trail::None => {}
     }
@@ -855,7 +1086,14 @@ pub fn chip(p: &mut FramePainter, x: i16, y: i16, label: &str, active: bool, id:
 pub fn search_box(p: &mut FramePainter, y: i16, placeholder: &str, id: &str) {
     let th = t(p.dark_mode);
     card_full(p, y, 44);
-    icon(p, "search", (MARGIN + 26) as f32, (y + 22) as f32, 17.0, th.dim);
+    icon(
+        p,
+        "search",
+        (MARGIN + 26) as f32,
+        (y + 22) as f32,
+        17.0,
+        th.dim,
+    );
     text(p, MARGIN + 44, y + 13, 14.0, placeholder, th.med, false);
     p.register_button(MARGIN, y, CARD_W, 44, id);
 }
@@ -877,7 +1115,14 @@ pub fn fab(p: &mut FramePainter, label: &str, id: &str) {
     let x = SW - 20 - w;
     let y = SH - 40 - h as i16;
     rr(p, x, y, w as u16, h, 24, th.accent);
-    icon(p, "plus", (x + 24) as f32, (y + 24) as f32, 16.0, th.on_accent);
+    icon(
+        p,
+        "plus",
+        (x + 24) as f32,
+        (y + 24) as f32,
+        16.0,
+        th.on_accent,
+    );
     text(p, x + 40, y + 15, 14.0, label, th.on_accent, true);
     p.register_button(x, y, w as u16, h, id);
 }
@@ -914,7 +1159,15 @@ pub fn keypad_ex(
         let y = top + r * (kh as i16 + vgap);
         rr(p, x, y, kw, kh, (kh / 2) as i16, th.card);
         rrb(p, x, y, kw, kh, (kh / 2) as i16, th.border);
-        text_center(p, x + kw as i16 / 2, y + (kh as i16 - font as i16) / 2 - 2, font, keys[i as usize], th.text, true);
+        text_center(
+            p,
+            x + kw as i16 / 2,
+            y + (kh as i16 - font as i16) / 2 - 2,
+            font,
+            keys[i as usize],
+            th.text,
+            true,
+        );
         let id = format!("{}_{}", id_prefix, i);
         p.register_button(x, y, kw, kh, &id);
     }
@@ -931,7 +1184,15 @@ pub fn theme_selector(p: &mut FramePainter, y: i16, active: usize) {
         let h = 130u16;
         if i == active {
             rr(p, x, y, w as u16, h, CARD_R, th.card);
-            rrb(p, x - 1, y - 1, (w + 2) as u16, h + 2, CARD_R + 1, th.accent);
+            rrb(
+                p,
+                x - 1,
+                y - 1,
+                (w + 2) as u16,
+                h + 2,
+                CARD_R + 1,
+                th.accent,
+            );
             text_center(p, x + w / 2, y + 100, 14.0, label, th.text, true);
         } else {
             rr(p, x, y, w as u16, h, CARD_R, th.card);
@@ -959,7 +1220,6 @@ pub fn section_label(p: &mut FramePainter, y: i16, label: &str) {
     text(p, MARGIN + 4, y, 14.5, label, th.text, true);
 }
 
-
 // ─── Gesture navigation ─────────────────────────────────────────────────────
 /// Floating back / home / recents capsule. Present on every interactive screen
 /// (the lock screen and first-boot flow deliberately have none: home-from-lock
@@ -985,7 +1245,14 @@ pub fn gesture_bar(p: &mut FramePainter, state: &SimState) {
     rrb(p, x, y, w, h, 14, th.border);
 
     // Back
-    icon(p, "chevron_l", (x + 24) as f32, (y + 14) as f32, 13.0, th.med);
+    icon(
+        p,
+        "chevron_l",
+        (x + 24) as f32,
+        (y + 14) as f32,
+        13.0,
+        th.med,
+    );
     p.register_button(x, y, 52, h, "gesture:back");
 
     // Home handle

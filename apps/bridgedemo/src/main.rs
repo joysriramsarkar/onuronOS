@@ -1,7 +1,7 @@
 // apps/bridgedemo/src/main.rs — Isolated Android Bridge Client Inspector
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -61,15 +61,35 @@ pub fn view(state: &BridgeState) -> Element {
             Element::Text {
                 content: format!("Last Intent: {}", state.last_intent),
             },
-            Element::Text { content: format!("Status: {}", state.status) },
+            Element::Text {
+                content: format!("Status: {}", state.status),
+            },
             Element::Row {
                 children: vec![
-                    Element::Button { label: "View".into(), on_click_id: 1 },
-                    Element::Button { label: "Edit".into(), on_click_id: 2 },
-                    Element::Button { label: "Send".into(), on_click_id: 3 },
-                    Element::Button { label: "Pick".into(), on_click_id: 4 },
-                    Element::Button { label: "Get Content".into(), on_click_id: 5 },
-                    Element::Button { label: "Search".into(), on_click_id: 6 },
+                    Element::Button {
+                        label: "View".into(),
+                        on_click_id: 1,
+                    },
+                    Element::Button {
+                        label: "Edit".into(),
+                        on_click_id: 2,
+                    },
+                    Element::Button {
+                        label: "Send".into(),
+                        on_click_id: 3,
+                    },
+                    Element::Button {
+                        label: "Pick".into(),
+                        on_click_id: 4,
+                    },
+                    Element::Button {
+                        label: "Get Content".into(),
+                        on_click_id: 5,
+                    },
+                    Element::Button {
+                        label: "Search".into(),
+                        on_click_id: 6,
+                    },
                 ],
             },
         ],

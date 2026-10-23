@@ -1,7 +1,7 @@
 // apps/language/src/main.rs — OnuronOS Language & Keyboard
 // Using the official OnuronOS Design System (dark/light themes)
-use nilui::{App, Element, Ev};
 use nilui::design::{DesignSystem, Palette};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -52,11 +52,24 @@ pub fn view(state: &LanguageState) -> Element {
 
     Element::Column {
         children: vec![
-            Element::Text { content: "🌐 Language & Keyboard".to_string() },
-            Element::Text { content: format!("Language: {}", state.language) },
-            Element::Text { content: format!("Keyboard Layout: {}", state.keyboard_layout) },
-            Element::Text { content: format!("Auto-correct: {}", if state.auto_correct { "ON" } else { "OFF" }) },
-            Element::Text { content: format!("Second Keyboard: {}", state.second_keyboard) },
+            Element::Text {
+                content: "🌐 Language & Keyboard".to_string(),
+            },
+            Element::Text {
+                content: format!("Language: {}", state.language),
+            },
+            Element::Text {
+                content: format!("Keyboard Layout: {}", state.keyboard_layout),
+            },
+            Element::Text {
+                content: format!(
+                    "Auto-correct: {}",
+                    if state.auto_correct { "ON" } else { "OFF" }
+                ),
+            },
+            Element::Text {
+                content: format!("Second Keyboard: {}", state.second_keyboard),
+            },
         ],
     }
 }
