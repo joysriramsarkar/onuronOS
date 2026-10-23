@@ -28,9 +28,9 @@
 // section C3: "Full measured boot / TPM attestation is a planned follow-up."
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use nilprotocol::{Frame, MessageType};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use nilprotocol::{Frame, MessageType};
 
 use nilpkg::durable::{sync_dir, sync_tree, write_file_atomic};
 use nilpkg::lockfile::PackageLock;
@@ -432,15 +432,22 @@ fn read_active(install_root: &std::path::Path) -> Result<String, String> {
         .map_err(|e| format!("Install root is not initialized ({}): {e}", path.display()))?;
     let slot = raw.trim().to_string();
     if !SLOTS.contains(&slot.as_str()) {
-        return Err(format!("Invalid active slot marker '{slot}' in {}", path.display()));
+        return Err(format!(
+            "Invalid active slot marker '{slot}' in {}",
+            path.display()
+        ));
     }
     Ok(slot)
 }
 
 fn read_running(install_root: &std::path::Path) -> Result<RunningState, String> {
     let path = install_root.join(RUNNING_FILE);
-    let data = std::fs::read(&path)
-        .map_err(|e| format!("Could not read running image state ({}): {e}", path.display()))?;
+    let data = std::fs::read(&path).map_err(|e| {
+        format!(
+            "Could not read running image state ({}): {e}",
+            path.display()
+        )
+    })?;
     serde_json::from_slice(&data)
         .map_err(|e| format!("Invalid running image state ({}): {e}", path.display()))
 }
@@ -462,8 +469,8 @@ fn regular_file(path: &std::path::Path) -> Result<(), String> {
 
 /// Stream a file through SHA-256 so a large image is never fully buffered.
 fn hash_file(path: &std::path::Path) -> Result<(String, u64), String> {
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| format!("Could not open {}: {e}", path.display()))?;
+    let mut file =
+        std::fs::File::open(path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     let mut total: u64 = 0;
@@ -499,10 +506,10 @@ fn copy_file_atomic(src: &std::path::Path, dest: &std::path::Path) -> Result<(),
     let tmp = parent.join(format!(".{file_name}.tmp.{}", std::process::id()));
 
     {
-        let mut reader =
-            std::fs::File::open(src).map_err(|e| format!("Could not open {}: {e}", src.display()))?;
-        let mut writer =
-            std::fs::File::create(&tmp).map_err(|e| format!("Could not create {}: {e}", tmp.display()))?;
+        let mut reader = std::fs::File::open(src)
+            .map_err(|e| format!("Could not open {}: {e}", src.display()))?;
+        let mut writer = std::fs::File::create(&tmp)
+            .map_err(|e| format!("Could not create {}: {e}", tmp.display()))?;
         std::io::copy(&mut reader, &mut writer)
             .map_err(|e| format!("Could not copy {} -> {}: {e}", src.display(), tmp.display()))?;
         writer
@@ -556,21 +563,28 @@ pub fn verify_image(
     update_dir: &std::path::Path,
     key_dir: &std::path::Path,
 ) -> Result<UpdateManifest, String> {
-    let dir_meta = std::fs::symlink_metadata(update_dir)
-        .map_err(|e| format!("Update directory {} is not readable: {e}", update_dir.display()))?;
+    let dir_meta = std::fs::symlink_metadata(update_dir).map_err(|e| {
+        format!(
+            "Update directory {} is not readable: {e}",
+            update_dir.display()
+        )
+    })?;
     if !dir_meta.file_type().is_dir() {
         return Err("Update directory must be a directory (not a symlink or file)".into());
     }
 
     let manifest_path = update_dir.join("update.json");
     regular_file(&manifest_path)?;
-    if std::fs::metadata(&manifest_path).map_err(|e| e.to_string())?.len() > MAX_MANIFEST_BYTES {
+    if std::fs::metadata(&manifest_path)
+        .map_err(|e| e.to_string())?
+        .len()
+        > MAX_MANIFEST_BYTES
+    {
         return Err("Update manifest is too large".into());
     }
-    let manifest: UpdateManifest = serde_json::from_slice(
-        &std::fs::read(&manifest_path).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| format!("Invalid update manifest: {e}"))?;
+    let manifest: UpdateManifest =
+        serde_json::from_slice(&std::fs::read(&manifest_path).map_err(|e| e.to_string())?)
+            .map_err(|e| format!("Invalid update manifest: {e}"))?;
 
     if !SLOTS.contains(&manifest.target_slot.as_str()) {
         return Err(format!(
@@ -965,9 +979,7 @@ pub fn recover_pending(install_root: &std::path::Path) -> Result<(), String> {
                 );
             }
             _ => {
-                eprintln!(
-                    "[nilupd] Recovered interrupted update; previous slot remains active"
-                );
+                eprintln!("[nilupd] Recovered interrupted update; previous slot remains active");
             }
         }
         let _ = std::fs::remove_file(&pending_path);
@@ -1128,7 +1140,11 @@ mod tests {
         let keys = root.join("keys");
         std::fs::create_dir_all(keys.join("trusted")).unwrap();
         let (signer, verifier) = nilpkg::generate_keypair();
-        std::fs::write(keys.join("trusted/system.pub"), hex::encode(verifier.to_bytes())).unwrap();
+        std::fs::write(
+            keys.join("trusted/system.pub"),
+            hex::encode(verifier.to_bytes()),
+        )
+        .unwrap();
         let install = root.join("install");
         let initial = b"initial-system-image".to_vec();
         initialize_install_root(&install, &initial).unwrap();
@@ -1163,12 +1179,19 @@ mod tests {
             public_key_hex: None,
         };
         sign_update(&mut manifest, signer);
-        std::fs::write(dir.join("update.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        std::fs::write(
+            dir.join("update.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
         manifest
     }
 
     fn active(fx: &Fixture) -> String {
-        std::fs::read_to_string(fx.install.join(ACTIVE_FILE)).unwrap().trim().to_string()
+        std::fs::read_to_string(fx.install.join(ACTIVE_FILE))
+            .unwrap()
+            .trim()
+            .to_string()
     }
 
     #[test]
@@ -1187,10 +1210,19 @@ mod tests {
         apply_update(&update, &fx.install, &fx.keys).unwrap();
 
         assert_eq!(active(&fx), "B", "active slot must flip to B");
-        assert_eq!(std::fs::read(fx.install.join("slots/B/image")).unwrap(), new_image);
+        assert_eq!(
+            std::fs::read(fx.install.join("slots/B/image")).unwrap(),
+            new_image
+        );
         // The previous slot is untouched, so rollback is always possible.
-        assert_eq!(std::fs::read(fx.install.join("slots/A/image")).unwrap(), fx.initial);
-        assert!(!fx.install.join(PENDING_FILE).exists(), "journal must be cleared");
+        assert_eq!(
+            std::fs::read(fx.install.join("slots/A/image")).unwrap(),
+            fx.initial
+        );
+        assert!(
+            !fx.install.join(PENDING_FILE).exists(),
+            "journal must be cleared"
+        );
 
         let st = status(&fx.install).unwrap();
         assert_eq!(st.active_slot, "B");
@@ -1202,7 +1234,13 @@ mod tests {
     fn tampered_payload_is_rejected_and_install_root_unchanged() {
         let fx = fixture("tamper");
         let update = fx.root.join("update");
-        signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), b"good-image");
+        signed_update(
+            &update,
+            &fx.signer,
+            "B",
+            &compute_sha256(&fx.initial),
+            b"good-image",
+        );
         // Corrupt the payload after signing.
         std::fs::write(update.join("image"), b"tampered-image").unwrap();
 
@@ -1243,16 +1281,13 @@ mod tests {
     fn running_image_hash_mismatch_is_refused() {
         let fx = fixture("anchor");
         let update = fx.root.join("update");
-        signed_update(
-            &update,
-            &fx.signer,
-            "B",
-            &"0".repeat(64),
-            b"image",
-        );
+        signed_update(&update, &fx.signer, "B", &"0".repeat(64), b"image");
 
         let err = apply_update(&update, &fx.install, &fx.keys).unwrap_err();
-        assert!(err.contains("Running image hash"), "unexpected error: {err}");
+        assert!(
+            err.contains("Running image hash"),
+            "unexpected error: {err}"
+        );
         assert_eq!(active(&fx), "A");
     }
 
@@ -1260,21 +1295,49 @@ mod tests {
     fn crash_after_staging_before_flip_is_recovered_with_old_slot_active() {
         let fx = fixture("recover");
         let update = fx.root.join("update");
-        signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), b"staged-but-not-live");
+        signed_update(
+            &update,
+            &fx.signer,
+            "B",
+            &compute_sha256(&fx.initial),
+            b"staged-but-not-live",
+        );
 
         // Stage only: this is exactly the state after a crash before commit.
         stage_update(&update, &fx.install, &fx.keys).unwrap();
-        assert!(fx.install.join(PENDING_FILE).exists(), "journal should exist after staging");
-        assert!(staging_path(&fx.install, "B").exists(), "staged file should exist");
+        assert!(
+            fx.install.join(PENDING_FILE).exists(),
+            "journal should exist after staging"
+        );
+        assert!(
+            staging_path(&fx.install, "B").exists(),
+            "staged file should exist"
+        );
         assert_eq!(active(&fx), "A", "slot must not flip during staging");
-        assert!(!fx.install.join("slots/B/image").exists(), "no committed image yet");
+        assert!(
+            !fx.install.join("slots/B/image").exists(),
+            "no committed image yet"
+        );
 
         recover_pending(&fx.install).unwrap();
 
-        assert!(!fx.install.join(PENDING_FILE).exists(), "journal must be cleared");
-        assert!(!staging_path(&fx.install, "B").exists(), "staged file must be removed");
-        assert_eq!(active(&fx), "A", "old slot must still be active after recovery");
-        assert_eq!(std::fs::read(fx.install.join("slots/A/image")).unwrap(), fx.initial);
+        assert!(
+            !fx.install.join(PENDING_FILE).exists(),
+            "journal must be cleared"
+        );
+        assert!(
+            !staging_path(&fx.install, "B").exists(),
+            "staged file must be removed"
+        );
+        assert_eq!(
+            active(&fx),
+            "A",
+            "old slot must still be active after recovery"
+        );
+        assert_eq!(
+            std::fs::read(fx.install.join("slots/A/image")).unwrap(),
+            fx.initial
+        );
 
         // A later apply must still work after recovery.
         apply_update(&update, &fx.install, &fx.keys).unwrap();
@@ -1286,26 +1349,47 @@ mod tests {
         let fx = fixture("rollback");
         let update = fx.root.join("update");
         let new_image = b"new-system-image-v2";
-        signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), new_image);
+        signed_update(
+            &update,
+            &fx.signer,
+            "B",
+            &compute_sha256(&fx.initial),
+            new_image,
+        );
         apply_update(&update, &fx.install, &fx.keys).unwrap();
         assert_eq!(active(&fx), "B");
 
         rollback(&fx.install).unwrap();
         assert_eq!(active(&fx), "A");
-        assert_eq!(std::fs::read(fx.install.join("slots/A/image")).unwrap(), fx.initial);
-        assert_eq!(status(&fx.install).unwrap().running_image_sha256, compute_sha256(&fx.initial));
+        assert_eq!(
+            std::fs::read(fx.install.join("slots/A/image")).unwrap(),
+            fx.initial
+        );
+        assert_eq!(
+            status(&fx.install).unwrap().running_image_sha256,
+            compute_sha256(&fx.initial)
+        );
 
         // Rollback is reversible: flipping again returns to the newer slot.
         rollback(&fx.install).unwrap();
         assert_eq!(active(&fx), "B");
-        assert_eq!(std::fs::read(fx.install.join("slots/B/image")).unwrap(), new_image);
+        assert_eq!(
+            std::fs::read(fx.install.join("slots/B/image")).unwrap(),
+            new_image
+        );
     }
 
     #[test]
     fn verify_image_accepts_a_valid_signed_update() {
         let fx = fixture("verify");
         let update = fx.root.join("update");
-        let m = signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), b"payload");
+        let m = signed_update(
+            &update,
+            &fx.signer,
+            "B",
+            &compute_sha256(&fx.initial),
+            b"payload",
+        );
         let verified = verify_image(&update, &fx.keys).unwrap();
         assert_eq!(verified, m);
     }
@@ -1315,7 +1399,13 @@ mod tests {
         let fx = fixture("ipc");
         let update = fx.root.join("update");
         let new_image = b"image-for-ipc";
-        signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), new_image);
+        signed_update(
+            &update,
+            &fx.signer,
+            "B",
+            &compute_sha256(&fx.initial),
+            new_image,
+        );
         apply_update(&update, &fx.install, &fx.keys).unwrap();
 
         // 1. Ping
@@ -1326,7 +1416,10 @@ mod tests {
         // 2. UpdateGetStatus
         let stat_req = Frame::new(MessageType::UpdateGetStatus, 2, vec![]);
         let stat_resp = handle_ipc_request(&stat_req, &fx.install, &fx.keys);
-        assert_eq!(stat_resp.message_type, u16::from(MessageType::UpdateStatusInfo));
+        assert_eq!(
+            stat_resp.message_type,
+            u16::from(MessageType::UpdateStatusInfo)
+        );
         let s: Status = serde_json::from_slice(&stat_resp.payload).unwrap();
         assert_eq!(s.active_slot, "B");
 
@@ -1357,7 +1450,8 @@ mod tests {
         std::fs::write(
             fx.install.join(RUNNING_FILE),
             serde_json::to_vec(&running).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         // Create downgrade update with rollback_index 4
         std::fs::create_dir_all(&update).unwrap();
@@ -1376,10 +1470,17 @@ mod tests {
             public_key_hex: None,
         };
         sign_update(&mut manifest, &fx.signer);
-        std::fs::write(update.join("update.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        std::fs::write(
+            update.join("update.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
 
         let err = apply_update(&update, &fx.install, &fx.keys).unwrap_err();
-        assert!(err.contains("Anti-rollback violation"), "Expected anti-rollback error, got: {err}");
+        assert!(
+            err.contains("Anti-rollback violation"),
+            "Expected anti-rollback error, got: {err}"
+        );
         assert_eq!(active(&fx), "A");
     }
 
@@ -1398,7 +1499,8 @@ mod tests {
         std::fs::write(
             fx.install.join(RUNNING_FILE),
             serde_json::to_vec(&running).unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
 
         // Update is built for qemu-x86_64
         std::fs::create_dir_all(&update).unwrap();
@@ -1417,10 +1519,17 @@ mod tests {
             public_key_hex: None,
         };
         sign_update(&mut manifest, &fx.signer);
-        std::fs::write(update.join("update.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        std::fs::write(
+            update.join("update.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
 
         let err = apply_update(&update, &fx.install, &fx.keys).unwrap_err();
-        assert!(err.contains("Target device mismatch"), "Expected device mismatch error, got: {err}");
+        assert!(
+            err.contains("Target device mismatch"),
+            "Expected device mismatch error, got: {err}"
+        );
         assert_eq!(active(&fx), "A");
     }
 
@@ -1429,7 +1538,13 @@ mod tests {
         let fx = fixture("boot_ctrl_rollback");
         let update = fx.root.join("update");
         let new_img = b"failing-candidate-image";
-        signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), new_img);
+        signed_update(
+            &update,
+            &fx.signer,
+            "B",
+            &compute_sha256(&fx.initial),
+            new_img,
+        );
         apply_update(&update, &fx.install, &fx.keys).unwrap();
         assert_eq!(active(&fx), "B");
 
@@ -1444,31 +1559,57 @@ mod tests {
         let slot1 = record_boot_attempt(&fx.install).unwrap();
         assert_eq!(slot1, "B");
         let bc1 = boot_status(&fx.install).unwrap();
-        assert_eq!(bc1.slots.iter().find(|s| s.slot == "B").unwrap().tries_remaining, 2);
+        assert_eq!(
+            bc1.slots
+                .iter()
+                .find(|s| s.slot == "B")
+                .unwrap()
+                .tries_remaining,
+            2
+        );
 
         // Attempt 2
         let slot2 = record_boot_attempt(&fx.install).unwrap();
         assert_eq!(slot2, "B");
         let bc2 = boot_status(&fx.install).unwrap();
-        assert_eq!(bc2.slots.iter().find(|s| s.slot == "B").unwrap().tries_remaining, 1);
+        assert_eq!(
+            bc2.slots
+                .iter()
+                .find(|s| s.slot == "B")
+                .unwrap()
+                .tries_remaining,
+            1
+        );
 
         // Attempt 3: Exhaustion triggers automatic rollback!
         let err3 = record_boot_attempt(&fx.install).unwrap_err();
-        assert!(err3.contains("exhausted") && err3.contains("Rolled back to slot A"), "got: {err3}");
+        assert!(
+            err3.contains("exhausted") && err3.contains("Rolled back to slot A"),
+            "got: {err3}"
+        );
 
         // Active slot must now be A
         assert_eq!(active(&fx), "A");
         let bc3 = boot_status(&fx.install).unwrap();
         assert_eq!(bc3.current_slot, "A");
         let b_info_after = bc3.slots.iter().find(|s| s.slot == "B").unwrap();
-        assert!(!b_info_after.is_bootable, "Failed slot B should be marked unbootable");
+        assert!(
+            !b_info_after.is_bootable,
+            "Failed slot B should be marked unbootable"
+        );
     }
 
     #[test]
     fn test_boot_control_mark_success_persists() {
         let fx = fixture("boot_ctrl_success");
         let update = fx.root.join("update");
-        signed_update(&update, &fx.signer, "B", &compute_sha256(&fx.initial), b"good-candidate");
+        signed_update(
+            &update,
+            &fx.signer,
+            "B",
+            &compute_sha256(&fx.initial),
+            b"good-candidate",
+        );
         apply_update(&update, &fx.install, &fx.keys).unwrap();
 
         mark_boot_successful(&fx.install).unwrap();
@@ -1482,6 +1623,13 @@ mod tests {
         let slot = record_boot_attempt(&fx.install).unwrap();
         assert_eq!(slot, "B");
         let bc2 = boot_status(&fx.install).unwrap();
-        assert_eq!(bc2.slots.iter().find(|s| s.slot == "B").unwrap().tries_remaining, 3);
+        assert_eq!(
+            bc2.slots
+                .iter()
+                .find(|s| s.slot == "B")
+                .unwrap()
+                .tries_remaining,
+            3
+        );
     }
 }

@@ -1,6 +1,6 @@
 // runtime/nilui/src/widget.rs — 1Hz Background Widget Tick Runtime
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 pub trait NilWidget {
     fn update_1hz(&mut self);

@@ -96,7 +96,13 @@ pub fn check_pin(stored: &str, candidate: &str) -> CheckResult {
         return CheckResult::Rejected;
     }
     let mut parts = stored.split('$');
-    match (parts.next(), parts.next(), parts.next(), parts.next(), parts.next()) {
+    match (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) {
         (Some("v1"), Some(iter), Some(salt_hex), Some(hash_hex), None) => {
             let iterations: u32 = match iter.parse() {
                 Ok(n) if (1..=10_000_000).contains(&n) => n,
@@ -128,7 +134,8 @@ pub fn check_pin(stored: &str, candidate: &str) -> CheckResult {
 pub fn write_pin_file(path: &str, record: &str) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(path).parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("Could not create PIN dir: {e}"))?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Could not create PIN dir: {e}"))?;
         }
     }
     #[cfg(unix)]
@@ -137,7 +144,9 @@ pub fn write_pin_file(path: &str, record: &str) -> Result<(), String> {
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true).mode(0o600);
         use std::io::Write;
-        let mut file = options.open(path).map_err(|e| format!("Could not write PIN file: {e}"))?;
+        let mut file = options
+            .open(path)
+            .map_err(|e| format!("Could not write PIN file: {e}"))?;
         file.write_all(record.as_bytes())
             .map_err(|e| format!("Could not write PIN file: {e}"))?;
         return Ok(());
@@ -167,7 +176,10 @@ mod tests {
     #[test]
     fn create_and_verify_roundtrip() {
         let record = create_record("4826").unwrap();
-        assert!(!record.split('$').any(|part| part == "4826"), "plaintext PIN must not appear as a field in the record");
+        assert!(
+            !record.split('$').any(|part| part == "4826"),
+            "plaintext PIN must not appear as a field in the record"
+        );
         assert!(record.starts_with("v1$"));
         assert_eq!(check_pin(&record, "4826"), CheckResult::Verified);
         assert_eq!(check_pin(&record, "4827"), CheckResult::Rejected);
@@ -195,13 +207,20 @@ mod tests {
         assert_eq!(check_pin(&tampered, "9999"), CheckResult::Rejected);
         // Garbage is rejected, never panics.
         for bad in ["", "v1", "v1$x$y$z$extra", "v1$abc$00$00", "v1$0$00$00"] {
-            assert_eq!(check_pin(bad, "9999"), CheckResult::Rejected, "accepted {bad:?}");
+            assert_eq!(
+                check_pin(bad, "9999"),
+                CheckResult::Rejected,
+                "accepted {bad:?}"
+            );
         }
     }
 
     #[test]
     fn legacy_plaintext_file_migrates_on_next_unlock() {
-        assert_eq!(check_pin("1234", "1234"), CheckResult::VerifiedNeedsMigration);
+        assert_eq!(
+            check_pin("1234", "1234"),
+            CheckResult::VerifiedNeedsMigration
+        );
         assert_eq!(check_pin("1234", "0000"), CheckResult::Rejected);
         // The migrated record verifies normally.
         let migrated = create_record("1234").unwrap();

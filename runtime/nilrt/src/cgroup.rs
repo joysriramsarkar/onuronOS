@@ -206,10 +206,7 @@ mod tests {
             fs::read_to_string(app_dir.join("memory.max")).unwrap(),
             (128 * 1024 * 1024).to_string()
         );
-        assert_eq!(
-            fs::read_to_string(app_dir.join("pids.max")).unwrap(),
-            "32"
-        );
+        assert_eq!(fs::read_to_string(app_dir.join("pids.max")).unwrap(), "32");
         assert_eq!(
             fs::read_to_string(app_dir.join("cpu.weight")).unwrap(),
             "200"
@@ -217,7 +214,10 @@ mod tests {
 
         // Attach PID
         attach_pid_to_cgroup(&app_dir, 4321).unwrap();
-        assert_eq!(fs::read_to_string(app_dir.join("cgroup.procs")).unwrap(), "4321");
+        assert_eq!(
+            fs::read_to_string(app_dir.join("cgroup.procs")).unwrap(),
+            "4321"
+        );
 
         // Mock current values
         fs::write(app_dir.join("memory.current"), "52428800\n").unwrap();

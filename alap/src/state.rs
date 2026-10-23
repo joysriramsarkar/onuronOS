@@ -27,7 +27,7 @@ impl StateStore {
 
     /// Create a new managed state variable with an initial value.
     pub fn create_state<T: serde::Serialize>(&self, initial: T) -> State<T> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.next_id += 1;
         let id = StateId(inner.next_id);
         let val = serde_json::to_value(initial).unwrap_or(serde_json::Value::Null);
@@ -41,13 +41,13 @@ impl StateStore {
 
     /// Read raw state value.
     pub fn get_raw(&self, id: StateId) -> Option<serde_json::Value> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.values.get(&id).cloned()
     }
 
     /// Update raw state value and mark dirty.
     pub fn set_raw(&self, id: StateId, val: serde_json::Value) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(existing) = inner.values.get_mut(&id) {
             if *existing != val {
                 *existing = val;
@@ -59,18 +59,18 @@ impl StateStore {
 
     /// Take all dirty state changes.
     pub fn flush_dirty(&self) -> Vec<StateId> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         std::mem::take(&mut inner.dirty)
     }
 
     /// Check if any state is dirty.
     pub fn is_dirty(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         !inner.dirty.is_empty()
     }
 
     pub fn invalidation_count(&self) -> u64 {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         inner.invalidation_count
     }
 }

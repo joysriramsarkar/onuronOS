@@ -1,21 +1,21 @@
 // services/powerd/src/main.rs — Onuron OS Power Governor & Suspend/Wakelock Manager
 // Reads Linux sysfs (/sys/class/power_supply), manages wakelocks, and controls screen brightness/suspend.
 
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct BatteryInfo {
-    pub capacity: u8,               // 0 - 100%
-    pub status: String,             // "Charging", "Discharging", "Full", "Not charging"
+    pub capacity: u8,   // 0 - 100%
+    pub status: String, // "Charging", "Discharging", "Full", "Not charging"
     pub is_charging: bool,
-    pub voltage_mv: u32,            // Millivolts
-    pub temp_c: f32,                // Celsius
-    pub health: String,             // "Good", "Overheat", "Dead"
+    pub voltage_mv: u32, // Millivolts
+    pub temp_c: f32,     // Celsius
+    pub health: String,  // "Good", "Overheat", "Dead"
     pub is_simulated: bool,
 }
 
@@ -196,8 +196,7 @@ pub fn parse_capacity(raw: &str) -> Option<u8> {
 /// suppresses the shutdown path.
 pub fn parse_status(raw: &str) -> (String, bool) {
     let status = raw.trim().to_string();
-    let connected = status.eq_ignore_ascii_case("charging")
-        || status.eq_ignore_ascii_case("full");
+    let connected = status.eq_ignore_ascii_case("charging") || status.eq_ignore_ascii_case("full");
     (status, connected)
 }
 
@@ -252,22 +251,34 @@ use nilprotocol::{Frame, MessageType};
 pub fn handle_ipc_request(frame: &Frame, governor: &Arc<Mutex<PowerGovernor>>) -> Frame {
     let msg_type = MessageType::from(frame.message_type);
     match msg_type {
-        MessageType::Ping => {
-            Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec())
-        }
+        MessageType::Ping => Frame::new(MessageType::Pong, frame.request_id, b"pong".to_vec()),
         MessageType::ServiceStatusRequest => {
             let bat = read_sysfs_battery();
             let payload = nilprotocol::ServiceStatusPayload {
                 service_name: "powerd".to_string(),
                 is_ready: true,
                 is_simulated: bat.is_simulated,
-                backend_name: if bat.is_simulated { "simulated".to_string() } else { "linux-power_supply".to_string() },
+                backend_name: if bat.is_simulated {
+                    "simulated".to_string()
+                } else {
+                    "linux-power_supply".to_string()
+                },
                 uptime_secs: 0,
                 request_count: 1,
                 last_error: None,
             };
-            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
-                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+            Frame::with_json(
+                MessageType::ServiceStatusResponse,
+                frame.request_id,
+                &payload,
+            )
+            .unwrap_or_else(|_| {
+                Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    b"encode error".to_vec(),
+                )
+            })
         }
         MessageType::PowerGetBattery => {
             let bat = read_sysfs_battery();
@@ -287,17 +298,25 @@ pub fn handle_ipc_request(frame: &Frame, governor: &Arc<Mutex<PowerGovernor>>) -
             Frame::new(
                 MessageType::Pong,
                 frame.request_id,
-                if ok { b"released".to_vec() } else { b"not_found".to_vec() },
+                if ok {
+                    b"released".to_vec()
+                } else {
+                    b"not_found".to_vec()
+                },
             )
         }
-        _ => {
-            Frame::new(MessageType::ErrorResponse, frame.request_id, b"unsupported message type".to_vec())
-        }
+        _ => Frame::new(
+            MessageType::ErrorResponse,
+            frame.request_id,
+            b"unsupported message type".to_vec(),
+        ),
     }
 }
 
 fn main() {
-    println!("\x1b[1;36m[powerd]\x1b[0m Onuron OS Power Governor & Suspend Manager Initializing...");
+    println!(
+        "\x1b[1;36m[powerd]\x1b[0m Onuron OS Power Governor & Suspend Manager Initializing..."
+    );
 
     let governor = Arc::new(Mutex::new(PowerGovernor::new()));
     let _ = fs::create_dir_all("/run/onuron");
@@ -347,11 +366,16 @@ fn main() {
             let listener = match nilsd::first_listener_or_bind("/run/onuron/power.sock") {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("[powerd] Failed to bind IPC socket /run/onuron/power.sock: {}", e);
+                    eprintln!(
+                        "[powerd] Failed to bind IPC socket /run/onuron/power.sock: {}",
+                        e
+                    );
                     return;
                 }
             };
-            println!("\x1b[1;32m[powerd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/power.sock");
+            println!(
+                "\x1b[1;32m[powerd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/power.sock"
+            );
 
             for stream in listener.incoming() {
                 if let Ok(mut sock) = stream {
@@ -371,7 +395,9 @@ fn main() {
     }
 
     let _ = nilsd::notify_ready("powerd", Some("/run/onuron/power.sock"));
-    println!("\x1b[1;32m[powerd] [  OK  ]\x1b[0m Power manager daemon active (/run/onuron/power.sock)");
+    println!(
+        "\x1b[1;32m[powerd] [  OK  ]\x1b[0m Power manager daemon active (/run/onuron/power.sock)"
+    );
 
     // Keep service alive
     loop {
@@ -492,19 +518,30 @@ mod tests {
         // PowerGetBattery -> PowerBatteryInfo
         let bat_frame = Frame::new(MessageType::PowerGetBattery, 11, vec![]);
         let resp = handle_ipc_request(&bat_frame, &gov);
-        assert_eq!(MessageType::from(resp.message_type), MessageType::PowerBatteryInfo);
+        assert_eq!(
+            MessageType::from(resp.message_type),
+            MessageType::PowerBatteryInfo
+        );
         assert_eq!(resp.request_id, 11);
         let bat: BatteryInfo = serde_json::from_slice(&resp.payload).unwrap();
         assert!(bat.capacity <= 100);
 
         // Wakelock acquire and release
-        let lock_frame = Frame::new(MessageType::PowerAcquireWakelock, 12, b"music_player".to_vec());
+        let lock_frame = Frame::new(
+            MessageType::PowerAcquireWakelock,
+            12,
+            b"music_player".to_vec(),
+        );
         let resp = handle_ipc_request(&lock_frame, &gov);
         assert_eq!(MessageType::from(resp.message_type), MessageType::Pong);
         assert_eq!(resp.payload, b"acquired");
         assert!(gov.lock().unwrap().has_wakelocks());
 
-        let unlock_frame = Frame::new(MessageType::PowerReleaseWakelock, 13, b"music_player".to_vec());
+        let unlock_frame = Frame::new(
+            MessageType::PowerReleaseWakelock,
+            13,
+            b"music_player".to_vec(),
+        );
         let resp = handle_ipc_request(&unlock_frame, &gov);
         assert_eq!(MessageType::from(resp.message_type), MessageType::Pong);
         assert_eq!(resp.payload, b"released");
@@ -513,7 +550,10 @@ mod tests {
         // ServiceStatusRequest -> ServiceStatusResponse
         let status_frame = Frame::new(MessageType::ServiceStatusRequest, 14, vec![]);
         let resp = handle_ipc_request(&status_frame, &gov);
-        assert_eq!(MessageType::from(resp.message_type), MessageType::ServiceStatusResponse);
+        assert_eq!(
+            MessageType::from(resp.message_type),
+            MessageType::ServiceStatusResponse
+        );
         let status: nilprotocol::ServiceStatusPayload = resp.parse_json().unwrap();
         assert_eq!(status.service_name, "powerd");
         assert!(status.is_ready);
@@ -546,4 +586,3 @@ mod tests {
         assert_eq!(requested_deadline, MAX_WAKELOCK_DURATION);
     }
 }
-

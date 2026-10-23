@@ -28,7 +28,11 @@ impl AlapApp {
     }
 
     /// Register a named event handler for UI buttons/switches.
-    pub fn register_handler<S: Into<String>, F: FnMut() + Send + 'static>(&mut self, id: S, handler: F) {
+    pub fn register_handler<S: Into<String>, F: FnMut() + Send + 'static>(
+        &mut self,
+        id: S,
+        handler: F,
+    ) {
         self.handlers.insert(id.into(), Box::new(handler));
     }
 

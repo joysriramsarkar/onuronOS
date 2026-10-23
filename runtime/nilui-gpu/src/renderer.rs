@@ -1,7 +1,7 @@
 // runtime/nilui-gpu/src/renderer.rs — Batched 2D GPU & Software Renderer
+use crate::atlas::GlyphAtlas;
 use crate::compositor::PixelBuffer;
 use crate::vkctx::VulkanContext;
-use crate::atlas::GlyphAtlas;
 
 pub struct Renderer2D {
     pub ctx: VulkanContext,
@@ -19,9 +19,22 @@ impl Renderer2D {
 
     pub fn draw_rect(&mut self, x: f32, y: f32, w: f32, h: f32, radius: f32, argb: u32) {
         if radius <= 0.0 {
-            self.target.fill_rect(x as i32, y as i32, w.max(0.0) as u32, h.max(0.0) as u32, argb);
+            self.target.fill_rect(
+                x as i32,
+                y as i32,
+                w.max(0.0) as u32,
+                h.max(0.0) as u32,
+                argb,
+            );
         } else {
-            self.target.fill_rounded_rect(x as i32, y as i32, w.max(0.0) as u32, h.max(0.0) as u32, radius as u32, argb);
+            self.target.fill_rounded_rect(
+                x as i32,
+                y as i32,
+                w.max(0.0) as u32,
+                h.max(0.0) as u32,
+                radius as u32,
+                argb,
+            );
         }
     }
 

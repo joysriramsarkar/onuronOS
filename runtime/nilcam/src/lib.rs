@@ -1,6 +1,8 @@
 // runtime/nilcam/src/lib.rs — Onuron OS Camera Client Library
 #[allow(unused_imports)]
-use nilprotocol::{CameraFramePayload, CameraInfoPayload, CameraSetTorchPayload, Frame, MessageType};
+use nilprotocol::{
+    CameraFramePayload, CameraInfoPayload, CameraSetTorchPayload, Frame, MessageType,
+};
 
 pub struct CameraClient;
 
@@ -14,7 +16,11 @@ impl CameraClient {
         {
             use std::os::unix::net::UnixStream;
             if let Ok(mut stream) = UnixStream::connect("/run/nilos/camera.sock") {
-                let req = Frame::new(MessageType::CameraGetInfo, 1, camera_id.to_be_bytes().to_vec());
+                let req = Frame::new(
+                    MessageType::CameraGetInfo,
+                    1,
+                    camera_id.to_be_bytes().to_vec(),
+                );
                 if nilprotocol::write_frame(&mut stream, &req).is_ok() {
                     if let Ok(resp) = nilprotocol::read_frame(&mut stream) {
                         if let Ok(info) = resp.parse_json::<CameraInfoPayload>() {
@@ -27,7 +33,11 @@ impl CameraClient {
         let _ = camera_id;
         Ok(CameraInfoPayload {
             camera_id,
-            facing: if camera_id == 0 { "back".to_string() } else { "front".to_string() },
+            facing: if camera_id == 0 {
+                "back".to_string()
+            } else {
+                "front".to_string()
+            },
             resolution: "1920x1080".to_string(),
             torch_active: false,
             preview_active: false,
@@ -40,7 +50,11 @@ impl CameraClient {
         {
             use std::os::unix::net::UnixStream;
             if let Ok(mut stream) = UnixStream::connect("/run/nilos/camera.sock") {
-                let req = Frame::new(MessageType::CameraCaptureFrame, 2, camera_id.to_be_bytes().to_vec());
+                let req = Frame::new(
+                    MessageType::CameraCaptureFrame,
+                    2,
+                    camera_id.to_be_bytes().to_vec(),
+                );
                 if nilprotocol::write_frame(&mut stream, &req).is_ok() {
                     if let Ok(resp) = nilprotocol::read_frame(&mut stream) {
                         if let Ok(frame) = resp.parse_json::<CameraFramePayload>() {

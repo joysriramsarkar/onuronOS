@@ -22,19 +22,23 @@ fn print_help() {
     println!("             [--current-hash <sha256>]");
     println!("        Sign an OS system image and produce a verified A/B update directory.");
     println!("  nilup verify <update_dir> --key-dir <trusted_key_dir>");
-    println!("        Verify an update directory (image + update.json) against trusted publisher keys.");
+    println!(
+        "        Verify an update directory (image + update.json) against trusted publisher keys."
+    );
     println!("  nilup info <update_dir_or_json>");
     println!("        Display parsed update manifest information.");
     println!("=========================================================");
 }
 
 fn file_sha256(path: &Path) -> Result<String, String> {
-    let mut file = fs::File::open(path)
-        .map_err(|e| format!("Could not open {}: {e}", path.display()))?;
+    let mut file =
+        fs::File::open(path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
-        let n = file.read(&mut buf).map_err(|e| format!("Read error: {e}"))?;
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| format!("Read error: {e}"))?;
         if n == 0 {
             break;
         }
@@ -139,19 +143,26 @@ fn cmd_sign(args: &[String]) -> Result<(), String> {
     let key_path = key_file.ok_or("Missing required --key option")?;
     let key_text = fs::read_to_string(&key_path)
         .map_err(|e| format!("Could not read key {}: {e}", key_path.display()))?;
-    let raw_key = hex::decode(key_text.trim())
-        .map_err(|e| format!("Invalid hex private key: {e}"))?;
+    let raw_key =
+        hex::decode(key_text.trim()).map_err(|e| format!("Invalid hex private key: {e}"))?;
     let key_bytes: [u8; 32] = raw_key
         .try_into()
         .map_err(|_| "Private key must be exactly 32 bytes (64 hex characters)")?;
     let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_bytes);
 
     if !image_path.is_file() {
-        return Err(format!("Image file does not exist: {}", image_path.display()));
+        return Err(format!(
+            "Image file does not exist: {}",
+            image_path.display()
+        ));
     }
 
-    fs::create_dir_all(&update_dir)
-        .map_err(|e| format!("Could not create update directory {}: {e}", update_dir.display()))?;
+    fs::create_dir_all(&update_dir).map_err(|e| {
+        format!(
+            "Could not create update directory {}: {e}",
+            update_dir.display()
+        )
+    })?;
 
     let dest_image = update_dir.join("image");
     if image_path != dest_image {
@@ -159,11 +170,14 @@ fn cmd_sign(args: &[String]) -> Result<(), String> {
             .map_err(|e| format!("Could not copy image to {}: {e}", dest_image.display()))?;
     }
 
-    let meta = fs::metadata(&dest_image)
-        .map_err(|e| format!("Could not stat image: {e}"))?;
+    let meta = fs::metadata(&dest_image).map_err(|e| format!("Could not stat image: {e}"))?;
     let image_size = meta.len();
 
-    println!("[nilup] Computing SHA-256 for {} ({} bytes)...", dest_image.display(), image_size);
+    println!(
+        "[nilup] Computing SHA-256 for {} ({} bytes)...",
+        dest_image.display(),
+        image_size
+    );
     let image_sha256 = file_sha256(&dest_image)?;
 
     let mut manifest = UpdateManifest {
@@ -184,10 +198,17 @@ fn cmd_sign(args: &[String]) -> Result<(), String> {
     let manifest_path = update_dir.join("update.json");
     let json_text = serde_json::to_string_pretty(&manifest)
         .map_err(|e| format!("Failed to serialize manifest: {e}"))?;
-    fs::write(&manifest_path, json_text)
-        .map_err(|e| format!("Could not write manifest to {}: {e}", manifest_path.display()))?;
+    fs::write(&manifest_path, json_text).map_err(|e| {
+        format!(
+            "Could not write manifest to {}: {e}",
+            manifest_path.display()
+        )
+    })?;
 
-    println!("[nilup] Successfully packaged and signed update directory -> {}", update_dir.display());
+    println!(
+        "[nilup] Successfully packaged and signed update directory -> {}",
+        update_dir.display()
+    );
     if let Some(sig) = &manifest.signature_hex {
         println!("  Signature:  {}", sig);
     }
@@ -243,8 +264,8 @@ fn cmd_info(args: &[String]) -> Result<(), String> {
 
     let text = fs::read_to_string(&manifest_path)
         .map_err(|e| format!("Could not read manifest {}: {e}", manifest_path.display()))?;
-    let manifest: UpdateManifest = serde_json::from_str(&text)
-        .map_err(|e| format!("Malformed manifest JSON: {e}"))?;
+    let manifest: UpdateManifest =
+        serde_json::from_str(&text).map_err(|e| format!("Malformed manifest JSON: {e}"))?;
 
     println!("=========================================================");
     println!("Update Manifest: {}", manifest.name);
@@ -253,9 +274,22 @@ fn cmd_info(args: &[String]) -> Result<(), String> {
     println!("Target Slot:      {}", manifest.target_slot);
     println!("Image Size:       {} bytes", manifest.image_size);
     println!("Image SHA-256:    {}", manifest.image_sha256);
-    println!("Base SHA-256:     {}", if manifest.current_image_sha256.is_empty() { "(unrestricted / full image)" } else { &manifest.current_image_sha256 });
-    println!("Publisher PubKey: {}", manifest.public_key_hex.as_deref().unwrap_or("none"));
-    println!("Signature:        {}", manifest.signature_hex.as_deref().unwrap_or("none"));
+    println!(
+        "Base SHA-256:     {}",
+        if manifest.current_image_sha256.is_empty() {
+            "(unrestricted / full image)"
+        } else {
+            &manifest.current_image_sha256
+        }
+    );
+    println!(
+        "Publisher PubKey: {}",
+        manifest.public_key_hex.as_deref().unwrap_or("none")
+    );
+    println!(
+        "Signature:        {}",
+        manifest.signature_hex.as_deref().unwrap_or("none")
+    );
     println!("=========================================================");
     Ok(())
 }
@@ -272,7 +306,9 @@ fn main() -> ExitCode {
         "sign" => cmd_sign(&args[2..]),
         "verify" => cmd_verify(&args[2..]),
         "info" => cmd_info(&args[2..]),
-        cmd => Err(format!("Unknown command '{cmd}'. Run 'nilup --help' for usage.")),
+        cmd => Err(format!(
+            "Unknown command '{cmd}'. Run 'nilup --help' for usage."
+        )),
     };
 
     match res {
@@ -351,7 +387,10 @@ mod tests {
             "--key-dir".to_string(),
             key_dir.to_string_lossy().to_string(),
         ]);
-        assert!(res.is_err(), "Verification must fail on tampered image payload");
+        assert!(
+            res.is_err(),
+            "Verification must fail on tampered image payload"
+        );
 
         let _ = fs::remove_dir_all(temp);
     }

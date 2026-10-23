@@ -94,7 +94,9 @@ fn factory_reset() -> io::Result<()> {
             .args(["-F", &dev])
             .status()
             .or_else(|_| {
-                std::process::Command::new("mkfs.ext4").args(["-F", &dev]).status()
+                std::process::Command::new("mkfs.ext4")
+                    .args(["-F", &dev])
+                    .status()
             });
         match status {
             Ok(s) if s.success() => println!("Reformatted {} (ext4).", dev),
@@ -158,9 +160,7 @@ fn main() {
                 reboot(RB_AUTOBOOT);
             }
             MenuAction::FactoryReset => {
-                let answer = prompt(
-                    "This permanently erases all user data. Type YES to confirm: ",
-                );
+                let answer = prompt("This permanently erases all user data. Type YES to confirm: ");
                 if is_affirmative(&answer) {
                     if let Err(e) = factory_reset() {
                         eprintln!("Factory reset failed: {}", e);
@@ -215,7 +215,10 @@ mod tests {
 /dev/vda /data ext4 rw,relatime 0 0
 tmpfs /run tmpfs rw 0 0
 ";
-        assert_eq!(data_device_from_mounts(mounts, "/data"), Some("/dev/vda".into()));
+        assert_eq!(
+            data_device_from_mounts(mounts, "/data"),
+            Some("/dev/vda".into())
+        );
         assert_eq!(data_device_from_mounts(mounts, "/nonexistent"), None);
 
         let tmpfs = "tmpfs /data tmpfs rw,size=64M 0 0\n";

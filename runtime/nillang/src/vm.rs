@@ -1,13 +1,15 @@
 // runtime/nillang/src/vm.rs — Execution Virtual Machine for NilLang
-use std::collections::HashMap;
 use crate::ast::{AppDef, UIElement};
 use crate::bytecode::CompiledPackage;
+use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 pub const MAX_UI_RECURSION_DEPTH: usize = 64;
 
 pub struct NilVM {
     pub package: CompiledPackage,
     pub state: HashMap<String, String>,
+    pub granted_capabilities: HashSet<String>,
 }
 
 impl NilVM {
@@ -18,7 +20,115 @@ impl NilVM {
                 state.insert(v.name.clone(), v.initial_value.clone());
             }
         }
-        Self { package, state }
+        Self {
+            package,
+            state,
+            granted_capabilities: HashSet::new(),
+        }
+    }
+
+    pub fn with_capabilities<I, S>(mut self, caps: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        for cap in caps {
+            self.granted_capabilities.insert(cap.into());
+        }
+        self
+    }
+
+    pub fn grant_capability(&mut self, cap: &str) {
+        self.granted_capabilities.insert(cap.to_string());
+    }
+
+    pub fn revoke_capability(&mut self, cap: &str) {
+        self.granted_capabilities.remove(cap);
+    }
+
+    pub fn has_capability(&self, cap: &str) -> bool {
+        self.granted_capabilities.contains(cap)
+    }
+
+    /// Maps a host operation name (direct or indirect alias) to its required capability.
+    pub fn required_capability_for_host_op(op: &str) -> Result<&'static str, String> {
+        let clean = op.trim();
+        if clean.starts_with("net.") || clean.starts_with("http.") || clean == "fetch" {
+            Ok("network")
+        } else if clean == "db.read" || clean == "storage.read" {
+            Ok("storage.read")
+        } else if clean.starts_with("db.") || clean.starts_with("storage.") || clean == "persist" {
+            Ok("storage.write")
+        } else if clean.starts_with("audio.") || clean.starts_with("std.audio.") {
+            Ok("audio")
+        } else if clean.starts_with("camera.") {
+            Ok("camera")
+        } else if clean.starts_with("location.") {
+            Ok("location")
+        } else {
+            Err(format!("Unknown or forbidden host operation: {clean}"))
+        }
+    }
+
+    /// Executes a privileged host operation after enforcing capability authorization.
+    pub fn invoke_host_call(&mut self, op: &str, arg: &str) -> Result<String, String> {
+        let required = Self::required_capability_for_host_op(op)?;
+        if !self.has_capability(required) {
+            return Err(format!(
+                "CapabilityDenied: operation '{op}' requires capability '{required}'"
+            ));
+        }
+        match required {
+            "storage.write" => {
+                if let Some((k, v)) = arg.split_once('=') {
+                    self.state
+                        .insert(k.trim().to_string(), v.trim().to_string());
+                }
+                Ok(format!("storage:ok:{arg}"))
+            }
+            "storage.read" => Ok(format!("storage.read:ok:{arg}")),
+            "network" => Ok(format!("network:ok:{arg}")),
+            "audio" => Ok(format!("audio:ok:{arg}")),
+            "camera" => Ok(format!("camera:ok:{arg}")),
+            "location" => Ok(format!("location:ok:{arg}")),
+            _ => Err(format!("Unsupported capability domain: {required}")),
+        }
+    }
+
+    /// Persists the VM's reactive state to a JSON file inside the app's private data directory.
+    /// Requires the `"storage.write"` capability.
+    pub fn save_persistent_state(&self, path: &Path) -> Result<(), String> {
+        if !self.has_capability("storage.write") {
+            return Err(
+                "CapabilityDenied: saving persistent state requires 'storage.write'".into(),
+            );
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("create_dir_all: {e}"))?;
+        }
+        let bytes =
+            serde_json::to_vec_pretty(&self.state).map_err(|e| format!("serialize: {e}"))?;
+        std::fs::write(path, bytes).map_err(|e| format!("write state: {e}"))
+    }
+
+    /// Loads reactive state from a JSON file inside the app's private data directory.
+    /// Requires the `"storage.read"` capability.
+    pub fn load_persistent_state(&mut self, path: &Path) -> Result<(), String> {
+        if !self.has_capability("storage.read") {
+            return Err(
+                "CapabilityDenied: loading persistent state requires 'storage.read'".into(),
+            );
+        }
+        if !path.is_file() {
+            return Ok(());
+        }
+        let data = std::fs::read(path).map_err(|e| format!("read state: {e}"))?;
+        let loaded: HashMap<String, String> =
+            serde_json::from_slice(&data).map_err(|e| format!("deserialize state: {e}"))?;
+        for (k, v) in loaded {
+            self.state.insert(k, v);
+        }
+        Ok(())
     }
 
     pub fn primary_app(&self) -> Option<&AppDef> {
@@ -40,7 +150,23 @@ impl NilVM {
         if (normalized == "btn_launch" || normalized.contains("launch") || normalized == "btn")
             && self.state.contains_key("status")
         {
-            self.state.insert("status".to_string(), "Launched".to_string());
+            self.state
+                .insert("status".to_string(), "Launched".to_string());
+            return true;
+        }
+        if (normalized == "inc_btn"
+            || normalized == "btn_increment"
+            || normalized.contains("increment")
+            || normalized == "btn_add")
+            && self.state.contains_key("count")
+        {
+            let cur = self
+                .state
+                .get("count")
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(0);
+            self.state
+                .insert("count".to_string(), (cur + 1).to_string());
             return true;
         }
         if let Some(rest) = normalized.strip_prefix("set_") {
@@ -71,7 +197,9 @@ impl NilVM {
     }
 
     pub fn render_scene(&self) -> Result<String, String> {
-        let app = self.primary_app().ok_or("No app definition found in package")?;
+        let app = self
+            .primary_app()
+            .ok_or("No app definition found in package")?;
         let root = app.root_ui.as_ref().ok_or("No root UI element defined")?;
         let mut out = String::new();
         self.render_element(root, 0, &mut out, 0)?;
@@ -115,7 +243,9 @@ impl NilVM {
 
     /// Converts the primary app's active UI tree into an Alap declarative component graph
     pub fn to_alap_component(&self) -> Result<alap::Component, String> {
-        let app = self.primary_app().ok_or("No app definition found in package")?;
+        let app = self
+            .primary_app()
+            .ok_or("No app definition found in package")?;
         let root = app.root_ui.as_ref().ok_or("No root UI element defined")?;
         Self::element_to_alap(root, &self.state, 0)
     }
@@ -132,15 +262,12 @@ impl NilVM {
         }
 
         let resolve_prop = |name: &str| -> Option<String> {
-            elem.properties
-                .iter()
-                .find(|p| p.name == name)
-                .map(|p| {
-                    state
-                        .get(&p.value)
-                        .cloned()
-                        .unwrap_or_else(|| p.value.clone())
-                })
+            elem.properties.iter().find(|p| p.name == name).map(|p| {
+                state
+                    .get(&p.value)
+                    .cloned()
+                    .unwrap_or_else(|| p.value.clone())
+            })
         };
 
         match elem.tag.as_str() {
@@ -340,10 +467,15 @@ mod tests {
         let mut vm = make_test_vm();
         vm.update_state("count", "42");
 
-        let comp = vm.to_alap_component().expect("Alap conversion should succeed");
+        let comp = vm
+            .to_alap_component()
+            .expect("Alap conversion should succeed");
         assert_eq!(comp.node_count(), 4); // Column + Text + Text + Button
 
-        if let alap::Component::Column { children, spacing, .. } = comp {
+        if let alap::Component::Column {
+            children, spacing, ..
+        } = comp
+        {
             assert_eq!(spacing, 12);
             assert_eq!(children.len(), 3);
             if let alap::Component::Text { ref content, .. } = children[1] {

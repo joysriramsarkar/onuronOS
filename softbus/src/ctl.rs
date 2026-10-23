@@ -57,10 +57,20 @@ impl SoftBusControl {
                     if n >= 4 && &buf[..4] == &nilprotocol::PROTOCOL_MAGIC {
                         let mut cursor = std::io::Cursor::new(&buf[..n]);
                         if let Ok(frame) = nilprotocol::Frame::read_from(&mut cursor) {
-                            let reply = if frame.message_type == u16::from(nilprotocol::MessageType::Ping) {
-                                nilprotocol::Frame::new(nilprotocol::MessageType::Pong, frame.request_id, b"pong".to_vec())
+                            let reply = if frame.message_type
+                                == u16::from(nilprotocol::MessageType::Ping)
+                            {
+                                nilprotocol::Frame::new(
+                                    nilprotocol::MessageType::Pong,
+                                    frame.request_id,
+                                    b"pong".to_vec(),
+                                )
                             } else {
-                                nilprotocol::Frame::new(nilprotocol::MessageType::ServiceStatusResponse, frame.request_id, b"ok".to_vec())
+                                nilprotocol::Frame::new(
+                                    nilprotocol::MessageType::ServiceStatusResponse,
+                                    frame.request_id,
+                                    b"ok".to_vec(),
+                                )
                             };
                             let mut out = Vec::new();
                             if reply.write_to(&mut out).is_ok() {
@@ -82,8 +92,11 @@ impl SoftBusControl {
     async fn handle_command(&self, cmd: &str) -> String {
         if cmd == "LIST_PEERS" {
             let map = self.peers.lock().unwrap();
-            if map.is_empty() { return "EMPTY\n".to_string(); }
-            let list: Vec<String> = map.values()
+            if map.is_empty() {
+                return "EMPTY\n".to_string();
+            }
+            let list: Vec<String> = map
+                .values()
                 .map(|p| format!("{}@{}:{}", p.device_id, p.addr, p.quic_port))
                 .collect();
             return list.join(",") + "\n";
@@ -150,14 +163,22 @@ pub async fn run_quic_accept_loop(endpoint: Arc<Endpoint>) {
                         match conn.accept_uni().await {
                             Ok(mut recv) => {
                                 let mut len_buf = [0u8; 4];
-                                if recv.read_exact(&mut len_buf).await.is_err() { break; }
+                                if recv.read_exact(&mut len_buf).await.is_err() {
+                                    break;
+                                }
                                 let len = u32::from_le_bytes(len_buf) as usize;
-                                if len > 16 * 1024 * 1024 { break; }
+                                if len > 16 * 1024 * 1024 {
+                                    break;
+                                }
                                 let mut buf = vec![0u8; len];
-                                if recv.read_exact(&mut buf).await.is_err() { break; }
+                                if recv.read_exact(&mut buf).await.is_err() {
+                                    break;
+                                }
                                 if let Ok(text) = std::str::from_utf8(&buf) {
-                                    println!("[nilbus:quic] ← {remote}: {}",
-                                        text.lines().next().unwrap_or("(binary)"));
+                                    println!(
+                                        "[nilbus:quic] ← {remote}: {}",
+                                        text.lines().next().unwrap_or("(binary)")
+                                    );
                                 }
                             }
                             Err(e) => {

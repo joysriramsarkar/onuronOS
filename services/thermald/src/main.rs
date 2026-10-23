@@ -29,7 +29,10 @@ pub enum ThermalAction {
 /// Parse a Linux thermal-zone `temp` value. The kernel reports millidegrees
 /// Celsius (e.g. `"42000"` => 42 °C). Malformed or empty input yields `None`.
 pub fn parse_temp_millicelsius(raw: &str) -> Option<i32> {
-    raw.trim().parse::<i64>().ok().map(|milli| (milli / 1000) as i32)
+    raw.trim()
+        .parse::<i64>()
+        .ok()
+        .map(|milli| (milli / 1000) as i32)
 }
 
 /// Pure thermal policy: strictly *above* a threshold triggers its action, so a

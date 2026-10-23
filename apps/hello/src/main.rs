@@ -1,6 +1,8 @@
 // apps/hello/src/main.rs — First Native NilOS App (Stateful Counter with Handoff)
+// Using the official OnuronOS Design System (dark/light themes)
+use nilui::design::{DesignSystem, Palette};
 use nilui::{App, Element, Ev};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 struct State {
@@ -18,11 +20,14 @@ fn update(state: &mut State, ev: Ev) {
     }
 }
 
-fn view(state: &State) -> Element {
+pub fn view(state: &State) -> Element {
+    let ds = DesignSystem::new();
+    let palette = Palette::dark();
+
     Element::Column {
         children: vec![
             Element::Text {
-                content: format!("Welcome to NilOS — Clean, Fast & Open"),
+                content: "Welcome to OnuronOS — Clean, Fast & Open".into(),
             },
             Element::Text {
                 content: state.message.clone(),
@@ -38,7 +43,7 @@ fn view(state: &State) -> Element {
 fn main() {
     let initial_state = State {
         count: 0,
-        message: "Hello World from NilUI Native Runtime".into(),
+        message: "Hello World from OnuronOS!".into(),
     };
 
     let app = App {
@@ -52,6 +57,5 @@ fn main() {
             }
         }),
     };
-
-    app.run("NilOS Hello App");
+    app.run("OnuronOS Hello App");
 }

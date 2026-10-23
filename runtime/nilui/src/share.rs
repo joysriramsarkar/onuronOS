@@ -19,8 +19,12 @@ impl ShareSheet {
     pub fn view(&self) -> Element {
         Element::Column {
             children: vec![
-                Element::Text { content: format!("Share: {}", self.title) },
-                Element::Text { content: format!("Path: {}", self.file_path) },
+                Element::Text {
+                    content: format!("Share: {}", self.title),
+                },
+                Element::Text {
+                    content: format!("Path: {}", self.file_path),
+                },
             ],
         }
     }

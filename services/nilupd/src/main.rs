@@ -4,11 +4,11 @@
 use std::path::Path;
 use std::process::ExitCode;
 
+use nilpkg::get_key_dir;
 use nilupd::{
     apply_update, boot_status, get_install_root, mark_boot_successful, record_boot_attempt,
     rollback, status, verify_image,
 };
-use nilpkg::get_key_dir;
 
 fn print_help() {
     println!("=========================================================");
@@ -78,7 +78,10 @@ fn main() -> ExitCode {
             Ok(s) => {
                 println!("[nilupd] Active slot: {}", s.active_slot);
                 println!("[nilupd] Running image SHA-256: {}", s.running_image_sha256);
-                println!("[nilupd] Pending update journal: {}", if s.pending { "yes" } else { "no" });
+                println!(
+                    "[nilupd] Pending update journal: {}",
+                    if s.pending { "yes" } else { "no" }
+                );
                 for slot in &s.slots {
                     println!(
                         "  slot {}: {}{}",
@@ -91,8 +94,14 @@ fn main() -> ExitCode {
                     );
                 }
                 if let Some(bc) = &s.boot_control {
-                    println!("[nilupd] Boot Control Backend: {} (simulated: {})", bc.backend_name, bc.is_simulated);
-                    println!("  current boot slot: {}, fallback: {}", bc.current_slot, bc.fallback_slot);
+                    println!(
+                        "[nilupd] Boot Control Backend: {} (simulated: {})",
+                        bc.backend_name, bc.is_simulated
+                    );
+                    println!(
+                        "  current boot slot: {}, fallback: {}",
+                        bc.current_slot, bc.fallback_slot
+                    );
                     for bs in &bc.slots {
                         println!(
                             "  slot {}: successful={}, tries_remaining={}, bootable={}",
@@ -107,7 +116,10 @@ fn main() -> ExitCode {
         "boot-status" => match boot_status(&get_install_root()) {
             Ok(bc) => {
                 println!("[nilupd] Boot Control Backend: {}", bc.backend_name);
-                println!("  current slot: {}, fallback slot: {}", bc.current_slot, bc.fallback_slot);
+                println!(
+                    "  current slot: {}, fallback slot: {}",
+                    bc.current_slot, bc.fallback_slot
+                );
                 for bs in &bc.slots {
                     println!(
                         "  slot {}: active={}, successful={}, tries_remaining={}, bootable={}",

@@ -63,8 +63,12 @@ impl DisplayHal for LinuxDisplay {
                 for entry in entries.flatten() {
                     let max_path = entry.path().join("max_brightness");
                     let cur_path = entry.path().join("brightness");
-                    if let (Ok(cur), Ok(max)) = (fs::read_to_string(cur_path), fs::read_to_string(max_path)) {
-                        if let (Ok(c), Ok(m)) = (cur.trim().parse::<u32>(), max.trim().parse::<u32>()) {
+                    if let (Ok(cur), Ok(max)) =
+                        (fs::read_to_string(cur_path), fs::read_to_string(max_path))
+                    {
+                        if let (Ok(c), Ok(m)) =
+                            (cur.trim().parse::<u32>(), max.trim().parse::<u32>())
+                        {
                             if let Some(pct) = (c * 100).checked_div(m) {
                                 return pct as u8;
                             }
@@ -109,7 +113,9 @@ fn parse_dns_servers(contents: &str) -> Vec<String> {
     let mut servers = Vec::new();
     for line in contents.lines() {
         let mut fields = line.split('#').next().unwrap_or("").split_whitespace();
-        if fields.next() != Some("nameserver") { continue; }
+        if fields.next() != Some("nameserver") {
+            continue;
+        }
         if let Some(value) = fields.next() {
             if value.parse::<IpAddr>().is_ok() && !servers.iter().any(|s| s == value) {
                 servers.push(value.to_string());
@@ -139,7 +145,9 @@ impl NetworkHal for LinuxNetwork {
         if let Ok(entries) = fs::read_dir("/sys/class/net") {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().into_owned();
-                if name == "lo" { continue; }
+                if name == "lo" {
+                    continue;
+                }
 
                 let oper_file = entry.path().join("operstate");
                 if let Ok(oper) = fs::read_to_string(oper_file) {
@@ -150,7 +158,10 @@ impl NetworkHal for LinuxNetwork {
                             conn_type = ConnectionType::Wifi;
                         } else if name.starts_with("rmnet") || name.starts_with("wwan") {
                             conn_type = ConnectionType::Cellular;
-                        } else if name.starts_with("eth") || name.starts_with("en") || name.starts_with("virt") {
+                        } else if name.starts_with("eth")
+                            || name.starts_with("en")
+                            || name.starts_with("virt")
+                        {
                             conn_type = ConnectionType::Ethernet;
                         } else {
                             conn_type = ConnectionType::None;
@@ -214,17 +225,23 @@ impl PowerHal for LinuxPower {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if let Ok(c) = fs::read_to_string(path.join("capacity")) {
-                        if let Ok(parsed) = c.trim().parse::<u8>() { cap = parsed; }
+                        if let Ok(parsed) = c.trim().parse::<u8>() {
+                            cap = parsed;
+                        }
                     }
                     if let Ok(s) = fs::read_to_string(path.join("status")) {
                         status = s.trim().to_string();
                         charging = status.eq_ignore_ascii_case("charging");
                     }
                     if let Ok(t) = fs::read_to_string(path.join("temp")) {
-                        if let Ok(raw) = t.trim().parse::<f32>() { temp = raw / 10.0; }
+                        if let Ok(raw) = t.trim().parse::<f32>() {
+                            temp = raw / 10.0;
+                        }
                     }
                     if let Ok(v) = fs::read_to_string(path.join("voltage_now")) {
-                        if let Ok(raw) = v.trim().parse::<u32>() { volt = raw / 1000; }
+                        if let Ok(raw) = v.trim().parse::<u32>() {
+                            volt = raw / 1000;
+                        }
                     }
                 }
             }
@@ -348,14 +365,17 @@ impl CameraHal for LinuxCamera {
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().to_string();
                     if name.contains("torch") || name.contains("flash") {
-                        let _ = fs::write(entry.path().join("brightness"), if on { "1" } else { "0" });
+                        let _ =
+                            fs::write(entry.path().join("brightness"), if on { "1" } else { "0" });
                         return Ok(());
                     }
                 }
             }
         }
         if on {
-            return Err(HalError::UnsupportedOperation("No flash/torch LED node found in /sys/class/leds".into()));
+            return Err(HalError::UnsupportedOperation(
+                "No flash/torch LED node found in /sys/class/leds".into(),
+            ));
         }
         Ok(())
     }

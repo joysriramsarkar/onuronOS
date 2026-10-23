@@ -1,6 +1,6 @@
 // runtime/nilhal/src/bin/halctl.rs — HAL Inspection & Diagnostic CLI
-use std::env;
 use nilhal::HalDevice;
+use std::env;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

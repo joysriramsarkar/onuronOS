@@ -85,14 +85,12 @@ impl NetworkHal for QemuNetwork {
         }
     }
     fn scan_wifi(&mut self) -> Result<Vec<WifiApInfo>, HalError> {
-        Ok(vec![
-            WifiApInfo {
-                ssid: "QEMU-Virtual-WiFi [SIMULATED]".into(),
-                bssid: "52:54:00:12:34:56".into(),
-                signal_level: -45,
-                security: "WPA2-PSK".into(),
-            }
-        ])
+        Ok(vec![WifiApInfo {
+            ssid: "QEMU-Virtual-WiFi [SIMULATED]".into(),
+            bssid: "52:54:00:12:34:56".into(),
+            signal_level: -45,
+            security: "WPA2-PSK".into(),
+        }])
     }
     fn connect_wifi(&mut self, _ssid: &str, _psk: &str) -> Result<(), HalError> {
         Ok(())
@@ -220,7 +218,9 @@ impl CameraHal for QemuCamera {
     }
     fn capture_frame(&mut self) -> Result<Vec<u8>, HalError> {
         // Return synthetic 64x64 checkerboard JPEG or test bytes
-        Ok(vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46])
+        Ok(vec![
+            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46,
+        ])
     }
     fn start_preview(&mut self) -> Result<(), HalError> {
         Ok(())
@@ -280,13 +280,11 @@ impl BluetoothHal for QemuBluetooth {
         Ok(())
     }
     fn get_paired_devices(&self) -> Vec<BluetoothDeviceEntry> {
-        vec![
-            BluetoothDeviceEntry {
-                name: "QEMU Virtual Buds [SIMULATED]".into(),
-                address: "AA:BB:CC:DD:EE:01".into(),
-                is_connected: true,
-            }
-        ]
+        vec![BluetoothDeviceEntry {
+            name: "QEMU Virtual Buds [SIMULATED]".into(),
+            address: "AA:BB:CC:DD:EE:01".into(),
+            is_connected: true,
+        }]
     }
     fn pair(&mut self, _address: &str) -> Result<(), HalError> {
         Ok(())

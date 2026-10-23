@@ -741,7 +741,8 @@ mod tests {
             preview_active: true,
             supported_formats: vec!["JPEG".to_string(), "RGBA8888".to_string()],
         };
-        let frame = Frame::with_json(MessageType::CameraInfo, 2001, &payload).expect("frame with json");
+        let frame =
+            Frame::with_json(MessageType::CameraInfo, 2001, &payload).expect("frame with json");
         let parsed: CameraInfoPayload = frame.parse_json().expect("parse json");
         assert_eq!(parsed, payload);
     }
@@ -755,7 +756,8 @@ mod tests {
             socket_path: Some("/run/onuron/net.sock".to_string()),
             timestamp_ms: 1700000000,
         };
-        let frame = Frame::with_json(MessageType::ServiceReady, 3001, &ready).expect("frame with json");
+        let frame =
+            Frame::with_json(MessageType::ServiceReady, 3001, &ready).expect("frame with json");
         let decoded: ServiceReadyPayload = frame.parse_json().expect("parse json");
         assert_eq!(decoded, ready);
 
@@ -768,7 +770,8 @@ mod tests {
             request_count: 512,
             last_error: None,
         };
-        let frame2 = Frame::with_json(MessageType::ServiceStatusResponse, 3002, &status).expect("frame with json");
+        let frame2 = Frame::with_json(MessageType::ServiceStatusResponse, 3002, &status)
+            .expect("frame with json");
         let decoded2: ServiceStatusPayload = frame2.parse_json().expect("parse json");
         assert_eq!(decoded2, status);
     }
@@ -820,7 +823,10 @@ mod tests {
         // Verify that the request frame was written to tx
         let mut tx_cursor = Cursor::new(stream.tx);
         let req_frame = Frame::read_from(&mut tx_cursor).expect("read req");
-        assert_eq!(req_frame.message_type, u16::from(MessageType::ServiceStatusRequest));
+        assert_eq!(
+            req_frame.message_type,
+            u16::from(MessageType::ServiceStatusRequest)
+        );
         assert_eq!(req_frame.request_id, 77);
     }
 }

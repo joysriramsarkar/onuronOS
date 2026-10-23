@@ -21,48 +21,51 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 <!-- BEGIN GENERATED: maturity -->
 | Subsystem / Feature | Maturity | Details & Reality |
 |---|---|---|
-| **Linux Kernel Boot** | 🔵 Functional prototype | Linux LTS 6.6 x86_64, bootable under QEMU with initramfs |
-| **System Init (`nilinit`)** | 🔵 Functional prototype | PID 1 init, clean `[  OK  ]` boot logging, mounts, supervision, socket activation |
-| **Storage Hierarchy** | 🔵 Functional prototype | `/data` ext4 persistent disk on virtio-blk + tmpfs fallback; mobile layout |
-| **QEMU Boot Automation** | 🔵 Functional prototype | Persistent `data.img` disk + virtio-blk + automated headless boot smoke testing harness |
-| **DRM/KMS Direct Compositor (`nilui-gpu`)** | 🔵 Functional prototype | Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, interactive touch compositor, bootsplash & presentation demo |
-| **First-Boot Setup (OOBE)** | 🔵 Functional prototype | Name & PIN setup wizard, writes configuration to `/data/config/` |
-| **Lock Screen** | 🔵 Functional prototype | Salted + stretched (100k-round SHA-256) PIN record with constant-time verify; displayed clock/date/weather are static demo values **[SIMULATED]** |
-| **Home Launcher** | 🔵 Functional prototype | App grid, status bar, notification shade; hero clock/date and status-bar battery/signal are static demo values **[SIMULATED]** |
-| **Phone App** | 🟠 Stub / simulated | Dialer UI & contact list functional; **simulated VoLTE** (real modem AT layer planned); recent-call list is fabricated **[SIMULATED]** |
-| **Messages App** | 🔵 Functional prototype | SMS message threads, composer, persistent storage under `/data/sms/`; ships with seeded demo threads **[SIMULATED]** |
-| **Files App** | 🔵 Functional prototype | Directory explorer for `/data`, `/etc`, `/tmp`, `/data/app` |
-| **Settings App** | 🔵 Functional prototype | System settings UI for Network, Display, Security, Battery, Storage; security/status lines (SELinux, fscrypt) are unverified **[SIMULATED]** |
-| **Notification Center** | 🟠 Stub / simulated | Notification shade renders a fabricated notification history (real SMS threads are mixed in) **[SIMULATED]** |
+| **Linux Kernel Boot (x86_64)** | 🔵 Functional prototype | Linux LTS 6.6 x86_64, bootable under QEMU with initramfs; boot completes in ~200ms with 7 core services active |
+| **System Init (nilinit)** | 🔵 Functional prototype | PID 1 init, mounts /proc /sys /dev /run, cgroups v2, SELinux, supervision, socket activation, recovery path |
+| **Storage Hierarchy** | 🔵 Functional prototype | /data ext4 persistent disk on virtio-blk + tmpfs fallback; mobile layout (/system, /vendor, /data/app, /data/system, /data/config) |
+| **QEMU Boot Automation** | 🔵 Functional prototype | Headless QEMU boot smoke test, persistent data disk, two-phase reboot persistence test |
+| **DRM/KMS Direct Compositor (nilui-gpu)** | 🔵 Functional prototype | Direct /dev/dri/card0 modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, interactive touch compositor, bootsplash & presentation demo |
+| **First-Boot Setup (OOBE)** | 🔵 Functional prototype | Name & PIN setup wizard, writes configuration to /data/config |
+| **Lock Screen (PIN)** | 🔵 Functional prototype | Salted + stretched (100k-round SHA-256) PIN record with constant-time verify and live system clock/date |
+| **Shell Design System (OnuronOS 1.7)** | 🔵 Functional prototype | Sampled dark/light tokens, measured 390x796 metrics, vector icon set and shared widgets; 33 reference screens implemented in the simulator, validated by headless export and a behaviour selftest |
+| **Home Launcher** | 🔵 Functional prototype | 4-column native grid, live clock/date, live package/note status pill, Android launcher section, status-bar entry points, app drawer for the remaining native apps |
+| **Phone App** | 🔵 Functional prototype | Dialer UI, persistent contacts (/data/contacts/) and call history (/data/calls/); VoLTE call layer uses simulated fallback when modem hardware is absent [SIMULATED] **[SIMULATED]** |
+| **Messages App** | 🔵 Functional prototype | SMS message threads, composer, reply & delete with atomic persistent storage under /data/sms/ |
+| **Files App** | 🔵 Functional prototype | Directory explorer for /data, /etc, /tmp, /data/app |
+| **Settings App** | 🔵 Functional prototype | System settings UI for Network, Sound (nilaudio), Display, Security (PIN change), Battery, Storage usage, and Accessibility (i18n); SELinux/fscrypt report simulated fallback when unmounted [SIMULATED] **[SIMULATED]** |
+| **Notification Center** | 🔵 Functional prototype | Persistent notification store (/data/notifications/notifications.json) wired to notifyd (/run/nilos/notify.sock) with post, dismiss, clear, and SMS integration |
 | **Permission Broker** | 🔵 Functional prototype | JSON-persisted grants with 7-day auto-revoke; atomic writes and corrupt-database quarantine; clock-skew safe |
-| **Namespace Sandbox** | 🔵 Functional prototype | `unshare(CLONE_NEWPID|CLONE_NEWNS|CLONE_NEWIPC|CLONE_NEWUTS)` + private mount propagation + `chroot`/`pivot_root` with `chdir("/")` escape fix |
-| **Seccomp BPF Filter** | 🔵 Functional prototype | Real `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)` syscall allowlist (~110 syscalls) |
-| **SoftBus Distributed Mesh** | 🔵 Functional prototype | Real mDNS-SD peer discovery + Quinn QUIC/TLS 1.3 transport; the UI's discovered-peer list is fabricated **[SIMULATED]** |
-| **Input Daemon (`inputd`)** | 🔵 Functional prototype | Linux `evdev` & Android Host bridge with gesture recognition (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch); not yet verified on a physical target |
-| **Power Daemon (`powerd`)** | 🔵 Functional prototype | NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes |
-| **Network Daemon (`netd`)** | 🔵 Functional prototype | NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC |
-| **Native Language & Platform (`nillang` / `nilc`)** | 🔵 Functional prototype | Native NilLang parser, AST, portable bytecode compiler (`nilc`), declarative UI engine (`NilVM`), and end-to-end integration with `nilpkg` & `nilrt` |
-| **Cryptographic Verified Boot (`mkvbmeta`)** | 🔵 Functional prototype | DM-verity root hash tree generation and Ed25519 signature signing & validation tool (`build/mkvbmeta.py`) |
-| **Package Manager (`nilpkg`)** | 🔵 Functional prototype | Signed `.nilax` package format (`nilpkg pack`), atomic unpack & install, upgrade with rollback, crash-recovery journal, cross-process locking, key revocation, and shell integration; store catalogue simulated **[SIMULATED]** |
-| **Canonical Framed IPC (`nilprotocol`)** | 🔵 Functional prototype | Length-prefixed binary wire frame (`ONUR` magic, versioned headers, bounded 1 MiB payloads) wired across core daemons (`powerd`, `inputd`, `netd`, `audiod`, `nilimed`, `nilupd`, `nilkeyd`, `nilandroidd`, `btd`, `telephonyd`, `camerad`) |
-| **Audio Policy Server & Mixer (`audiod`)** | 🔵 Functional prototype | Stream focus arbitration (EmergencyCall > VoiceCall > Alarm > Notification > Media), dynamic volume ducking, ALSA PCM routing (Speaker, Earpiece, Headset, Bluetooth), and canonical framed IPC (`/run/onuron/audio.sock`) |
-| **Camera HAL & Streaming Daemon (`camerad`)** | 🔵 Functional prototype | Linux V4L2 & vendor HAL sensor discovery, image capture pipeline with frame buffers, LED torch control, preview state management, and canonical framed IPC (`/run/nilos/camera.sock`) |
-| **Bluetooth Subsystem (`btd`)** | 🔵 Functional prototype | Linux sysfs `/sys/class/bluetooth/` & RFKILL adapter discovery, device pairing state, scan discovery, and canonical framed IPC (`/run/nilos/bt.sock`) |
-| **Cellular Telephony Daemon (`telephonyd`)** | 🔵 Functional prototype | Modem detection via sysfs & dev nodes (`/dev/ttyUSB*`, `/dev/cdc-wdm*`, `/sys/class/net/wwan*`), SIM state management, VoLTE registration, call lifecycle, SMS store, and framed IPC (`/run/nilos/telephony.sock`) |
-| **Android Boot Image Tooling (`mkbootimg.py`)** | 🔵 Functional prototype | Pure-Python Android boot image (boot.img) packager & unpacker supporting headers v0-v4, DTB & initramfs bundling, reproducible builds, and fastboot flashing |
-| **Hardware Watchdog (`nilwdt`)** | 🔵 Functional prototype | Feeds `/dev/watchdog` with configurable interval/timeout, subsystem health monitoring, trip-on-hang, and graceful disarm |
-| **Android Compatibility Layer** | 🟠 Stub / simulated | Android screen shows placeholder container state; guest container isolation verified (namespaces, cgroups, device whitelist); no LXC/Waydroid container is launched from the UI yet **[SIMULATED]** |
-| **Diagnostic Terminal (`nilshell`)** | 🟠 Stub / simulated | `ps`, `services` and `net` output is fabricated; `ls`/`cat`/`mem` read real kernel/filesystem data **[SIMULATED]** |
-| **NilHAL Unified Subsystem** | 🔵 Functional prototype | Rust trait abstraction with mock in-memory `FakeHAL` for automated CI, plus scaffold backends for Linux sysfs, evdev, and Android host |
-| **S25 Hosted Mobile Runtime** | 🔵 Functional prototype | Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & JNI bridge (`android-host/`) |
+| **Namespace Sandbox** | 🔵 Functional prototype | unshare(CLONE_NEWPID|CLONE_NEWNS|CLONE_NEWIPC|CLONE_NEWUTS) + private mount propagation + chroot/pivot_root with chdir(/) escape fix |
+| **Seccomp BPF Filter** | 🔵 Functional prototype | Real prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER) syscall allowlist (~110 syscalls) |
+| **SoftBus Distributed Mesh** | 🔵 Functional prototype | Real mDNS-SD peer discovery + Quinn QUIC/TLS 1.3 transport; UI peer list is simulated [SIMULATED] **[SIMULATED]** |
+| **Input Daemon (inputd)** | 🔵 Functional prototype | Linux evdev & Android Host bridge with gesture recognition (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch); not yet verified on physical target |
+| **Power Daemon (powerd)** | 🔵 Functional prototype | NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes |
+| **Network Daemon (netd)** | 🔵 Functional prototype | NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC |
+| **Native Language & Platform (nillang / nilc)** | 🔵 Functional prototype | Native NilLang parser, AST, portable bytecode compiler (nilc), declarative UI engine (NilVM), and end-to-end integration with nilpkg & nilrt |
+| **Cryptographic Verified Boot (mkvbmeta)** | 🔵 Functional prototype | DM-verity root hash tree generation and Ed25519 signature signing & validation tool |
+| **Package Manager (nilpkg)** | 🔵 Functional prototype | Signed .nilax package format (nilpkg pack), atomic unpack & install, upgrade with rollback, uninstall, crash-recovery journal, cross-process locking, key trust/revocation, and shell integration |
+| **Canonical Framed IPC (nilprotocol)** | 🔵 Functional prototype | Length-prefixed binary wire frame (ONUR magic, versioned headers, bounded 1 MiB payloads) wired across core daemons |
+| **Audio Policy Server & Mixer (audiod)** | 🔵 Functional prototype | Stream focus arbitration (EmergencyCall > VoiceCall > Alarm > Notification > Media), dynamic volume ducking, ALSA PCM routing (Speaker, Earpiece, Headset, Bluetooth); audio output simulated when ALSA hardware is absent [SIMULATED] **[SIMULATED]** |
+| **Camera HAL & Streaming Daemon (camerad)** | 🔵 Functional prototype | Linux V4L2 & vendor HAL sensor discovery, image capture pipeline with frame buffers, LED torch control, preview state management; frame buffer simulated when V4L2 hardware is absent [SIMULATED] **[SIMULATED]** |
+| **Bluetooth Subsystem (btd)** | 🔵 Functional prototype | Linux sysfs /sys/class/bluetooth/ & RFKILL adapter discovery, device pairing state, scan discovery |
+| **Cellular Telephony Daemon (telephonyd)** | 🔵 Functional prototype | Modem detection via sysfs & dev nodes (/dev/ttyUSB*, /dev/cdc-wdm*), SIM state management, VoLTE registration, call lifecycle, SMS store; call layer simulated when modem hardware is absent [SIMULATED] **[SIMULATED]** |
+| **Android Boot Image Tooling (mkbootimg.py)** | 🔵 Functional prototype | Pure-Python Android boot image (boot.img) packager & unpacker supporting headers v0-v4, DTB & initramfs bundling, reproducible builds, and fastboot flashing |
+| **Hardware Watchdog (nilwdt)** | 🔵 Functional prototype | Feeds /dev/watchdog with configurable interval/timeout, subsystem health monitoring, trip-on-hang, and graceful disarm |
+| **Android Compatibility Layer** | 🟠 Stub / simulated | Android screen shows placeholder container state; guest container isolation verified (namespaces, cgroups, device whitelist); no LXC/Waydroid container launched from UI yet [SIMULATED] **[SIMULATED]** |
+| **Diagnostic Terminal (nilshell)** | 🟠 Stub / simulated | ps, services and net output is fabricated; ls/cat/mem read real kernel/filesystem data [SIMULATED] **[SIMULATED]** |
+| **NilHAL Unified Subsystem** | 🔵 Functional prototype | Rust trait abstraction with mock in-memory FakeHAL for automated CI, plus scaffold backends for Linux sysfs, evdev, and Android host |
+| **S25 Hosted Mobile Runtime** | 🔵 Functional prototype | Samsung Galaxy S25 (Snapdragon 8 Elite) 120Hz AMOLED runtime & JNI bridge (android-host/) |
 | **Operating Modes (1, 2, 3)** | 🟡 Experimental | Mode 1 (QEMU) working; Mode 2 (Galaxy S25 Hosted Lab) in progress; Mode 3 (Future Bare Metal Phone) not implemented |
-| **Status Bar (simulated indicators)** | 🟠 Stub / simulated | Battery, signal and clock indicators are demo values, marked `⚠SIM` on screen across the shell **[SIMULATED]** |
-| **Alap Framework (`alap`)** | 🔵 Functional prototype | Declarative mobile application framework (state reactivity, component graph, lifecycle hooks, router stack, typed system service contracts) adhering to ADR-0009 |
-| **Canonical Target Registry** | 🔵 Functional prototype | ADR-0002 canonical target registry and fail-closed flashing safety gates (`qemu-x86_64`, `qemu-aarch64`, `android-host-arm64`, `oneplus-fajita`) |
-| **Calculator App** | 🔵 Functional prototype | Basic arithmetic evaluator (precedence, parentheses, decimals) with interactive UI **[SIMULATED]** |
-| **Notes App** | 🟠 Stub / simulated | Demonstrates NilLang declarative note viewer with seeded demo notes **[SIMULATED]** |
-| **Music Player App** | 🟠 Stub / simulated | Demonstrates music player controls and playlist UI with simulated tracks **[SIMULATED]** |
-| **Camera Viewfinder App** | 🟠 Stub / simulated | Viewfinder UI and sensor specification display; simulated without live camerad frame stream **[SIMULATED]** |
+| **Status Bar (simulated indicators)** | 🟠 Stub / simulated | Battery, signal and clock indicators are demo values, marked ⚠SIM on screen across the shell [SIMULATED] **[SIMULATED]** |
+| **Alap Framework (alap)** | 🔵 Functional prototype | Declarative mobile application framework (state reactivity, component graph, lifecycle hooks, router stack, typed system service contracts) adhering to ADR-0009 |
+| **Canonical Target Registry** | 🔵 Functional prototype | ADR-0002 canonical target registry and fail-closed flashing safety gates (qemu-x86_64, qemu-aarch64, android-host-arm64, oneplus-fajita) |
+| **Calculator App** | 🔵 Functional prototype | Scientific arithmetic evaluator (precedence, parentheses, exponents, modulo, trig/log/sqrt, Bengali digits, persistent history) with interactive UI |
+| **Notes App** | 🔵 Functional prototype | Persistent notebook (/data/notes/notes.json) with atomic writes, creation, editing, tagging, priority, search, and deletion |
+| **Music Player App** | 🔵 Functional prototype | Filesystem audio scanner (/data/music), playlist persistence, and audiod (nilaudio) volume/mute/route control; audio output simulated when ALSA hardware is absent [SIMULATED] **[SIMULATED]** |
+| **Camera Viewfinder App** | 🔵 Functional prototype | Viewfinder UI wired to nilcam::CameraClient (get_info, capture_frame to /data/dcim, set_torch, sensor switch); frame buffer simulated when V4L2 hardware is absent [SIMULATED] **[SIMULATED]** |
+| **SoftBus Test App** | 🔵 Functional prototype | Demonstration of SoftBus mesh capabilities (busdemo, bridgedemo, animdemo) |
+| **NilBrowser** | 🟡 Experimental | Web browser (nilbrowser) for desktop simulation; full browser not yet implemented on mobile [SIMULATED] **[SIMULATED]** |
 <!-- END GENERATED: maturity -->
 ---
 

@@ -40,7 +40,10 @@ fn requested_permissions(app_dir: &Path) -> Vec<String> {
         Ok(text) => match serde_json::from_str::<PartialManifest>(&text) {
             Ok(m) => m.permissions,
             Err(e) => {
-                eprintln!("[nilrt-launch] ignoring unreadable {}: {e}", manifest.display());
+                eprintln!(
+                    "[nilrt-launch] ignoring unreadable {}: {e}",
+                    manifest.display()
+                );
                 Vec::new()
             }
         },
@@ -87,7 +90,8 @@ impl RegistryLock {
                     .open(&lock_path);
                 if let Ok(file) = file_res {
                     use std::os::unix::io::AsRawFd;
-                    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+                    let rc =
+                        unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
                     if rc == 0 {
                         return Ok(RegistryLock { _file: Some(file) });
                     }
@@ -102,12 +106,17 @@ impl RegistryLock {
                     .create_new(true)
                     .open(&lock_path);
                 if file_res.is_ok() {
-                    return Ok(RegistryLock { lock_path: Some(lock_path) });
+                    return Ok(RegistryLock {
+                        lock_path: Some(lock_path),
+                    });
                 }
             }
 
             if start.elapsed() > std::time::Duration::from_secs(3) {
-                return Err(format!("Timeout waiting for UID registry lock on {}", lock_path.display()));
+                return Err(format!(
+                    "Timeout waiting for UID registry lock on {}",
+                    lock_path.display()
+                ));
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
@@ -141,7 +150,9 @@ pub fn allocate_app_uid_with_registry(app_id: &str, registry_path: Option<&Path>
     let mut uids_map: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     if let Some(path) = registry_path {
         if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(map) = serde_json::from_str::<std::collections::HashMap<String, u32>>(&content) {
+            if let Ok(map) =
+                serde_json::from_str::<std::collections::HashMap<String, u32>>(&content)
+            {
                 uids_map = map;
             }
         }
@@ -184,7 +195,12 @@ pub fn allocate_app_uid_with_registry(app_id: &str, registry_path: Option<&Path>
 pub fn allocate_app_uid(app_id: &str) -> u32 {
     let default_reg = if cfg!(target_os = "windows") {
         env::var_os("USERPROFILE")
-            .map(|p| PathBuf::from(p).join(".onuron").join("nilrt").join("app_uids.json"))
+            .map(|p| {
+                PathBuf::from(p)
+                    .join(".onuron")
+                    .join("nilrt")
+                    .join("app_uids.json")
+            })
             .unwrap_or_else(|| PathBuf::from("app_uids.json"))
     } else {
         PathBuf::from("/data/nilrt/app_uids.json")
@@ -234,7 +250,12 @@ fn main() {
 
     let default_db = if cfg!(target_os = "windows") {
         env::var_os("USERPROFILE")
-            .map(|p| PathBuf::from(p).join(".onuron").join("nilrt").join("permissions.json"))
+            .map(|p| {
+                PathBuf::from(p)
+                    .join(".onuron")
+                    .join("nilrt")
+                    .join("permissions.json")
+            })
             .unwrap_or_else(|| PathBuf::from("permissions.json"))
     } else {
         PathBuf::from("/data/nilrt/permissions.json")
@@ -262,7 +283,10 @@ fn main() {
     }
 
     let app_uid = allocate_app_uid(app_id);
-    println!("[nilrt-launch] Allocated per-app isolated UID/GID: {}", app_uid);
+    println!(
+        "[nilrt-launch] Allocated per-app isolated UID/GID: {}",
+        app_uid
+    );
 
     let spec = LaunchSpec {
         app_id: app_id.clone(),
@@ -298,7 +322,9 @@ fn main() {
         let bin_candidate = app_dir.join("bin").join(app_id);
         if bin_candidate.is_file() {
             installed_binary = Some(bin_candidate);
-        } else if cfg!(target_os = "windows") && app_dir.join("bin").join(format!("{app_id}.exe")).is_file() {
+        } else if cfg!(target_os = "windows")
+            && app_dir.join("bin").join(format!("{app_id}.exe")).is_file()
+        {
             installed_binary = Some(app_dir.join("bin").join(format!("{app_id}.exe")));
         } else if app_dir.join(format!("{app_id}.nib")).is_file() {
             installed_binary = Some(app_dir.join(format!("{app_id}.nib")));
@@ -307,7 +333,13 @@ fn main() {
 
     let result = if let Some(target) = installed_binary {
         let is_nib = target.extension().and_then(|s| s.to_str()) == Some("nib")
-            || std::fs::read(&target).map(|bytes| bytes.starts_with(b"NILB") || bytes.starts_with(b"NIB1") || bytes.starts_with(br#"{"magic""#)).unwrap_or(false);
+            || std::fs::read(&target)
+                .map(|bytes| {
+                    bytes.starts_with(b"NILB")
+                        || bytes.starts_with(b"NIB1")
+                        || bytes.starts_with(br#"{"magic""#)
+                })
+                .unwrap_or(false);
 
         if is_nib {
             println!("[nilrt-launch] Executing compiled NilLang bytecode via nilc runtime engine");
@@ -318,7 +350,8 @@ fn main() {
             } else if Path::new("/usr/bin/nilc").is_file() {
                 "/usr/bin/nilc".to_string()
             } else if let Ok(current) = std::env::current_exe() {
-                let candidate = current.with_file_name(if cfg!(windows) { "nilc.exe" } else { "nilc" });
+                let candidate =
+                    current.with_file_name(if cfg!(windows) { "nilc.exe" } else { "nilc" });
                 if candidate.is_file() {
                     candidate.to_string_lossy().into_owned()
                 } else {
@@ -329,7 +362,8 @@ fn main() {
             };
             lifecycle::launch(&spec, &nilc_cmd, &launch_args).map_err(|e| e.to_string())
         } else {
-            lifecycle::launch(&spec, &target.to_string_lossy(), &launch_args).map_err(|e| e.to_string())
+            lifecycle::launch(&spec, &target.to_string_lossy(), &launch_args)
+                .map_err(|e| e.to_string())
         }
     } else {
         let system = PathBuf::from("/usr/bin").join(app_id);
@@ -356,14 +390,30 @@ mod tests {
 
     #[test]
     fn rejects_traversal_and_shell_metacharacters() {
-        for id in ["../bin/sh", "..", ".", "a/b", "a\\b", "", "a b", "a;id", "a$(id)", "é"] {
+        for id in [
+            "../bin/sh",
+            "..",
+            ".",
+            "a/b",
+            "a\\b",
+            "",
+            "a b",
+            "a;id",
+            "a$(id)",
+            "é",
+        ] {
             assert!(validate_app_id(id).is_err(), "accepted {id:?}");
         }
     }
 
     #[test]
     fn accepts_normal_package_ids() {
-        for id in ["notes", "org.onuron.notes", "com.signal.android", "my-app_2"] {
+        for id in [
+            "notes",
+            "org.onuron.notes",
+            "com.signal.android",
+            "my-app_2",
+        ] {
             assert!(validate_app_id(id).is_ok(), "rejected {id:?}");
         }
         assert!(validate_app_id(&"a".repeat(129)).is_err());
@@ -376,8 +426,14 @@ mod tests {
         let uid3 = allocate_app_uid("org.onuron.camera");
         assert_eq!(uid1, uid2, "UID allocation must be deterministic");
         assert_ne!(uid1, uid3, "Different apps should receive different UIDs");
-        assert!((10000..30000).contains(&uid1), "UID must be in isolated range: {uid1}");
-        assert!((10000..30000).contains(&uid3), "UID must be in isolated range: {uid3}");
+        assert!(
+            (10000..30000).contains(&uid1),
+            "UID must be in isolated range: {uid1}"
+        );
+        assert!(
+            (10000..30000).contains(&uid3),
+            "UID must be in isolated range: {uid3}"
+        );
     }
 
     #[test]
@@ -428,14 +484,21 @@ mod tests {
         for h in handles {
             let res = h.join().unwrap();
             for (_app_id, uid) in res {
-                assert!(all_uids.insert(uid), "Duplicate UID allocated concurrently: {uid}");
+                assert!(
+                    all_uids.insert(uid),
+                    "Duplicate UID allocated concurrently: {uid}"
+                );
             }
         }
 
         // Verify the persisted registry contains all 20 unique allocations
         let content = std::fs::read_to_string(&*reg_path).unwrap();
         let map: std::collections::HashMap<String, u32> = serde_json::from_str(&content).unwrap();
-        assert_eq!(map.len(), 20, "Expected all 20 apps registered in JSON registry");
+        assert_eq!(
+            map.len(),
+            20,
+            "Expected all 20 apps registered in JSON registry"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

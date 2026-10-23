@@ -55,7 +55,11 @@ fn update(state: &mut CameraState, ev: Ev) {
             let _ = CameraClient::set_torch(state.camera_id, state.torch_on);
             state.status_msg = format!(
                 "Torch {}",
-                if state.torch_on { "Enabled" } else { "Disabled" }
+                if state.torch_on {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                }
             );
         }
         Ev::Click(3) => {
@@ -65,7 +69,11 @@ fn update(state: &mut CameraState, ev: Ev) {
                 state.facing = info.facing;
                 state.resolution = info.resolution;
             } else {
-                state.facing = if state.camera_id == 0 { "back".into() } else { "front".into() };
+                state.facing = if state.camera_id == 0 {
+                    "back".into()
+                } else {
+                    "front".into()
+                };
             }
             state.status_msg = format!("Switched to {} camera", state.facing);
         }
@@ -77,7 +85,11 @@ fn view(state: &CameraState) -> Element {
     Element::Column {
         children: vec![
             Element::Text {
-                content: format!("📷 Onuron Camera Viewfinder — {} ({})", state.facing.to_uppercase(), state.resolution),
+                content: format!(
+                    "📷 Onuron Camera Viewfinder — {} ({})",
+                    state.facing.to_uppercase(),
+                    state.resolution
+                ),
             },
             Element::Text {
                 content: format!("Status: {}", state.status_msg),

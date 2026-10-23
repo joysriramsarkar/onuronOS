@@ -1,0 +1,68 @@
+# ADR-0010 — Shell design system and the 1.7 screen implementation
+
+- **Status:** accepted
+- **Date:** 2026-10-22
+- **Owning layer:** `nilshell` / `NilUI` (shell chrome and native screen composition).
+  The implementation under `nilsim/` is the desktop rendering of that shell, not a
+  new architecture layer.
+- **Supersedes:** nothing.
+
+## Context
+
+The project holds a complete visual reference for the phone shell:
+`অনুরণ ওএস — অ্যাপ UI ডিজাইন-png/` — 35 screens, each in a dark and a light
+variant, 780×1592 px. Until now the simulator drew ad-hoc screens with hard-coded
+colours, per-screen geometry and icons assembled inside each renderer. That made
+"does the OS look like the design?" unanswerable and made every new screen a copy
+of the previous one's mistakes.
+
+The maintainer asked for the OS UI to follow those screens and for the matching
+functionality, with two exceptions: **Terminal** and **Memories** keep their
+existing implementation.
+
+## Decision
+
+1. **Geometric source of truth is the reference art.** The logical canvas is
+   390×796, exactly half of the 780×1592 art, so every measured pixel in the PNG
+   maps to one logical pixel after ÷2. Measurements are recorded in
+   `docs/ui-design-spec.md`.
+2. **One token + component layer.** `nilsim/src/ui.rs` owns palette, metrics,
+   the vector icon set and the shared widgets (status bar, screen title, card,
+   row, switch, slider, chip, keypad, primary button, FAB). Screens compose
+   widgets; they do not redefine colours or spacing.
+3. **Palette is sampled, not invented** (`#1E1236` / `#322748` / `#9B6BFF` …).
+   Both themes derive from the same token struct, so a screen cannot drift
+   between themes.
+4. **Terminal and Memories are out of scope.** They keep their previous
+   renderers, status bar and navigation bar. `paint_screen` branches explicitly
+   for them (`legacy_chrome`), so redesign work cannot silently restyle them.
+5. **Camera and Music have no tile on the designed home grid.** The designed
+   home has exactly 12 native tiles. To keep the art intact while still making
+   those screens reachable, an app drawer (`AppDrawer`, all 14 native apps) is
+   reachable by scrolling up on Home, `F6`, or the shell shortcut list.
+6. **Validation path.** Two headless modes exist so the result is checkable
+   without a human clicking:
+   - `nilsim --export-ui <dir>` renders every shell screen in both themes to BMP
+     for comparison against the reference PNGs.
+   - `nilsim --selftest` exercises routing, toggles, slider drag, the PIN gate,
+     note persistence, backup, update check and preference round-tripping, then
+     exits non-zero on failure.
+
+## Consequences
+
+- Adding a screen now means composing `ui::` widgets and registering hit areas;
+  restyling means editing tokens once.
+- The simulator's shell is verifiable against the art and by script; regressions
+  in routing or persistence are caught by `--selftest`.
+- Hardware-backed controls (Wi-Fi, Bluetooth, torch, VPN, camera sensor) remain
+  **simulated state** in the desktop simulator. The screens are honest about
+  what they do — capture writes a placeholder file and says so, update check
+  reads a real channel manifest if present and reports when it is absent.
+- The reference art is design input, not runtime data: no PNG is shipped or
+  sampled at runtime, and the icon set is vector geometry in code.
+- The lock PIN is persisted as a salted SHA-256 record in `/etc/prefs.json`
+  (salt + digest, never the plaintext). A device without a PIN record boots into
+  the first-boot flow; changing the PIN from Security re-enters that flow.
+- Hardware-backed controls are simulator state and are described as such; the
+  desktop shell does not claim driver-level Wi-Fi, Bluetooth, VPN or camera
+  behaviour.

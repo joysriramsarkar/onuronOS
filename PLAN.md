@@ -19,5 +19,8 @@
 - `cargo test` + `qemu-smoke.py` + persistence + recovery সবুজ; `docs/maturity.toml` + `gen-maturity.py --check` পাস।
 
 ## এই সেশনে
+- [x] 22 Oct: ৩৫টি রেফারেন্স স্ক্রিন (ডার্ক/লাইট) থেকে মাপা ডিজাইন সিস্টেম — `nilsim/src/ui.rs`; স্পেক `docs/ui-design-spec.md`; সিদ্ধান্ত `docs/adr/0010-shell-design-system.md`। ৩৩ স্ক্রিন নতুন করে বাস্তবায়িত (টার্মিনাল ও স্মৃতি ইচ্ছাকৃতভাবে অপরিবর্তিত)।
+- [x] 22 Oct: হেডলেস যাচাই — `nilsim --export-ui <dir>` (সব স্ক্রিন, দুই থিম) ও `nilsim --selftest` (১১টি চেক: রাউটিং, টগল, স্লাইডার, পিন, নোট persist, ব্যাকআপ, আপডেট, prefs)। `cargo test -p nilsim` → ৩টি টেস্ট পাস।
+- [x] 22 Oct: সেটিংস persist (`/etc/prefs.json`), অ্যাপ ড্রয়ার (ক্যামেরা/মিউজিক), এজ-জেসচার ও কীবোর্ড শর্টকাট (F1–F7, Esc=ব্যাক, Ctrl+Q=প্রস্থান)।
 - [ ] `cargo test` (দ্রুত) + ফলাফল রেকর্ড; QEMU শুধু পরিবেশ থাকলে।
 - [x] 13 Oct: `nilsim/` আর্কাইভ প্রস্তাব **বাতিল (ADR)** — Rust desktop sim বনাম Go app-runtime emulator ভিন্ন স্তর; দেখুন `onuron_project/specs/simulation.md`।

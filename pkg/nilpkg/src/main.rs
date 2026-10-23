@@ -53,7 +53,11 @@ fn cmd_pack(args: &[String]) -> Result<(), String> {
             "--perm" => {
                 i += 1;
                 if let Some(p) = args.get(i) {
-                    permissions = p.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                    permissions = p
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
                 }
             }
             "--key" => {
@@ -69,7 +73,8 @@ fn cmd_pack(args: &[String]) -> Result<(), String> {
     let name = name.unwrap_or_else(|| app_id.clone());
 
     let signing_key = if let Some(kp) = key_path {
-        let text = std::fs::read_to_string(&kp).map_err(|e| format!("Could not read key {}: {e}", kp.display()))?;
+        let text = std::fs::read_to_string(&kp)
+            .map_err(|e| format!("Could not read key {}: {e}", kp.display()))?;
         if text.starts_with("enc1$") {
             let pass = nilpkg::keymgmt::read_passphrase("Passphrase: ")?;
             let raw = nilpkg::keymgmt::decrypt_private_key(&text, &pass)
@@ -78,7 +83,8 @@ fn cmd_pack(args: &[String]) -> Result<(), String> {
             ed25519_dalek::SigningKey::from_bytes(&raw_arr)
         } else {
             let hex_clean = text.trim();
-            let raw = nilpkg::hex::decode(hex_clean).map_err(|e| format!("Invalid hex key: {e}"))?;
+            let raw =
+                nilpkg::hex::decode(hex_clean).map_err(|e| format!("Invalid hex key: {e}"))?;
             let raw_arr: [u8; 32] = raw.try_into().map_err(|_| "Invalid key size")?;
             ed25519_dalek::SigningKey::from_bytes(&raw_arr)
         }
@@ -117,12 +123,18 @@ fn print_help() {
     println!("=========================================================");
     println!("Usage:");
     println!("  nilpkg install <package.nilax or dir> — Install signed package (trusted publisher required)");
-    println!("  nilpkg pack <binary> <out.nilax>     — Pack and sign a native app into .nilax package");
+    println!(
+        "  nilpkg pack <binary> <out.nilax>     — Pack and sign a native app into .nilax package"
+    );
     println!("                                         --app-id <id> [--name <n>] [--version <v>] [--key <k>]");
-    println!("  nilpkg fetch <url>                   — Download over HTTPS, verify signature and digest");
+    println!(
+        "  nilpkg fetch <url>                   — Download over HTTPS, verify signature and digest"
+    );
     println!("                                         [--install] [--sha256 <hex>] [--allow-insecure] [--cache <dir>]");
     println!("  nilpkg upgrade <directory>           — Upgrade an installed package with rollback safety");
-    println!("  nilpkg rollback <pkg_id>             — Restore the version replaced by the last upgrade");
+    println!(
+        "  nilpkg rollback <pkg_id>             — Restore the version replaced by the last upgrade"
+    );
     println!("  nilpkg demo <pkg_id>                 — Create a sample launcher, NOT a real app");
     println!("  nilpkg remove <pkg_id>               — Remove installed package");
     println!("  nilpkg list                          — List installed manifests (not reverified)");
@@ -217,7 +229,11 @@ fn main() -> ExitCode {
                 return ExitCode::FAILURE;
             }
             ok(
-                install_local(std::path::Path::new(&args[2]), &get_app_dir(), &get_key_dir()),
+                install_local(
+                    std::path::Path::new(&args[2]),
+                    &get_app_dir(),
+                    &get_key_dir(),
+                ),
                 "Installation",
             )
         }

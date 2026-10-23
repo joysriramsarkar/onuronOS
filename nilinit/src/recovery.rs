@@ -67,11 +67,15 @@ pub fn recovery_requested(cmdline: &str) -> bool {
 /// write zero — only after boot completion.
 pub fn plan_boot(cmdline: &str, previous_failed_boots: u32) -> BootDecision {
     if recovery_requested(cmdline) {
-        return BootDecision::Recovery { reason: RecoveryReason::Requested };
+        return BootDecision::Recovery {
+            reason: RecoveryReason::Requested,
+        };
     }
     let next = previous_failed_boots.saturating_add(1);
     if next >= MAX_FAILED_BOOTS {
-        BootDecision::Recovery { reason: RecoveryReason::TooManyFailedBoots(next) }
+        BootDecision::Recovery {
+            reason: RecoveryReason::TooManyFailedBoots(next),
+        }
     } else {
         BootDecision::Normal { failed_boots: next }
     }
@@ -105,6 +109,44 @@ pub fn write_boot_count(path: &str, value: u32) -> std::io::Result<()> {
     std::fs::write(path, value.to_string())
 }
 
+/// Outcome of attempting to mount persistent `/data` block device candidates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DataMountOutcome {
+    /// A candidate block device mounted cleanly as ext4/ext2.
+    Mounted { device: String },
+    /// One or more block devices existed on the bus, but every mount attempt
+    /// failed (e.g. corrupt superblock / damaged filesystem). Must NOT be
+    /// silently reported as "no disk present".
+    CorruptDisk {
+        failed_devices: Vec<(String, String)>,
+    },
+    /// No candidate block device node existed.
+    NoDiskPresent,
+}
+
+/// Pure decision helper that classifies `/data` mount attempts for present
+/// block devices so corrupt disks are loudly reported rather than silently
+/// masked as missing disks.
+pub fn evaluate_data_mount_attempts(attempts: &[(String, Result<(), String>)]) -> DataMountOutcome {
+    if attempts.is_empty() {
+        return DataMountOutcome::NoDiskPresent;
+    }
+    let mut failures = Vec::new();
+    for (dev, res) in attempts {
+        match res {
+            Ok(()) => {
+                return DataMountOutcome::Mounted {
+                    device: dev.clone(),
+                }
+            }
+            Err(err) => failures.push((dev.clone(), err.clone())),
+        }
+    }
+    DataMountOutcome::CorruptDisk {
+        failed_devices: failures,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,21 +166,28 @@ mod tests {
     fn explicit_flag_wins_over_counter() {
         assert_eq!(
             plan_boot("onuron.recovery=1", 0),
-            BootDecision::Recovery { reason: RecoveryReason::Requested }
+            BootDecision::Recovery {
+                reason: RecoveryReason::Requested
+            }
         );
     }
 
     #[test]
     fn counter_increments_on_normal_boot() {
         assert_eq!(plan_boot("", 0), BootDecision::Normal { failed_boots: 1 });
-        assert_eq!(plan_boot("quiet", 1), BootDecision::Normal { failed_boots: 2 });
+        assert_eq!(
+            plan_boot("quiet", 1),
+            BootDecision::Normal { failed_boots: 2 }
+        );
     }
 
     #[test]
     fn third_failed_boot_enters_recovery() {
         assert_eq!(
             plan_boot("", MAX_FAILED_BOOTS - 1),
-            BootDecision::Recovery { reason: RecoveryReason::TooManyFailedBoots(MAX_FAILED_BOOTS) }
+            BootDecision::Recovery {
+                reason: RecoveryReason::TooManyFailedBoots(MAX_FAILED_BOOTS)
+            }
         );
         // Saturating: a huge counter stays in recovery, never overflows.
         assert!(matches!(
@@ -175,7 +224,9 @@ mod tests {
         // MAX_FAILED_BOOTS = 3: boots 1 and 2 stay normal, boot 3 recovers.
         assert_eq!(
             plan_boot("", MAX_FAILED_BOOTS - 2),
-            BootDecision::Normal { failed_boots: MAX_FAILED_BOOTS - 1 }
+            BootDecision::Normal {
+                failed_boots: MAX_FAILED_BOOTS - 1
+            }
         );
         assert!(matches!(
             plan_boot("", MAX_FAILED_BOOTS - 1),
@@ -201,13 +252,47 @@ mod tests {
         assert!(recovery_requested("ONURON.RECOVERY"));
         assert_eq!(
             plan_boot("onuron.recovery", u32::MAX),
-            BootDecision::Recovery { reason: RecoveryReason::Requested }
+            BootDecision::Recovery {
+                reason: RecoveryReason::Requested
+            }
         );
         // Overflow and whitespace-padded values degrade to 0, never to
         // an accidental recovery trigger.
         assert_eq!(parse_boot_count("4294967296"), 0);
         assert_eq!(parse_boot_count("  3  "), 3);
-        assert_eq!(plan_boot("", parse_boot_count("garbage!!")), BootDecision::Normal { failed_boots: 1 });
+        assert_eq!(
+            plan_boot("", parse_boot_count("garbage!!")),
+            BootDecision::Normal { failed_boots: 1 }
+        );
+    }
+
+    #[test]
+    fn corrupt_disk_is_distinguished_from_no_disk_present() {
+        assert_eq!(
+            evaluate_data_mount_attempts(&[]),
+            DataMountOutcome::NoDiskPresent
+        );
+        assert_eq!(
+            evaluate_data_mount_attempts(&[(
+                "/dev/vda".to_string(),
+                Err("EINVAL: bad ext4 superblock".to_string())
+            )]),
+            DataMountOutcome::CorruptDisk {
+                failed_devices: vec![(
+                    "/dev/vda".to_string(),
+                    "EINVAL: bad ext4 superblock".to_string()
+                )]
+            }
+        );
+        assert_eq!(
+            evaluate_data_mount_attempts(&[
+                ("/dev/vda".to_string(), Err("EINVAL".to_string())),
+                ("/dev/vda1".to_string(), Ok(())),
+            ]),
+            DataMountOutcome::Mounted {
+                device: "/dev/vda1".to_string()
+            }
+        );
     }
 
     // Tiny helper so this module needs no extra dependency. Not cryptographic.

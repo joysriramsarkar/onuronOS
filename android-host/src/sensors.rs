@@ -43,7 +43,10 @@ impl AndroidHostSensors {
 
 impl SensorHal for AndroidHostSensors {
     fn get_accelerometer(&self) -> (f32, f32, f32) {
-        self.state.lock().map(|s| s.accel).unwrap_or((0.0, 9.81, 0.0))
+        self.state
+            .lock()
+            .map(|s| s.accel)
+            .unwrap_or((0.0, 9.81, 0.0))
     }
 
     fn get_gyroscope(&self) -> (f32, f32, f32) {

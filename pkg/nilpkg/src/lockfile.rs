@@ -130,7 +130,11 @@ mod tests {
 
         let probe = |root: &std::path::Path| {
             std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "lockfile::tests::lock_is_enforced_across_processes", "--nocapture"])
+                .args([
+                    "--exact",
+                    "lockfile::tests::lock_is_enforced_across_processes",
+                    "--nocapture",
+                ])
                 .env("NILPKG_LOCK_PROBE", "1")
                 .env("NILPKG_LOCK_ROOT", root)
                 .status()
@@ -138,9 +142,17 @@ mod tests {
                 .code()
         };
 
-        assert_eq!(probe(&root), Some(3), "a second process must be refused the held lock");
+        assert_eq!(
+            probe(&root),
+            Some(3),
+            "a second process must be refused the held lock"
+        );
         drop(held);
-        assert_eq!(probe(&root), Some(0), "the lock must be acquirable once released");
+        assert_eq!(
+            probe(&root),
+            Some(0),
+            "the lock must be acquirable once released"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

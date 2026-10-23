@@ -16,9 +16,9 @@
 //     { "status": "ERR",  "message": "..." }
 
 #[cfg(unix)]
-use std::path::Path;
-#[cfg(unix)]
 use serde::{Deserialize, Serialize};
+#[cfg(unix)]
+use std::path::Path;
 
 #[cfg(unix)]
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -68,10 +68,18 @@ struct AgentResponse {
 #[cfg(unix)]
 impl AgentResponse {
     fn ok(result: serde_json::Value) -> Self {
-        Self { status: "OK", result: Some(result), message: None }
+        Self {
+            status: "OK",
+            result: Some(result),
+            message: None,
+        }
     }
     fn err(msg: impl Into<String>) -> Self {
-        Self { status: "ERR", result: None, message: Some(msg.into()) }
+        Self {
+            status: "ERR",
+            result: None,
+            message: Some(msg.into()),
+        }
     }
 }
 
@@ -79,7 +87,11 @@ impl AgentResponse {
 
 /// Launch an Activity via `am start`.
 #[cfg(unix)]
-async fn start_activity(package: &str, activity: &str, extras: &serde_json::Value) -> AgentResponse {
+async fn start_activity(
+    package: &str,
+    activity: &str,
+    extras: &serde_json::Value,
+) -> AgentResponse {
     // Build `am start -n pkg/activity` invocation
     let component = if activity.is_empty() {
         package.to_string()
@@ -94,9 +106,15 @@ async fn start_activity(package: &str, activity: &str, extras: &serde_json::Valu
     if let Some(obj) = extras.as_object() {
         for (k, v) in obj {
             match v {
-                serde_json::Value::String(s) => { cmd.args(["--es", k, s]); }
-                serde_json::Value::Bool(b)   => { cmd.args(["--ez", k, if *b { "true" } else { "false" }]); }
-                serde_json::Value::Number(n) => { cmd.args(["--ei", k, &n.to_string()]); }
+                serde_json::Value::String(s) => {
+                    cmd.args(["--es", k, s]);
+                }
+                serde_json::Value::Bool(b) => {
+                    cmd.args(["--ez", k, if *b { "true" } else { "false" }]);
+                }
+                serde_json::Value::Number(n) => {
+                    cmd.args(["--ei", k, &n.to_string()]);
+                }
                 _ => {}
             }
         }
@@ -108,7 +126,9 @@ async fn start_activity(package: &str, activity: &str, extras: &serde_json::Valu
             let stderr = String::from_utf8_lossy(&out.stderr);
             if out.status.success() {
                 println!("[nilagent] START_ACTIVITY {component}: OK");
-                AgentResponse::ok(serde_json::json!({ "component": component, "am_output": stdout.trim() }))
+                AgentResponse::ok(
+                    serde_json::json!({ "component": component, "am_output": stdout.trim() }),
+                )
             } else {
                 let msg = format!("am start failed: {stderr}");
                 println!("[nilagent] START_ACTIVITY {component}: FAIL — {msg}");
@@ -140,7 +160,7 @@ async fn send_broadcast(intent: &str, extras: &serde_json::Value) -> AgentRespon
             AgentResponse::ok(serde_json::json!({ "intent": intent, "result": stdout.trim() }))
         }
         Ok(out) => AgentResponse::err(String::from_utf8_lossy(&out.stderr).into_owned()),
-        Err(e)  => AgentResponse::err(format!("exec am: {e}")),
+        Err(e) => AgentResponse::err(format!("exec am: {e}")),
     }
 }
 
@@ -151,7 +171,7 @@ async fn get_installed() -> AgentResponse {
 
     // Primary: pm list packages
     if let Ok(out) = tokio::process::Command::new("pm")
-        .args(["list", "packages", "-3"])   // -3 = third-party only
+        .args(["list", "packages", "-3"]) // -3 = third-party only
         .output()
         .await
     {
@@ -189,7 +209,7 @@ async fn stop_app(package: &str) -> AgentResponse {
             AgentResponse::ok(serde_json::json!({ "package": package }))
         }
         Ok(out) => AgentResponse::err(String::from_utf8_lossy(&out.stderr).into_owned()),
-        Err(e)  => AgentResponse::err(format!("exec am: {e}")),
+        Err(e) => AgentResponse::err(format!("exec am: {e}")),
     }
 }
 
@@ -202,7 +222,9 @@ async fn handle_connection(stream: tokio::net::UnixStream) {
 
     while let Ok(Some(line)) = lines.next_line().await {
         let line = line.trim().to_string();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         println!("[nilagent] ← {line}");
 
@@ -210,14 +232,16 @@ async fn handle_connection(stream: tokio::net::UnixStream) {
             Err(e) => AgentResponse::err(format!("JSON parse error: {e}")),
             Ok(cmd) => match cmd {
                 HostCommand::Ping => AgentResponse::ok(serde_json::json!({ "pong": true })),
-                HostCommand::StartActivity { package, activity, extras } =>
-                    start_activity(&package, &activity, &extras).await,
-                HostCommand::SendBroadcast { intent, extras } =>
-                    send_broadcast(&intent, &extras).await,
-                HostCommand::GetInstalled =>
-                    get_installed().await,
-                HostCommand::StopApp { package } =>
-                    stop_app(&package).await,
+                HostCommand::StartActivity {
+                    package,
+                    activity,
+                    extras,
+                } => start_activity(&package, &activity, &extras).await,
+                HostCommand::SendBroadcast { intent, extras } => {
+                    send_broadcast(&intent, &extras).await
+                }
+                HostCommand::GetInstalled => get_installed().await,
+                HostCommand::StopApp { package } => stop_app(&package).await,
             },
         };
 
@@ -265,7 +289,9 @@ async fn main() {
                     }
                     tokio::spawn(handle_connection(stream));
                 }
-                Err(e) => { eprintln!("[nilagent] accept error: {e}"); }
+                Err(e) => {
+                    eprintln!("[nilagent] accept error: {e}");
+                }
             }
         }
     }

@@ -1,13 +1,13 @@
 // services/netd/src/main.rs — Onuron OS Network Subsystem & Interface Manager
 // Discovers Linux network interfaces (/sys/class/net), monitors carrier link states, and parses DNS servers.
 
+use nilprotocol::{Frame, MessageType};
+use serde::{Deserialize, Serialize};
 use std::fs;
+use std::net::IpAddr;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
-use std::net::IpAddr;
-use serde::{Deserialize, Serialize};
-use nilprotocol::{Frame, MessageType};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum ConnectionType {
@@ -22,8 +22,8 @@ pub enum ConnectionType {
 pub struct NetworkInterface {
     pub name: String,
     pub conn_type: ConnectionType,
-    pub operstate: String,          // "up", "down", "unknown"
-    pub carrier_connected: bool,    // true if physical link carrier is detected
+    pub operstate: String,       // "up", "down", "unknown"
+    pub carrier_connected: bool, // true if physical link carrier is detected
     pub mac_address: String,
 }
 
@@ -71,7 +71,9 @@ pub fn parse_dns_servers(resolv_conf_path: &Path) -> Vec<String> {
     if let Ok(content) = fs::read_to_string(resolv_conf_path) {
         for line in content.lines() {
             let mut parts = line.split('#').next().unwrap_or("").split_whitespace();
-            if parts.next() != Some("nameserver") { continue; }
+            if parts.next() != Some("nameserver") {
+                continue;
+            }
             if let Some(address) = parts.next() {
                 if address.parse::<IpAddr>().is_ok() && !servers.iter().any(|s| s == address) {
                     servers.push(address.to_string());
@@ -96,14 +98,20 @@ pub fn scan_network_interfaces() -> NetworkState {
             nilhal::traits::ConnectionType::None => ConnectionType::None,
         };
 
-        let interfaces = st.active_interface.as_ref().map(|name| vec![NetworkInterface {
-            name: name.clone(),
-            conn_type: conn_t.clone(),
-            operstate: if st.is_connected { "up" } else { "down" }.into(),
-            carrier_connected: st.is_connected,
-            // The old hard-coded MAC address was fabricated device data.
-            mac_address: String::new(),
-        }]).unwrap_or_default();
+        let interfaces = st
+            .active_interface
+            .as_ref()
+            .map(|name| {
+                vec![NetworkInterface {
+                    name: name.clone(),
+                    conn_type: conn_t.clone(),
+                    operstate: if st.is_connected { "up" } else { "down" }.into(),
+                    carrier_connected: st.is_connected,
+                    // The old hard-coded MAC address was fabricated device data.
+                    mac_address: String::new(),
+                }]
+            })
+            .unwrap_or_default();
         return NetworkState {
             is_connected: st.is_connected,
             active_interface: st.active_interface,
@@ -142,7 +150,8 @@ pub fn scan_network_interfaces() -> NetworkState {
                 let conn_type = classify_interface(&name);
 
                 // Check if this interface is an active external connection
-                if conn_type != ConnectionType::Loopback && (carrier_connected || operstate == "up") {
+                if conn_type != ConnectionType::Loopback && (carrier_connected || operstate == "up")
+                {
                     if active_iface.is_none() {
                         active_iface = Some(name.clone());
                         active_type = conn_type.clone();
@@ -186,13 +195,27 @@ pub fn handle_ipc_request(frame: &Frame) -> Frame {
                 service_name: "netd".to_string(),
                 is_ready: true,
                 is_simulated: state.is_simulated,
-                backend_name: if state.is_simulated { "simulated".to_string() } else { "linux-sysfs".to_string() },
+                backend_name: if state.is_simulated {
+                    "simulated".to_string()
+                } else {
+                    "linux-sysfs".to_string()
+                },
                 uptime_secs: 0,
                 request_count: 1,
                 last_error: None,
             };
-            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
-                .unwrap_or_else(|_| Frame::new(MessageType::ErrorResponse, frame.request_id, b"encode error".to_vec()))
+            Frame::with_json(
+                MessageType::ServiceStatusResponse,
+                frame.request_id,
+                &payload,
+            )
+            .unwrap_or_else(|_| {
+                Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    b"encode error".to_vec(),
+                )
+            })
         }
         MessageType::NetGetState => {
             let state = scan_network_interfaces();
@@ -224,18 +247,22 @@ fn main() {
         initial_state.is_connected, initial_state.active_interface, initial_state.connection_type, initial_state.is_simulated
     );
     for iface in &initial_state.interfaces {
-        println!("  • {:<10} {:<10} (state: {}, carrier: {}) [{}]",
-            iface.name, format!("{:?}", iface.conn_type), iface.operstate, iface.carrier_connected, iface.mac_address);
+        println!(
+            "  • {:<10} {:<10} (state: {}, carrier: {}) [{}]",
+            iface.name,
+            format!("{:?}", iface.conn_type),
+            iface.operstate,
+            iface.carrier_connected,
+            iface.mac_address
+        );
     }
 
     // Monitor network link status periodically
-    thread::spawn(move || {
-        loop {
-            thread::sleep(Duration::from_secs(15));
-            let state = scan_network_interfaces();
-            if !state.is_connected {
-                println!("[netd] [WARN] No active network link detected.");
-            }
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_secs(15));
+        let state = scan_network_interfaces();
+        if !state.is_connected {
+            println!("[netd] [WARN] No active network link detected.");
         }
     });
 
@@ -245,11 +272,16 @@ fn main() {
             let listener = match nilsd::first_listener_or_bind("/run/onuron/net.sock") {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("[netd] Failed to bind IPC socket /run/onuron/net.sock: {}", e);
+                    eprintln!(
+                        "[netd] Failed to bind IPC socket /run/onuron/net.sock: {}",
+                        e
+                    );
                     return;
                 }
             };
-            println!("\x1b[1;32m[netd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/net.sock");
+            println!(
+                "\x1b[1;32m[netd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/net.sock"
+            );
 
             for stream in listener.incoming() {
                 if let Ok(mut sock) = stream {
@@ -292,7 +324,14 @@ mod tests {
 
     #[test]
     fn test_parse_resolv_conf() {
-        let tmp_resolv = std::env::temp_dir().join(format!("netd-resolv-{}-{}.conf", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let tmp_resolv = std::env::temp_dir().join(format!(
+            "netd-resolv-{}-{}.conf",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         let content = "# Generated by nilinit\nnameserver 1.1.1.1\nnameserver 8.8.8.8 # ipv4\nnameserver 2001:4860:4860::8888\nnameserverx 9.9.9.9\nnameserver not-an-ip\nnameserver 1.1.1.1\nsearch local\n";
         fs::write(&tmp_resolv, content).unwrap();
 
@@ -321,7 +360,10 @@ mod tests {
         // 2. NetGetState
         let state_frame = Frame::new(MessageType::NetGetState, 2, vec![]);
         let resp_frame = handle_ipc_request(&state_frame);
-        assert_eq!(resp_frame.message_type, u16::from(MessageType::NetStateInfo));
+        assert_eq!(
+            resp_frame.message_type,
+            u16::from(MessageType::NetStateInfo)
+        );
         let state: NetworkState = serde_json::from_slice(&resp_frame.payload).unwrap();
         assert_eq!(state.is_connected, scan_network_interfaces().is_connected);
 
@@ -333,7 +375,10 @@ mod tests {
         // 4. ServiceStatusRequest
         let status_req = Frame::new(MessageType::ServiceStatusRequest, 4, vec![]);
         let status_resp = handle_ipc_request(&status_req);
-        assert_eq!(status_resp.message_type, u16::from(MessageType::ServiceStatusResponse));
+        assert_eq!(
+            status_resp.message_type,
+            u16::from(MessageType::ServiceStatusResponse)
+        );
         let payload: nilprotocol::ServiceStatusPayload = status_resp.parse_json().unwrap();
         assert_eq!(payload.service_name, "netd");
         assert!(payload.is_ready);

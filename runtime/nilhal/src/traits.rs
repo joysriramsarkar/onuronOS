@@ -58,12 +58,33 @@ pub enum SwipeDirection {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TouchGesture {
-    Tap { x: f32, y: f32 },
-    DoubleTap { x: f32, y: f32 },
-    LongPress { x: f32, y: f32 },
-    Swipe { direction: SwipeDirection, velocity: f32 },
-    Drag { x: f32, y: f32, dx: f32, dy: f32 },
-    MultiTouchPinch { center_x: f32, center_y: f32, scale: f32 },
+    Tap {
+        x: f32,
+        y: f32,
+    },
+    DoubleTap {
+        x: f32,
+        y: f32,
+    },
+    LongPress {
+        x: f32,
+        y: f32,
+    },
+    Swipe {
+        direction: SwipeDirection,
+        velocity: f32,
+    },
+    Drag {
+        x: f32,
+        y: f32,
+        dx: f32,
+        dy: f32,
+    },
+    MultiTouchPinch {
+        center_x: f32,
+        center_y: f32,
+        scale: f32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -128,9 +149,9 @@ pub enum PerformanceMode {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HalBatteryInfo {
-    pub capacity: u8,            // 0 - 100%
+    pub capacity: u8, // 0 - 100%
     pub is_charging: bool,
-    pub status: String,          // "Charging", "Discharging", "Full"
+    pub status: String, // "Charging", "Discharging", "Full"
     pub voltage_mv: u32,
     pub temp_c: f32,
     pub health: String,
@@ -227,6 +248,6 @@ pub trait SensorHal: Send + Sync {
     fn get_accelerometer(&self) -> (f32, f32, f32);
     fn get_gyroscope(&self) -> (f32, f32, f32);
     fn get_ambient_light(&self) -> f32; // Lux
-    fn get_proximity(&self) -> bool;     // true = close
+    fn get_proximity(&self) -> bool; // true = close
     fn get_gps_coordinates(&self) -> Option<(f64, f64, f32)>; // (lat, lon, alt)
 }

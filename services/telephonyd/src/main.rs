@@ -48,8 +48,16 @@ impl TelephonyManager {
             carrier,
             phone_number: Some("+8801700000000".to_string()),
             signal_bars: 4,
-            radio_state: if found { "ready".to_string() } else { "simulated".to_string() },
-            network_type: if found { "VoLTE".to_string() } else { "Simulated".to_string() },
+            radio_state: if found {
+                "ready".to_string()
+            } else {
+                "simulated".to_string()
+            },
+            network_type: if found {
+                "VoLTE".to_string()
+            } else {
+                "Simulated".to_string()
+            },
             active_calls: Vec::new(),
             sms_inbox: Vec::new(),
             sms_outbox: Vec::new(),
@@ -374,14 +382,18 @@ pub fn handle_client_frame(manager: &mut TelephonyManager, frame: &Frame) -> Fra
                 request_count: 1,
                 last_error: None,
             };
-            Frame::with_json(MessageType::ServiceStatusResponse, frame.request_id, &payload)
-                .unwrap_or_else(|_| {
-                    Frame::new(
-                        MessageType::ErrorResponse,
-                        frame.request_id,
-                        b"encode error".to_vec(),
-                    )
-                })
+            Frame::with_json(
+                MessageType::ServiceStatusResponse,
+                frame.request_id,
+                &payload,
+            )
+            .unwrap_or_else(|_| {
+                Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    b"encode error".to_vec(),
+                )
+            })
         }
         _ => Frame::new(
             MessageType::ErrorResponse,
@@ -523,10 +535,16 @@ mod tests {
         assert_eq!(process_at_command(&mut mgr, "AT"), "OK\r\n");
 
         // AT+CPIN?
-        assert_eq!(process_at_command(&mut mgr, "AT+CPIN?"), "+CPIN: READY\r\n\r\nOK\r\n");
+        assert_eq!(
+            process_at_command(&mut mgr, "AT+CPIN?"),
+            "+CPIN: READY\r\n\r\nOK\r\n"
+        );
 
         // AT+CREG?
-        assert_eq!(process_at_command(&mut mgr, "AT+CREG?"), "+CREG: 0,1\r\n\r\nOK\r\n");
+        assert_eq!(
+            process_at_command(&mut mgr, "AT+CREG?"),
+            "+CREG: 0,1\r\n\r\nOK\r\n"
+        );
 
         // AT+CSQ
         let csq = process_at_command(&mut mgr, "AT+CSQ");
@@ -555,10 +573,12 @@ mod tests {
         // ServiceStatusRequest
         let status_req = Frame::new(MessageType::ServiceStatusRequest, 88, vec![]);
         let status_resp = handle_client_frame(&mut mgr, &status_req);
-        assert_eq!(status_resp.message_type, u16::from(MessageType::ServiceStatusResponse));
+        assert_eq!(
+            status_resp.message_type,
+            u16::from(MessageType::ServiceStatusResponse)
+        );
         let status: nilprotocol::ServiceStatusPayload = status_resp.parse_json().unwrap();
         assert_eq!(status.service_name, "telephonyd");
         assert!(status.is_ready);
     }
 }
-

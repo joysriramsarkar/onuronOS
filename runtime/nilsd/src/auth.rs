@@ -67,7 +67,9 @@ impl IpcPolicy {
     pub fn from_toml(text: &str) -> Result<Self, String> {
         let file: PolicyFile =
             toml::from_str(text).map_err(|e| format!("invalid IPC policy: {e}"))?;
-        Ok(IpcPolicy { services: file.services })
+        Ok(IpcPolicy {
+            services: file.services,
+        })
     }
 
     /// The built-in policy shipped with the OS.
@@ -83,9 +85,7 @@ impl IpcPolicy {
             Ok(text) => match Self::from_toml(&text) {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!(
-                        "[nilsd:auth] {e}; falling back to built-in IPC policy"
-                    );
+                    eprintln!("[nilsd:auth] {e}; falling back to built-in IPC policy");
                     Self::builtin()
                 }
             },
@@ -123,7 +123,11 @@ pub fn load_default_policy() -> IpcPolicy {
 /// Authorize a `std` Unix socket connection, logging and returning `false` on
 /// denial or when peer credentials cannot be read (fail closed).
 #[cfg(unix)]
-pub fn authorize_stream(policy: &IpcPolicy, service: &str, stream: &std::os::unix::net::UnixStream) -> bool {
+pub fn authorize_stream(
+    policy: &IpcPolicy,
+    service: &str,
+    stream: &std::os::unix::net::UnixStream,
+) -> bool {
     match peer_cred(stream) {
         Ok(cred) => match policy.authorize(service, cred) {
             Ok(()) => true,

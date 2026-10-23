@@ -1,4 +1,4 @@
-﻿// pkg/nilpkg/src/fetch.rs — Remote package retrieval over HTTPS.
+// pkg/nilpkg/src/fetch.rs — Remote package retrieval over HTTPS.
 //
 // Guarantees (improvement plan B2):
 //   * TLS certificate validation is on by default and there is no flag that
@@ -43,7 +43,11 @@ pub struct FetchOptions<'a> {
 
 impl<'a> FetchOptions<'a> {
     pub fn new() -> Self {
-        Self { allow_insecure: false, expected_sha256: None, sidecar: true }
+        Self {
+            allow_insecure: false,
+            expected_sha256: None,
+            sidecar: true,
+        }
     }
 }
 
@@ -216,10 +220,14 @@ pub fn fetch_package_with_agent(
                 );
             }
             if sc.sha256 != manifest.sha256 {
-                return Err("Sidecar manifest payload hash disagrees with embedded manifest".into());
+                return Err(
+                    "Sidecar manifest payload hash disagrees with embedded manifest".into(),
+                );
             }
             if sc.public_key_hex != manifest.public_key_hex {
-                return Err("Sidecar manifest signed by a different key than the embedded manifest".into());
+                return Err(
+                    "Sidecar manifest signed by a different key than the embedded manifest".into(),
+                );
             }
             crate::verify_manifest(sc, &payload)?;
             crate::trusted_publisher(key_dir, sc)?;
@@ -229,11 +237,14 @@ pub fn fetch_package_with_agent(
         if dest.exists() {
             let _ = fs::remove_file(&dest);
         }
-        fs::rename(&tmp_path, &dest)
-            .map_err(|e| format!("Could not move downloaded file: {e}"))?;
+        fs::rename(&tmp_path, &dest).map_err(|e| format!("Could not move downloaded file: {e}"))?;
         sync_dir(cache_dir).map_err(|e| format!("Could not sync cache dir: {e}"))?;
 
-        Ok(FetchedPackage { path: dest, staged_dir: staging.clone(), manifest })
+        Ok(FetchedPackage {
+            path: dest,
+            staged_dir: staging.clone(),
+            manifest,
+        })
     })();
 
     if result.is_err() {
@@ -285,7 +296,7 @@ fn fetch_sidecar_manifest(agent: &ureq::Agent, url: &str) -> Option<crate::Manif
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
     use std::sync::Arc;
     use std::time::Duration as StdDuration;
@@ -317,9 +328,9 @@ mod tests {
         let key_pair = rcgen::KeyPair::generate().expect("keygen");
         let mut params =
             rcgen::CertificateParams::new(vec!["localhost".to_string()]).expect("params");
-        params.subject_alt_names.push(rcgen::SanType::IpAddress(IpAddr::V4(
-            Ipv4Addr::LOCALHOST,
-        )));
+        params
+            .subject_alt_names
+            .push(rcgen::SanType::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST)));
         let cert = params.self_signed(&key_pair).expect("self-sign");
         let cert_der = cert.der().clone();
         let key_der = key_pair.serialize_der();
@@ -340,11 +351,11 @@ mod tests {
 
         std::thread::spawn(move || {
             for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { break };
+                let Ok(stream) = stream else { break };
                 let _ = stream.set_read_timeout(Some(StdDuration::from_secs(10)));
                 let cfg = server_cfg.clone();
                 let responder = responder.clone();
-                let mut conn = match rustls::ServerConnection::new(cfg) {
+                let conn = match rustls::ServerConnection::new(cfg) {
                     Ok(c) => c,
                     Err(_) => continue,
                 };
@@ -370,11 +381,7 @@ mod tests {
                     continue;
                 }
                 let request = String::from_utf8_lossy(&req);
-                let path = request
-                    .split_whitespace()
-                    .nth(1)
-                    .unwrap_or("/")
-                    .to_string();
+                let path = request.split_whitespace().nth(1).unwrap_or("/").to_string();
 
                 match responder(&path) {
                     Reply::Ok(body) => {
@@ -438,7 +445,8 @@ mod tests {
 
     fn temp_root(tag: &str) -> PathBuf {
         install_crypto_provider();
-        let root = std::env::temp_dir().join(format!("nilpkg-fetch-{tag}-{:016x}", rand::random::<u64>()));
+        let root =
+            std::env::temp_dir().join(format!("nilpkg-fetch-{tag}-{:016x}", rand::random::<u64>()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         root
@@ -473,7 +481,11 @@ mod tests {
             archive_sha256: None,
         };
         crate::sign_manifest(&mut manifest, &signer);
-        fs::write(dir.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        fs::write(
+            dir.join("manifest.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
         (manifest, signer)
     }
 
@@ -493,7 +505,9 @@ mod tests {
         header.set_size(payload.len() as u64);
         header.set_mode(0o755);
         header.set_cksum();
-        builder.append_data(&mut header, "bin/app", &payload[..]).unwrap();
+        builder
+            .append_data(&mut header, "bin/app", &payload[..])
+            .unwrap();
         builder.finish().unwrap();
         builder.into_inner().unwrap()
     }
@@ -507,7 +521,10 @@ mod tests {
                     .collect()
             })
             .unwrap_or_default();
-        assert!(entries.is_empty(), "{context}: cache not clean: {entries:?}");
+        assert!(
+            entries.is_empty(),
+            "{context}: cache not clean: {entries:?}"
+        );
     }
 
     // ── Scheme enforcement (no server needed) ─────────────────────────────
@@ -556,8 +573,14 @@ mod tests {
         fs::create_dir_all(&keys).unwrap();
 
         for url in ["ftp://example.com/pkg", "file:///etc/passwd"] {
-            let opts = FetchOptions { allow_insecure: true, ..FetchOptions::new() };
-            assert!(fetch_package(url, &cache, &keys, &opts).is_err(), "accepted {url}");
+            let opts = FetchOptions {
+                allow_insecure: true,
+                ..FetchOptions::new()
+            };
+            assert!(
+                fetch_package(url, &cache, &keys, &opts).is_err(),
+                "accepted {url}"
+            );
         }
         assert_cache_empty(&cache, "scheme rejection (insecure)");
 
@@ -572,7 +595,8 @@ mod tests {
         let pkg = root.join("pkg");
         let keys = root.join("keys");
         let cache = root.join("cache");
-        let (_manifest, _signer) = signed_package(&pkg, b"legit payload", Some(&keys.join("trusted")));
+        let (_manifest, _signer) =
+            signed_package(&pkg, b"legit payload", Some(&keys.join("trusted")));
         let archive = tar_package(&pkg);
 
         let server = spawn_tls_server(move |_path| Reply::Ok(archive.clone()));
@@ -584,12 +608,18 @@ mod tests {
             &url,
             &cache,
             &keys,
-            &FetchOptions { sidecar: false, ..FetchOptions::new() },
+            &FetchOptions {
+                sidecar: false,
+                ..FetchOptions::new()
+            },
         )
         .expect("fetch should succeed");
 
         assert_eq!(fetched.manifest.app_id, "org.onuron.fixture");
-        assert!(fetched.path.exists(), "verified archive must be in the cache");
+        assert!(
+            fetched.path.exists(),
+            "verified archive must be in the cache"
+        );
         assert!(fetched.staged_dir.join("manifest.json").exists());
         assert!(fetched.staged_dir.join("bin/app").exists());
         // The staged payload verifies against the signed manifest.
@@ -614,7 +644,11 @@ mod tests {
         fs::write(pkg.join("bin/app"), b"EVIL PAYLOAD").unwrap();
         let archive = tar_package(&pkg);
         // Restore the signed manifest on disk for realism (not part of archive building).
-        fs::write(pkg.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        fs::write(
+            pkg.join("manifest.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
 
         let server = spawn_tls_server(move |_path| Reply::Ok(archive.clone()));
         let url = format!("https://{}/pkg.nilax", server.addr);
@@ -625,7 +659,10 @@ mod tests {
             &url,
             &cache,
             &keys,
-            &FetchOptions { sidecar: false, ..FetchOptions::new() },
+            &FetchOptions {
+                sidecar: false,
+                ..FetchOptions::new()
+            },
         )
         .expect_err("tampered payload must be rejected");
         assert!(
@@ -767,7 +804,10 @@ mod tests {
             &url,
             &cache,
             &keys,
-            &FetchOptions { sidecar: false, ..FetchOptions::new() },
+            &FetchOptions {
+                sidecar: false,
+                ..FetchOptions::new()
+            },
         )
         .expect_err("untrusted publisher must be rejected");
         assert!(err.contains("trusted"), "unexpected error: {err}");
@@ -792,7 +832,10 @@ mod tests {
             &url,
             &cache,
             &keys,
-            &FetchOptions { sidecar: false, ..FetchOptions::new() },
+            &FetchOptions {
+                sidecar: false,
+                ..FetchOptions::new()
+            },
         )
         .expect_err("404 must fail");
         assert!(err.contains("404"), "unexpected error: {err}");
@@ -820,7 +863,10 @@ mod tests {
             &url,
             &cache,
             &keys,
-            &FetchOptions { sidecar: false, ..FetchOptions::new() },
+            &FetchOptions {
+                sidecar: false,
+                ..FetchOptions::new()
+            },
         )
         .expect_err("truncated download must fail");
         assert!(err.contains("Download error"), "unexpected error: {err}");
@@ -845,7 +891,10 @@ mod tests {
             &url,
             &cache,
             &keys,
-            &FetchOptions { sidecar: false, ..FetchOptions::new() },
+            &FetchOptions {
+                sidecar: false,
+                ..FetchOptions::new()
+            },
         )
         .expect_err("non-archive must be rejected");
         assert!(!err.is_empty());

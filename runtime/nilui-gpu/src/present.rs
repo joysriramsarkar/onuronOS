@@ -3,9 +3,9 @@
 // Manages three frame buffers (Front, Back, Staging) to prevent tearing, lock contention,
 // and frame drops. Synchronizes presentation to display refresh cycles (120Hz = 8.33ms, 60Hz = 16.67ms).
 
-use std::time::{Duration, Instant};
 use crate::compositor::PixelBuffer;
 use crate::drm::{DrmDevice, DumbBuffer};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PresentationStats {
@@ -56,7 +56,8 @@ impl KmsPresenter {
             drm_device.allocate_dumb_buffer(3),
         ];
 
-        let target_frame_duration = Duration::from_nanos((1_000_000_000 / refresh_rate_hz as u64).max(1));
+        let target_frame_duration =
+            Duration::from_nanos((1_000_000_000 / refresh_rate_hz as u64).max(1));
 
         Self {
             width,
@@ -110,14 +111,22 @@ impl KmsPresenter {
         self.frame_counter += 1;
 
         let frame_time_ms = elapsed.as_secs_f32() * 1000.0;
-        let fps = if frame_time_ms > 0.0 { 1000.0 / frame_time_ms } else { self.refresh_rate_hz as f32 };
+        let fps = if frame_time_ms > 0.0 {
+            1000.0 / frame_time_ms
+        } else {
+            self.refresh_rate_hz as f32
+        };
 
         Ok(PresentationStats {
             frame_index: self.frame_counter,
             slot,
             frame_time_ms,
             fps,
-            dropped_frames: if elapsed > self.target_frame_duration * 2 { 1 } else { 0 },
+            dropped_frames: if elapsed > self.target_frame_duration * 2 {
+                1
+            } else {
+                0
+            },
             is_hardware: self.drm_device.is_hardware,
             page_flip_success: true,
             backend: if self.drm_device.is_hardware {
@@ -140,7 +149,11 @@ impl KmsPresenter {
                 self.last_frame_time = now;
                 self.frame_counter += 1;
                 let frame_time_ms = elapsed.as_secs_f32() * 1000.0;
-                let fps = if frame_time_ms > 0.0 { 1000.0 / frame_time_ms } else { self.refresh_rate_hz as f32 };
+                let fps = if frame_time_ms > 0.0 {
+                    1000.0 / frame_time_ms
+                } else {
+                    self.refresh_rate_hz as f32
+                };
                 PresentationStats {
                     frame_index: self.frame_counter,
                     slot: self.current_slot,
@@ -189,7 +202,9 @@ mod tests {
     fn test_present_frame_pipeline() {
         let mut presenter = KmsPresenter::with_resolution(100, 100, 120);
         let slot = presenter.acquire_next_slot();
-        presenter.back_buffer_mut().fill_rect(10, 10, 20, 20, 0xFF00FF00);
+        presenter
+            .back_buffer_mut()
+            .fill_rect(10, 10, 20, 20, 0xFF00FF00);
 
         let stats = presenter.present_frame();
         assert_eq!(stats.slot, slot);

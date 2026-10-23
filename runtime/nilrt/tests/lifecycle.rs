@@ -133,7 +133,12 @@ fn install_launch_persist_relaunch_and_uninstall() {
     let data_root = root.join("data");
     let source = root.join("source");
 
-    let pub_hex = write_signed_package(&source, APP_ID, b"signed payload", &["storage.read", "display"]);
+    let pub_hex = write_signed_package(
+        &source,
+        APP_ID,
+        b"signed payload",
+        &["storage.read", "display"],
+    );
     trust(&key_dir, &pub_hex);
     nilpkg::install_local(&source, &app_root, &key_dir).expect("install signed package");
 
@@ -179,7 +184,10 @@ fn aborted_launch_and_failed_install_leave_no_staging_residue() {
     let data_dir = lifecycle::app_data_dir(&root.join("data"), APP_ID);
     let err = lifecycle::launch_installed(&app_root, &spec(APP_ID, &data_dir), &[]).unwrap_err();
     assert!(err.contains("no installed executable"), "{err}");
-    assert!(staging_residue(&app_root).is_empty(), "aborted launch left residue");
+    assert!(
+        staging_residue(&app_root).is_empty(),
+        "aborted launch left residue"
+    );
 
     // A second install of an existing ID must fail without leaving .nilpkg-*
     // staging directories behind either.
@@ -191,7 +199,10 @@ fn aborted_launch_and_failed_install_leave_no_staging_residue() {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n.starts_with(".nilpkg-") && !n.starts_with(".nilpkg.lock"))
         .collect();
-    assert!(pkg_residue.is_empty(), "package staging leftovers: {pkg_residue:?}");
+    assert!(
+        pkg_residue.is_empty(),
+        "package staging leftovers: {pkg_residue:?}"
+    );
 
     let _ = fs::remove_dir_all(&root);
 }

@@ -94,7 +94,9 @@ impl NetworkHal for AndroidHostNetwork {
     fn connect_wifi(&mut self, ssid: &str, psk: &str) -> Result<(), HalError> {
         let ssid_clean = ssid.trim();
         if ssid_clean.is_empty() {
-            return Err(HalError::UnsupportedOperation("SSID cannot be empty".into()));
+            return Err(HalError::UnsupportedOperation(
+                "SSID cannot be empty".into(),
+            ));
         }
 
         // Delegate to Android host WifiManager / Settings provisioning

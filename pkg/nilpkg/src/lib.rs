@@ -3,13 +3,13 @@
 // integrity and Ed25519 publisher signatures. The `nilpkg` binary is a thin
 // CLI over this crate; `nilupd` reuses the durable/lock/fetch machinery.
 
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use rand::rngs::OsRng;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
-use ed25519_dalek::{SigningKey, VerifyingKey, Signature, Signer};
-use rand::rngs::OsRng;
 
 pub mod durable;
 pub mod extract;
@@ -71,16 +71,25 @@ pub fn verify_signature(verifying_key: &VerifyingKey, data: &[u8], signature: &S
 
 /// Package IDs are portable directory names, never filesystem paths or shell input.
 pub fn validate_app_id(id: &str) -> Result<(), String> {
-    if id.is_empty() || id.len() > 128 || id.split('.').any(|part| {
-        part.is_empty() || !part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-    }) || !id.as_bytes()[0].is_ascii_alphanumeric() {
+    if id.is_empty()
+        || id.len() > 128
+        || id.split('.').any(|part| {
+            part.is_empty()
+                || !part
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        })
+        || !id.as_bytes()[0].is_ascii_alphanumeric()
+    {
         return Err("Invalid package ID: use 1–128 ASCII letters, digits, dots, underscores or hyphens; start with a letter or digit and do not use empty dot-separated components".into());
     }
     // Avoid Windows device names even when packages are prepared on Linux.
     let stem = id.split('.').next().unwrap().to_ascii_uppercase();
     if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-        || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT"))
-            && matches!(stem.as_bytes()[3], b'1'..=b'9')) {
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+    {
         return Err("Reserved package ID".into());
     }
     Ok(())
@@ -89,7 +98,9 @@ pub fn validate_app_id(id: &str) -> Result<(), String> {
 pub fn get_app_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        let base = std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+        let base = std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
         base.join(".onuron").join("apps")
     }
     #[cfg(not(target_os = "windows"))]
@@ -101,7 +112,9 @@ pub fn get_app_dir() -> PathBuf {
 pub fn get_key_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        let base = std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+        let base = std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
         base.join(".onuron").join("keys")
     }
     #[cfg(not(target_os = "windows"))]
@@ -114,7 +127,9 @@ pub fn get_key_dir() -> PathBuf {
 pub fn get_cache_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        let base = std::env::var_os("USERPROFILE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+        let base = std::env::var_os("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
         base.join(".onuron").join("cache")
     }
     #[cfg(not(target_os = "windows"))]
@@ -153,8 +168,14 @@ pub fn verify_manifest(manifest: &Manifest, payload_bytes: &[u8]) -> Result<(), 
     }
 
     // 2. Verify signature presence
-    let sig_hex = manifest.signature_hex.as_ref().ok_or("Package is unsigned (missing signature_hex)")?;
-    let pub_hex = manifest.public_key_hex.as_ref().ok_or("Package is missing public_key_hex")?;
+    let sig_hex = manifest
+        .signature_hex
+        .as_ref()
+        .ok_or("Package is unsigned (missing signature_hex)")?;
+    let pub_hex = manifest
+        .public_key_hex
+        .as_ref()
+        .ok_or("Package is missing public_key_hex")?;
 
     let sig_bytes = hex::decode(sig_hex).map_err(|e| format!("Invalid signature hex: {}", e))?;
     let pub_bytes = hex::decode(pub_hex).map_err(|e| format!("Invalid public key hex: {}", e))?;
@@ -183,7 +204,9 @@ pub fn verify_manifest(manifest: &Manifest, payload_bytes: &[u8]) -> Result<(), 
         .map_err(|e| format!("Serialization error: {}", e))?;
 
     if !verify_signature(&verifying_key, &canonical_bytes, &signature) {
-        return Err("Ed25519 cryptographic signature verification failed! Package may be tampered.".into());
+        return Err(
+            "Ed25519 cryptographic signature verification failed! Package may be tampered.".into(),
+        );
     }
 
     Ok(())
@@ -282,9 +305,14 @@ pub fn is_revoked(key_dir: &Path, key: &[u8]) -> bool {
 /// Only explicit local trust anchors authorize installation. A key embedded in
 /// a manifest is not sufficient to establish who published a package.
 pub fn trusted_publisher(key_dir: &Path, manifest: &Manifest) -> Result<(), String> {
-    let expected = manifest.public_key_hex.as_deref().ok_or("Missing publisher key")?;
+    let expected = manifest
+        .public_key_hex
+        .as_deref()
+        .ok_or("Missing publisher key")?;
     let key = hex::decode(expected)?;
-    if key.len() != 32 { return Err("Invalid publisher key length".into()); }
+    if key.len() != 32 {
+        return Err("Invalid publisher key length".into());
+    }
     if is_revoked(key_dir, &key) {
         return Err("Publisher key has been revoked".into());
     }
@@ -293,8 +321,12 @@ pub fn trusted_publisher(key_dir: &Path, manifest: &Manifest) -> Result<(), Stri
         .map_err(|_| format!("No trusted publishers found in {}", trust_dir.display()))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
-        if !entry.file_type().map_err(|e| e.to_string())?.is_file() { continue; }
-        if entry.path().extension().and_then(|ext| ext.to_str()) != Some("pub") { continue; }
+        if !entry.file_type().map_err(|e| e.to_string())?.is_file() {
+            continue;
+        }
+        if entry.path().extension().and_then(|ext| ext.to_str()) != Some("pub") {
+            continue;
+        }
         let contents = fs::read_to_string(entry.path()).map_err(|e| e.to_string())?;
         if hex::decode(contents.trim()).ok().as_deref() == Some(key.as_slice()) {
             return Ok(());
@@ -305,36 +337,57 @@ pub fn trusted_publisher(key_dir: &Path, manifest: &Manifest) -> Result<(), Stri
 
 pub fn regular_file(path: &Path) -> Result<(), String> {
     let metadata = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
-    if !metadata.file_type().is_file() { return Err(format!("Not a regular file: {}", path.display())); }
+    if !metadata.file_type().is_file() {
+        return Err(format!("Not a regular file: {}", path.display()));
+    }
     Ok(())
 }
 
 /// Read only the package format we support; never follow directory or file
 /// symlinks supplied by a package or an installed app.
 pub fn read_package(source: &Path) -> Result<(Manifest, Vec<u8>), String> {
-    if !fs::symlink_metadata(source).map_err(|e| e.to_string())?.file_type().is_dir() {
+    if !fs::symlink_metadata(source)
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_dir()
+    {
         return Err("Package source must be a directory (not a symlink)".into());
     }
     let manifest_path = source.join("manifest.json");
     regular_file(&manifest_path)?;
-    if fs::metadata(&manifest_path).map_err(|e| e.to_string())?.len() > 64 * 1024 {
+    if fs::metadata(&manifest_path)
+        .map_err(|e| e.to_string())?
+        .len()
+        > 64 * 1024
+    {
         return Err("Manifest is too large".into());
     }
-    let manifest: Manifest = serde_json::from_slice(&fs::read(&manifest_path).map_err(|e| e.to_string())?)
-        .map_err(|e| format!("Invalid manifest: {e}"))?;
+    let manifest: Manifest =
+        serde_json::from_slice(&fs::read(&manifest_path).map_err(|e| e.to_string())?)
+            .map_err(|e| format!("Invalid manifest: {e}"))?;
     validate_app_id(&manifest.app_id)?;
-    let executable = manifest.exec.strip_prefix("bin/")
+    let executable = manifest
+        .exec
+        .strip_prefix("bin/")
         .ok_or("Executable must be directly inside bin/")?;
     validate_app_id(executable)?;
-    if manifest.size_bytes > 128 * 1024 * 1024 { return Err("Payload exceeds 128 MiB limit".into()); }
-    if !fs::symlink_metadata(source.join("bin")).map_err(|e| e.to_string())?.file_type().is_dir() {
+    if manifest.size_bytes > 128 * 1024 * 1024 {
+        return Err("Payload exceeds 128 MiB limit".into());
+    }
+    if !fs::symlink_metadata(source.join("bin"))
+        .map_err(|e| e.to_string())?
+        .file_type()
+        .is_dir()
+    {
         return Err("Package bin/ must be a directory (not a symlink)".into());
     }
     let payload_path = source.join("bin").join(executable);
     regular_file(&payload_path)?;
     let file = fs::File::open(&payload_path).map_err(|e| e.to_string())?;
     let mut payload = Vec::new();
-    file.take(128 * 1024 * 1024 + 1).read_to_end(&mut payload).map_err(|e| e.to_string())?;
+    file.take(128 * 1024 * 1024 + 1)
+        .read_to_end(&mut payload)
+        .map_err(|e| e.to_string())?;
     verify_manifest(&manifest, &payload)?;
     check_compatibility(&manifest)?;
     Ok((manifest, payload))
@@ -343,7 +396,9 @@ pub fn read_package(source: &Path) -> Result<(Manifest, Vec<u8>), String> {
 pub fn verify_installed(app_id: &str, app_root: &Path, key_dir: &Path) -> Result<(), String> {
     validate_app_id(app_id)?;
     let (manifest, _) = read_package(&app_root.join(app_id))?;
-    if manifest.app_id != app_id { return Err("Installed directory does not match signed app ID".into()); }
+    if manifest.app_id != app_id {
+        return Err("Installed directory does not match signed app ID".into());
+    }
     trusted_publisher(key_dir, &manifest)?;
     Ok(())
 }
@@ -352,7 +407,9 @@ pub fn verify_installed(app_id: &str, app_root: &Path, key_dir: &Path) -> Result
 /// plain dotted-numeric version, so callers never invent an ordering.
 pub fn compare_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
     let parse = |v: &str| -> Option<Vec<u64>> {
-        if v.is_empty() { return None; }
+        if v.is_empty() {
+            return None;
+        }
         v.split('.').map(|p| p.parse::<u64>().ok()).collect()
     };
     let (mut left, mut right) = (parse(a)?, parse(b)?);
@@ -388,7 +445,8 @@ pub fn stage_package(
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&dest, fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+            fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))
+                .map_err(|e| e.to_string())?;
         }
         // Flush the whole staged tree before it becomes live so a power loss
         // cannot leave a package directory with truncated contents.
@@ -411,7 +469,10 @@ pub fn recover_pending(app_root: &Path) -> Result<(), String> {
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(app_id) = name.strip_prefix(".nilpkg-journal-").and_then(|n| n.strip_suffix(".json")) else {
+        let Some(app_id) = name
+            .strip_prefix(".nilpkg-journal-")
+            .and_then(|n| n.strip_suffix(".json"))
+        else {
             continue;
         };
         let target = app_root.join(app_id);
@@ -422,7 +483,9 @@ pub fn recover_pending(app_root: &Path) -> Result<(), String> {
         } else if backup.exists() {
             fs::rename(&backup, &target)
                 .map_err(|e| format!("Could not restore interrupted upgrade of {app_id}: {e}"))?;
-            eprintln!("[nilpkg] Recovered interrupted upgrade of {app_id} (previous version restored)");
+            eprintln!(
+                "[nilpkg] Recovered interrupted upgrade of {app_id} (previous version restored)"
+            );
         }
         let _ = fs::remove_file(entry.path());
     }
@@ -444,9 +507,17 @@ pub fn recover_pending(app_root: &Path) -> Result<(), String> {
 /// Replace an installed package with a newer signed version. The swap uses a
 /// journal plus two renames so an interruption is recoverable rather than
 /// leaving the app half-installed.
-pub fn upgrade_local(source: &Path, app_root: &Path, key_dir: &Path, allow_downgrade: bool) -> Result<(), String> {
+pub fn upgrade_local(
+    source: &Path,
+    app_root: &Path,
+    key_dir: &Path,
+    allow_downgrade: bool,
+) -> Result<(), String> {
     let (manifest, payload) = read_package(source)?;
-    let executable = manifest.exec.strip_prefix("bin/").expect("validated by read_package");
+    let executable = manifest
+        .exec
+        .strip_prefix("bin/")
+        .expect("validated by read_package");
     trusted_publisher(key_dir, &manifest)?;
 
     // Serialize with other nilpkg processes before touching the app root.
@@ -455,7 +526,10 @@ pub fn upgrade_local(source: &Path, app_root: &Path, key_dir: &Path, allow_downg
     recover_pending(app_root)?;
     let target = app_root.join(&manifest.app_id);
     if !target.exists() {
-        return Err(format!("{} is not installed; use 'nilpkg install' first", manifest.app_id));
+        return Err(format!(
+            "{} is not installed; use 'nilpkg install' first",
+            manifest.app_id
+        ));
     }
     let installed = read_package(&target)?.0;
     if installed.version == manifest.version {
@@ -503,7 +577,10 @@ pub fn upgrade_local(source: &Path, app_root: &Path, key_dir: &Path, allow_downg
         let _ = fs::remove_file(&journal);
         return Err(match restored {
             Ok(_) => format!("Upgrade failed and was rolled back: {e}"),
-            Err(re) => format!("Upgrade failed ({e}) AND rollback failed ({re}); backup kept at {}", backup.display()),
+            Err(re) => format!(
+                "Upgrade failed ({e}) AND rollback failed ({re}); backup kept at {}",
+                backup.display()
+            ),
         });
     }
     sync_dir(app_root)?;
@@ -514,7 +591,11 @@ pub fn upgrade_local(source: &Path, app_root: &Path, key_dir: &Path, allow_downg
         "[nilpkg] Upgraded {} from {} to {}",
         manifest.app_id, installed.version, manifest.version
     );
-    println!("[nilpkg] Previous version kept at {} (use 'nilpkg rollback {}' to revert)", backup.display(), manifest.app_id);
+    println!(
+        "[nilpkg] Previous version kept at {} (use 'nilpkg rollback {}' to revert)",
+        backup.display(),
+        manifest.app_id
+    );
     Ok(())
 }
 
@@ -528,12 +609,15 @@ pub fn rollback_package(app_id: &str, app_root: &Path) -> Result<(), String> {
     let target = app_root.join(app_id);
     let backup = backup_path(app_root, app_id);
     if !backup.exists() {
-        return Err(format!("No previous version of {app_id} is available to roll back to"));
+        return Err(format!(
+            "No previous version of {app_id} is available to roll back to"
+        ));
     }
     let previous = read_package(&backup)?.0;
     let swap = app_root.join(format!(".nilpkg-swap-{:016x}", rand::random::<u64>()));
     if target.exists() {
-        fs::rename(&target, &swap).map_err(|e| format!("Could not move current version aside: {e}"))?;
+        fs::rename(&target, &swap)
+            .map_err(|e| format!("Could not move current version aside: {e}"))?;
     }
     if let Err(e) = fs::rename(&backup, &target) {
         let _ = fs::rename(&swap, &target);
@@ -542,9 +626,13 @@ pub fn rollback_package(app_id: &str, app_root: &Path) -> Result<(), String> {
     if swap.exists() {
         // Keep the version we just replaced so rollback can be undone.
         let _ = fs::remove_dir_all(&backup);
-        fs::rename(&swap, &backup).map_err(|e| format!("Rolled back, but could not retain the newer version: {e}"))?;
+        fs::rename(&swap, &backup)
+            .map_err(|e| format!("Rolled back, but could not retain the newer version: {e}"))?;
     }
-    println!("[nilpkg] Rolled back {app_id} to version {}", previous.version);
+    println!(
+        "[nilpkg] Rolled back {app_id} to version {}",
+        previous.version
+    );
     Ok(())
 }
 
@@ -559,7 +647,10 @@ pub fn install_local(source: &Path, app_root: &Path, key_dir: &Path) -> Result<(
     }
 
     let (manifest, payload) = read_package(source)?;
-    let executable = manifest.exec.strip_prefix("bin/").expect("validated by read_package");
+    let executable = manifest
+        .exec
+        .strip_prefix("bin/")
+        .expect("validated by read_package");
     trusted_publisher(key_dir, &manifest)?;
 
     // Serialize with other nilpkg processes before touching the app root.
@@ -584,7 +675,11 @@ pub fn install_local(source: &Path, app_root: &Path, key_dir: &Path) -> Result<(
         return Err(e.to_string());
     }
     sync_dir(app_root)?;
-    println!("[nilpkg] Installed {} into {}", manifest.app_id, target.display());
+    println!(
+        "[nilpkg] Installed {} into {}",
+        manifest.app_id,
+        target.display()
+    );
     Ok(())
 }
 
@@ -601,10 +696,14 @@ pub fn pack_package(
 ) -> Result<Manifest, String> {
     validate_app_id(app_id)?;
     if !executable_path.is_file() {
-        return Err(format!("Executable not found at {}", executable_path.display()));
+        return Err(format!(
+            "Executable not found at {}",
+            executable_path.display()
+        ));
     }
 
-    let payload = fs::read(executable_path).map_err(|e| format!("Could not read executable: {e}"))?;
+    let payload =
+        fs::read(executable_path).map_err(|e| format!("Could not read executable: {e}"))?;
     let sha256 = compute_sha256(&payload);
 
     let mut manifest = Manifest {
@@ -632,25 +731,33 @@ pub fn pack_package(
         let manifest_bytes = serde_json::to_vec_pretty(&manifest)
             .map_err(|e| format!("Could not serialize manifest: {e}"))?;
 
-        let file = fs::File::create(output_path)
-            .map_err(|e| format!("Could not create archive file {}: {e}", output_path.display()))?;
+        let file = fs::File::create(output_path).map_err(|e| {
+            format!(
+                "Could not create archive file {}: {e}",
+                output_path.display()
+            )
+        })?;
         let mut builder = tar::Builder::new(file);
 
         let mut m_hdr = tar::Header::new_gnu();
         m_hdr.set_size(manifest_bytes.len() as u64);
         m_hdr.set_mode(0o644);
         m_hdr.set_cksum();
-        builder.append_data(&mut m_hdr, "manifest.json", &manifest_bytes[..])
+        builder
+            .append_data(&mut m_hdr, "manifest.json", &manifest_bytes[..])
             .map_err(|e| format!("Could not write manifest to archive: {e}"))?;
 
         let mut p_hdr = tar::Header::new_gnu();
         p_hdr.set_size(payload.len() as u64);
         p_hdr.set_mode(0o755);
         p_hdr.set_cksum();
-        builder.append_data(&mut p_hdr, format!("bin/{app_id}"), &payload[..])
+        builder
+            .append_data(&mut p_hdr, format!("bin/{app_id}"), &payload[..])
             .map_err(|e| format!("Could not write executable to archive: {e}"))?;
 
-        builder.finish().map_err(|e| format!("Could not finish archive: {e}"))?;
+        builder
+            .finish()
+            .map_err(|e| format!("Could not finish archive: {e}"))?;
     } else {
         let bin_dir = output_path.join("bin");
         fs::create_dir_all(&bin_dir).map_err(|e| format!("Could not create bin directory: {e}"))?;
@@ -697,7 +804,8 @@ pub fn install_demo(pkg_identifier: &str) -> Result<(), String> {
 
     eprintln!("[nilpkg] WARNING: demo installer only; creates a sample launcher, not the requested application. The generated signing key is not a trusted publisher identity.");
     println!("[nilpkg] [*] Generating signed demo manifest...");
-    let dummy_payload = format!("#!/bin/shnecho 'Launching {} for Onuron OS'n", app_id).into_bytes();
+    let dummy_payload =
+        format!("#!/bin/shnecho 'Launching {} for Onuron OS'n", app_id).into_bytes();
     let payload_sha = compute_sha256(&dummy_payload);
 
     let (signing_key, verifying_key) = generate_keypair();
@@ -706,7 +814,11 @@ pub fn install_demo(pkg_identifier: &str) -> Result<(), String> {
         name: app_id.to_string(),
         app_id: app_id.to_string(),
         version: "1.0.0".to_string(),
-        arch: if cfg!(target_arch = "x86_64") { "x86_64".into() } else { "aarch64".into() },
+        arch: if cfg!(target_arch = "x86_64") {
+            "x86_64".into()
+        } else {
+            "aarch64".into()
+        },
         min_os_version: "1.0.0".to_string(),
         description: format!("Demo launcher only (not the real application): {}", app_id),
         permissions: vec!["network".into(), "storage.read".into(), "display".into()],
@@ -723,7 +835,10 @@ pub fn install_demo(pkg_identifier: &str) -> Result<(), String> {
 
     println!("[nilpkg] [*] Verifying Ed25519 digital signature & SHA-256 payload integrity...");
     verify_manifest(&manifest, &dummy_payload)?;
-    println!("[nilpkg] [✓] Ed25519 Signature Verified (Public Key: {}...)", &hex::encode(verifying_key.to_bytes())[..16]);
+    println!(
+        "[nilpkg] [✓] Ed25519 Signature Verified (Public Key: {}...)",
+        &hex::encode(verifying_key.to_bytes())[..16]
+    );
 
     fs::create_dir_all(temp_dir.join("bin")).map_err(|e| e.to_string())?;
 
@@ -733,14 +848,21 @@ pub fn install_demo(pkg_identifier: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(temp_dir.join(&manifest.exec), fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
+        fs::set_permissions(
+            temp_dir.join(&manifest.exec),
+            fs::Permissions::from_mode(0o755),
+        )
+        .map_err(|e| e.to_string())?;
     }
 
     // Initial install only; do not remove a previously installed version.
     fs::rename(&temp_dir, &target_dir).map_err(|e| e.to_string())?;
 
-    println!("[nilpkg] [✓ SUCCESS] Installed '{}' atomically into: {}", app_id, target_dir.display());
+    println!(
+        "[nilpkg] [✓ SUCCESS] Installed '{}' atomically into: {}",
+        app_id,
+        target_dir.display()
+    );
     println!("[nilpkg] SHA-256 Digest: {}", manifest.sha256);
     println!("[nilpkg] Permissions bound: {:?}", manifest.permissions);
     Ok(())
@@ -764,8 +886,15 @@ pub fn list_packages() {
                     if manifest_file.exists() {
                         if let Ok(data) = fs::read_to_string(manifest_file) {
                             if let Ok(m) = serde_json::from_str::<Manifest>(&data) {
-                                let sig_status = if m.signature_hex.is_some() { "Signature present (not reverified)" } else { "Unsigned" };
-                                println!(" • {:<24} (v{}) [{}] — {}", m.app_id, m.version, sig_status, m.description);
+                                let sig_status = if m.signature_hex.is_some() {
+                                    "Signature present (not reverified)"
+                                } else {
+                                    "Unsigned"
+                                };
+                                println!(
+                                    " • {:<24} (v{}) [{}] — {}",
+                                    m.app_id, m.version, sig_status, m.description
+                                );
                                 count += 1;
                                 continue;
                             }
@@ -791,7 +920,10 @@ pub fn remove_package(pkg_identifier: &str) -> Result<(), String> {
     let target = app_root.join(pkg_identifier);
     if target.exists() {
         fs::remove_dir_all(&target).map_err(|e| e.to_string())?;
-        println!("[nilpkg] [✓] Package '{}' successfully removed.", pkg_identifier);
+        println!(
+            "[nilpkg] [✓] Package '{}' successfully removed.",
+            pkg_identifier
+        );
         Ok(())
     } else {
         Err(format!("Package '{}' is not installed.", pkg_identifier))
@@ -806,7 +938,9 @@ pub fn keygen_command() -> Result<(), String> {
     let priv_path = key_dir.join("developer.sec");
     let pub_path = key_dir.join("developer.pub");
 
-    if pub_path.exists() { return Err("Public key already exists; refusing to replace keypair".into()); }
+    if pub_path.exists() {
+        return Err("Public key already exists; refusing to replace keypair".into());
+    }
 
     // Prompt for a passphrase and encrypt the private key at rest.
     let passphrase = read_passphrase("Enter passphrase to encrypt private key: ")?;
@@ -823,7 +957,10 @@ pub fn keygen_command() -> Result<(), String> {
 
     // Write the public key (plaintext is fine for a public key).
     use std::io::Write;
-    fs::OpenOptions::new().write(true).create_new(true).open(&pub_path)
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&pub_path)
         .and_then(|mut file| file.write_all(hex::encode(verifying_key.to_bytes()).as_bytes()))
         .map_err(|e| format!("Failed to write public key: {e}"))?;
 
@@ -832,7 +969,10 @@ pub fn keygen_command() -> Result<(), String> {
     println!("=========================================================");
     println!("Private Key (encrypted): {}", priv_path.display());
     println!("Public Key:  {}", pub_path.display());
-    println!("Public Key Fingerprint: {}", hex::encode(verifying_key.to_bytes()));
+    println!(
+        "Public Key Fingerprint: {}",
+        hex::encode(verifying_key.to_bytes())
+    );
     println!("=========================================================");
     Ok(())
 }
@@ -845,8 +985,8 @@ pub fn trust_command(keyfile: &str) -> Result<(), String> {
 
     let contents = fs::read_to_string(keyfile)
         .map_err(|e| format!("Could not read keyfile {}: {e}", keyfile))?;
-    let key_bytes = hex::decode(contents.trim())
-        .map_err(|e| format!("Invalid hex in keyfile: {e}"))?;
+    let key_bytes =
+        hex::decode(contents.trim()).map_err(|e| format!("Invalid hex in keyfile: {e}"))?;
     if key_bytes.len() != 32 {
         return Err(format!(
             "Invalid public key length {}: expected 32 bytes (64 hex chars)",
@@ -860,8 +1000,7 @@ pub fn trust_command(keyfile: &str) -> Result<(), String> {
     if dest.exists() {
         return Err(format!("Key already trusted: {}", dest.display()));
     }
-    fs::write(&dest, &contents)
-        .map_err(|e| format!("Could not write trusted key: {e}"))?;
+    fs::write(&dest, &contents).map_err(|e| format!("Could not write trusted key: {e}"))?;
     println!("[nilpkg] Trusted publisher key: {}", dest.display());
     Ok(())
 }
@@ -875,8 +1014,8 @@ pub fn revoke_command(keyfile: &str) -> Result<(), String> {
 
     let contents = fs::read_to_string(keyfile)
         .map_err(|e| format!("Could not read keyfile {}: {e}", keyfile))?;
-    let key_bytes = hex::decode(contents.trim())
-        .map_err(|e| format!("Invalid hex in keyfile: {e}"))?;
+    let key_bytes =
+        hex::decode(contents.trim()).map_err(|e| format!("Invalid hex in keyfile: {e}"))?;
     if key_bytes.len() != 32 {
         return Err(format!(
             "Invalid public key length {}: expected 32 bytes (64 hex chars)",
@@ -893,9 +1032,12 @@ pub fn revoke_command(keyfile: &str) -> Result<(), String> {
     if dest.exists() {
         return Err(format!("Key already revoked: {}", dest.display()));
     }
-    fs::rename(&src, &dest)
-        .map_err(|e| format!("Could not revoke key: {e}"))?;
-    println!("[nilpkg] Revoked publisher key: {} -> {}", src.display(), dest.display());
+    fs::rename(&src, &dest).map_err(|e| format!("Could not revoke key: {e}"))?;
+    println!(
+        "[nilpkg] Revoked publisher key: {} -> {}",
+        src.display(),
+        dest.display()
+    );
     Ok(())
 }
 
@@ -939,16 +1081,31 @@ mod tests {
         fs::write(source.join("bin/hello"), payload).unwrap();
         let (signer, verifier) = generate_keypair();
         let mut manifest = Manifest {
-            name: "Hello".into(), app_id: "org.onuron.hello".into(), version: "1.0".into(),
-            arch: "x86_64".into(), min_os_version: "1.0".into(), description: "test".into(),
-            permissions: vec![], exec: "bin/hello".into(), sha256: compute_sha256(payload),
-            size_bytes: payload.len() as u64, signature_hex: None, public_key_hex: None, archive_sha256: None,
+            name: "Hello".into(),
+            app_id: "org.onuron.hello".into(),
+            version: "1.0".into(),
+            arch: "x86_64".into(),
+            min_os_version: "1.0".into(),
+            description: "test".into(),
+            permissions: vec![],
+            exec: "bin/hello".into(),
+            sha256: compute_sha256(payload),
+            size_bytes: payload.len() as u64,
+            signature_hex: None,
+            public_key_hex: None,
+            archive_sha256: None,
         };
         sign_manifest(&mut manifest, &signer);
-        let write_manifest = |m: &Manifest| fs::write(source.join("manifest.json"), serde_json::to_vec(m).unwrap()).unwrap();
+        let write_manifest = |m: &Manifest| {
+            fs::write(source.join("manifest.json"), serde_json::to_vec(m).unwrap()).unwrap()
+        };
         write_manifest(&manifest);
         assert!(install_local(&source, &apps, &keys).is_err());
-        fs::write(keys.join("trusted/test.pub"), hex::encode(verifier.to_bytes())).unwrap();
+        fs::write(
+            keys.join("trusted/test.pub"),
+            hex::encode(verifier.to_bytes()),
+        )
+        .unwrap();
         manifest.exec = "../outside".into();
         sign_manifest(&mut manifest, &signer);
         write_manifest(&manifest);
@@ -973,9 +1130,16 @@ mod tests {
         }
         install_local(&source, &apps, &keys).unwrap();
         assert!(install_local(&source, &apps, &keys).is_err());
-        assert_eq!(fs::read(apps.join("org.onuron.hello/bin/hello")).unwrap(), payload);
+        assert_eq!(
+            fs::read(apps.join("org.onuron.hello/bin/hello")).unwrap(),
+            payload
+        );
         verify_installed("org.onuron.hello", &apps, &keys).unwrap();
-        fs::write(apps.join("org.onuron.hello/bin/hello"), b"changed after installation").unwrap();
+        fs::write(
+            apps.join("org.onuron.hello/bin/hello"),
+            b"changed after installation",
+        )
+        .unwrap();
         assert!(verify_installed("org.onuron.hello", &apps, &keys).is_err());
         fs::write(apps.join("org.onuron.hello/bin/hello"), payload).unwrap();
         verify_installed("org.onuron.hello", &apps, &keys).unwrap();
@@ -997,7 +1161,8 @@ mod tests {
 
     #[test]
     fn install_rejects_incompatible_arch_os_permission_and_revoked_keys() {
-        let root = std::env::temp_dir().join(format!("nilpkg-compat-{:016x}", rand::random::<u64>()));
+        let root =
+            std::env::temp_dir().join(format!("nilpkg-compat-{:016x}", rand::random::<u64>()));
         let apps = root.join("apps");
         let keys = root.join("keys");
         fs::create_dir_all(keys.join("trusted")).unwrap();
@@ -1007,39 +1172,107 @@ mod tests {
         fs::write(keys.join("trusted/pub.pub"), &pub_hex).unwrap();
 
         // Wrong architecture.
-        let wrong_arch = if current_arch() == "x86_64" { "aarch64" } else { "x86_64" };
+        let wrong_arch = if current_arch() == "x86_64" {
+            "aarch64"
+        } else {
+            "x86_64"
+        };
         let bad_arch = root.join("bad-arch");
-        write_package_full(&bad_arch, &signer, "org.onuron.app", "1.0.0", b"p", wrong_arch, CURRENT_OS_VERSION, &[]);
-        assert!(install_local(&bad_arch, &apps, &keys).unwrap_err().contains("Incompatible architecture"));
+        write_package_full(
+            &bad_arch,
+            &signer,
+            "org.onuron.app",
+            "1.0.0",
+            b"p",
+            wrong_arch,
+            CURRENT_OS_VERSION,
+            &[],
+        );
+        assert!(install_local(&bad_arch, &apps, &keys)
+            .unwrap_err()
+            .contains("Incompatible architecture"));
 
         // Future OS requirement.
         let bad_os = root.join("bad-os");
-        write_package_full(&bad_os, &signer, "org.onuron.app", "1.0.0", b"p", current_arch(), "99.0.0", &[]);
-        assert!(install_local(&bad_os, &apps, &keys).unwrap_err().contains("requires OS"));
+        write_package_full(
+            &bad_os,
+            &signer,
+            "org.onuron.app",
+            "1.0.0",
+            b"p",
+            current_arch(),
+            "99.0.0",
+            &[],
+        );
+        assert!(install_local(&bad_os, &apps, &keys)
+            .unwrap_err()
+            .contains("requires OS"));
 
         // Unknown permission.
         let bad_perm = root.join("bad-perm");
-        write_package_full(&bad_perm, &signer, "org.onuron.app", "1.0.0", b"p", current_arch(), CURRENT_OS_VERSION, &["network", "mind.read"]);
-        assert!(install_local(&bad_perm, &apps, &keys).unwrap_err().contains("Unknown permission"));
+        write_package_full(
+            &bad_perm,
+            &signer,
+            "org.onuron.app",
+            "1.0.0",
+            b"p",
+            current_arch(),
+            CURRENT_OS_VERSION,
+            &["network", "mind.read"],
+        );
+        assert!(install_local(&bad_perm, &apps, &keys)
+            .unwrap_err()
+            .contains("Unknown permission"));
 
         // Known permissions are accepted.
         let good = root.join("good");
-        write_package_full(&good, &signer, "org.onuron.app", "1.0.0", b"p", current_arch(), CURRENT_OS_VERSION, &["network", "camera"]);
+        write_package_full(
+            &good,
+            &signer,
+            "org.onuron.app",
+            "1.0.0",
+            b"p",
+            current_arch(),
+            CURRENT_OS_VERSION,
+            &["network", "camera"],
+        );
         install_local(&good, &apps, &keys).unwrap();
 
         // Revoking the publisher key breaks both verify and future upgrades.
         fs::write(keys.join("revoked/revoked.pub"), &pub_hex).unwrap();
-        assert!(verify_installed("org.onuron.app", &apps, &keys).unwrap_err().contains("revoked"));
+        assert!(verify_installed("org.onuron.app", &apps, &keys)
+            .unwrap_err()
+            .contains("revoked"));
         let v2 = root.join("v2");
-        write_package_full(&v2, &signer, "org.onuron.app", "2.0.0", b"p2", current_arch(), CURRENT_OS_VERSION, &[]);
-        assert!(upgrade_local(&v2, &apps, &keys, false).unwrap_err().contains("revoked"));
+        write_package_full(
+            &v2,
+            &signer,
+            "org.onuron.app",
+            "2.0.0",
+            b"p2",
+            current_arch(),
+            CURRENT_OS_VERSION,
+            &[],
+        );
+        assert!(upgrade_local(&v2, &apps, &keys, false)
+            .unwrap_err()
+            .contains("revoked"));
 
         fs::remove_dir_all(root).unwrap();
     }
 
     /// Helper mirroring the on-disk package layout used by install/upgrade.
     fn write_package(dir: &Path, signer: &SigningKey, app_id: &str, version: &str, payload: &[u8]) {
-        write_package_full(dir, signer, app_id, version, payload, current_arch(), CURRENT_OS_VERSION, &[]);
+        write_package_full(
+            dir,
+            signer,
+            app_id,
+            version,
+            payload,
+            current_arch(),
+            CURRENT_OS_VERSION,
+            &[],
+        );
     }
 
     fn write_package_full(
@@ -1055,14 +1288,26 @@ mod tests {
         fs::create_dir_all(dir.join("bin")).unwrap();
         fs::write(dir.join("bin/app"), payload).unwrap();
         let mut manifest = Manifest {
-            name: app_id.into(), app_id: app_id.into(), version: version.into(),
-            arch: arch.into(), min_os_version: min_os.into(), description: "test".into(),
+            name: app_id.into(),
+            app_id: app_id.into(),
+            version: version.into(),
+            arch: arch.into(),
+            min_os_version: min_os.into(),
+            description: "test".into(),
             permissions: permissions.iter().map(|s| s.to_string()).collect(),
-            exec: "bin/app".into(), sha256: compute_sha256(payload),
-            size_bytes: payload.len() as u64, signature_hex: None, public_key_hex: None, archive_sha256: None,
+            exec: "bin/app".into(),
+            sha256: compute_sha256(payload),
+            size_bytes: payload.len() as u64,
+            signature_hex: None,
+            public_key_hex: None,
+            archive_sha256: None,
         };
         sign_manifest(&mut manifest, signer);
-        fs::write(dir.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        fs::write(
+            dir.join("manifest.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1072,7 +1317,11 @@ mod tests {
         let keys = root.join("keys");
         fs::create_dir_all(keys.join("trusted")).unwrap();
         let (signer, verifier) = generate_keypair();
-        fs::write(keys.join("trusted/pub.pub"), hex::encode(verifier.to_bytes())).unwrap();
+        fs::write(
+            keys.join("trusted/pub.pub"),
+            hex::encode(verifier.to_bytes()),
+        )
+        .unwrap();
 
         let v1 = root.join("v1");
         let v2 = root.join("v2");
@@ -1080,33 +1329,50 @@ mod tests {
         write_package(&v2, &signer, "org.onuron.app", "2.0.0", b"v2-payload");
 
         install_local(&v1, &apps, &keys).unwrap();
-        assert_eq!(fs::read(apps.join("org.onuron.app/bin/app")).unwrap(), b"v1-payload");
+        assert_eq!(
+            fs::read(apps.join("org.onuron.app/bin/app")).unwrap(),
+            b"v1-payload"
+        );
 
         upgrade_local(&v2, &apps, &keys, false).unwrap();
-        assert_eq!(fs::read(apps.join("org.onuron.app/bin/app")).unwrap(), b"v2-payload");
+        assert_eq!(
+            fs::read(apps.join("org.onuron.app/bin/app")).unwrap(),
+            b"v2-payload"
+        );
         // The new version must still verify, and the backup must be retained.
         verify_installed("org.onuron.app", &apps, &keys).unwrap();
         assert!(backup_path(&apps, "org.onuron.app").exists());
 
         rollback_package("org.onuron.app", &apps).unwrap();
-        assert_eq!(fs::read(apps.join("org.onuron.app/bin/app")).unwrap(), b"v1-payload");
+        assert_eq!(
+            fs::read(apps.join("org.onuron.app/bin/app")).unwrap(),
+            b"v1-payload"
+        );
         verify_installed("org.onuron.app", &apps, &keys).unwrap();
 
         // A second rollback swaps back to the newer version.
         rollback_package("org.onuron.app", &apps).unwrap();
-        assert_eq!(fs::read(apps.join("org.onuron.app/bin/app")).unwrap(), b"v2-payload");
+        assert_eq!(
+            fs::read(apps.join("org.onuron.app/bin/app")).unwrap(),
+            b"v2-payload"
+        );
 
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn upgrade_rejects_same_version_downgrade_and_untrusted_signer() {
-        let root = std::env::temp_dir().join(format!("nilpkg-guard-{:016x}", rand::random::<u64>()));
+        let root =
+            std::env::temp_dir().join(format!("nilpkg-guard-{:016x}", rand::random::<u64>()));
         let apps = root.join("apps");
         let keys = root.join("keys");
         fs::create_dir_all(keys.join("trusted")).unwrap();
         let (signer, verifier) = generate_keypair();
-        fs::write(keys.join("trusted/pub.pub"), hex::encode(verifier.to_bytes())).unwrap();
+        fs::write(
+            keys.join("trusted/pub.pub"),
+            hex::encode(verifier.to_bytes()),
+        )
+        .unwrap();
 
         let v1 = root.join("v1");
         let v2 = root.join("v2");
@@ -1116,35 +1382,52 @@ mod tests {
         write_package(&v0, &signer, "org.onuron.app", "0.9.0", b"v0");
         install_local(&v1, &apps, &keys).unwrap();
 
-        assert!(upgrade_local(&v1, &apps, &keys, false).unwrap_err().contains("already installed"));
-        assert!(upgrade_local(&v0, &apps, &keys, false).unwrap_err().contains("downgrade"));
+        assert!(upgrade_local(&v1, &apps, &keys, false)
+            .unwrap_err()
+            .contains("already installed"));
+        assert!(upgrade_local(&v0, &apps, &keys, false)
+            .unwrap_err()
+            .contains("downgrade"));
         // Forcing allows the downgrade but never skips verification.
         upgrade_local(&v0, &apps, &keys, true).unwrap();
-        assert_eq!(fs::read(apps.join("org.onuron.app/bin/app")).unwrap(), b"v0");
+        assert_eq!(
+            fs::read(apps.join("org.onuron.app/bin/app")).unwrap(),
+            b"v0"
+        );
 
         // An untrusted publisher is rejected for upgrades too.
         let (other, _) = generate_keypair();
         let evil = root.join("evil");
         write_package(&evil, &other, "org.onuron.app", "9.9.9", b"evil");
         assert!(upgrade_local(&evil, &apps, &keys, false).is_err());
-        assert_eq!(fs::read(apps.join("org.onuron.app/bin/app")).unwrap(), b"v0");
+        assert_eq!(
+            fs::read(apps.join("org.onuron.app/bin/app")).unwrap(),
+            b"v0"
+        );
 
         // Upgrading something that is not installed must not create it.
         let fresh = root.join("fresh");
         write_package(&fresh, &signer, "org.onuron.missing", "1.0.0", b"new");
-        assert!(upgrade_local(&fresh, &apps, &keys, false).unwrap_err().contains("not installed"));
+        assert!(upgrade_local(&fresh, &apps, &keys, false)
+            .unwrap_err()
+            .contains("not installed"));
 
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn interrupted_upgrade_is_recovered_on_next_operation() {
-        let root = std::env::temp_dir().join(format!("nilpkg-recover-{:016x}", rand::random::<u64>()));
+        let root =
+            std::env::temp_dir().join(format!("nilpkg-recover-{:016x}", rand::random::<u64>()));
         let apps = root.join("apps");
         let keys = root.join("keys");
         fs::create_dir_all(keys.join("trusted")).unwrap();
         let (signer, verifier) = generate_keypair();
-        fs::write(keys.join("trusted/pub.pub"), hex::encode(verifier.to_bytes())).unwrap();
+        fs::write(
+            keys.join("trusted/pub.pub"),
+            hex::encode(verifier.to_bytes()),
+        )
+        .unwrap();
 
         let v1 = root.join("v1");
         write_package(&v1, &signer, "org.onuron.app", "1.0.0", b"v1-payload");
@@ -1161,9 +1444,15 @@ mod tests {
         fs::create_dir_all(orphan.join("bin")).unwrap();
 
         recover_pending(&apps).unwrap();
-        assert_eq!(fs::read(apps.join("org.onuron.app/bin/app")).unwrap(), b"v1-payload");
+        assert_eq!(
+            fs::read(apps.join("org.onuron.app/bin/app")).unwrap(),
+            b"v1-payload"
+        );
         assert!(!journal_path(&apps, "org.onuron.app").exists());
-        assert!(!orphan.exists(), "orphaned staging directory should be cleaned up");
+        assert!(
+            !orphan.exists(),
+            "orphaned staging directory should be cleaned up"
+        );
         verify_installed("org.onuron.app", &apps, &keys).unwrap();
 
         fs::remove_dir_all(root).unwrap();
@@ -1171,12 +1460,17 @@ mod tests {
 
     #[test]
     fn failed_install_leaves_no_staging_or_partial_package() {
-        let root = std::env::temp_dir().join(format!("nilpkg-stage-{:016x}", rand::random::<u64>()));
+        let root =
+            std::env::temp_dir().join(format!("nilpkg-stage-{:016x}", rand::random::<u64>()));
         let apps = root.join("apps");
         let keys = root.join("keys");
         fs::create_dir_all(keys.join("trusted")).unwrap();
         let (signer, verifier) = generate_keypair();
-        fs::write(keys.join("trusted/pub.pub"), hex::encode(verifier.to_bytes())).unwrap();
+        fs::write(
+            keys.join("trusted/pub.pub"),
+            hex::encode(verifier.to_bytes()),
+        )
+        .unwrap();
 
         let pkg = root.join("pkg");
         write_package(&pkg, &signer, "org.onuron.app", "1.0.0", b"payload");
@@ -1184,9 +1478,15 @@ mod tests {
 
         // Second install of the same ID must fail without leaving .nilpkg-* junk.
         assert!(install_local(&pkg, &apps, &keys).is_err());
-        let leftovers: Vec<String> = fs::read_dir(&apps).unwrap().flatten()
+        let leftovers: Vec<String> = fs::read_dir(&apps)
+            .unwrap()
+            .flatten()
             .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.starts_with(".nilpkg-") && !n.starts_with(".nilpkg-backup-") && !n.starts_with(".nilpkg-journal-"))
+            .filter(|n| {
+                n.starts_with(".nilpkg-")
+                    && !n.starts_with(".nilpkg-backup-")
+                    && !n.starts_with(".nilpkg-journal-")
+            })
             .collect();
         assert!(leftovers.is_empty(), "staging leftovers: {leftovers:?}");
 
@@ -1195,12 +1495,35 @@ mod tests {
 
     #[test]
     fn package_ids_cannot_escape_root_or_inject_shell_commands() {
-        for id in ["", ".", "..", "../victim", "/tmp/victim", "C:victim", "a/b", "a b",
-            "a..b", "a.", "a'$(id)", "a\nb", "a\tb", "CON", "nul.txt", "COM1", "lpt9.txt", "é"] {
+        for id in [
+            "",
+            ".",
+            "..",
+            "../victim",
+            "/tmp/victim",
+            "C:victim",
+            "a/b",
+            "a b",
+            "a..b",
+            "a.",
+            "a'$(id)",
+            "a\nb",
+            "a\tb",
+            "CON",
+            "nul.txt",
+            "COM1",
+            "lpt9.txt",
+            "é",
+        ] {
             assert!(validate_app_id(id).is_err(), "accepted {id:?}");
         }
         assert!(validate_app_id(&"a".repeat(129)).is_err());
-        for id in ["notes", "org.onuron.notes", "my-app_2", "com.signal.android"] {
+        for id in [
+            "notes",
+            "org.onuron.notes",
+            "my-app_2",
+            "com.signal.android",
+        ] {
             assert!(validate_app_id(id).is_ok(), "rejected {id:?}");
         }
     }
@@ -1250,12 +1573,17 @@ mod tests {
         assert!(manifest.public_key_hex.is_some());
 
         let verify_result = verify_manifest(&manifest, payload);
-        assert!(verify_result.is_ok(), "Verification should succeed for valid signature");
+        assert!(
+            verify_result.is_ok(),
+            "Verification should succeed for valid signature"
+        );
 
         // Even a correctly signed manifest must accurately describe payload size.
         manifest.size_bytes += 1;
         sign_manifest(&mut manifest, &signing_key);
-        assert!(verify_manifest(&manifest, payload).unwrap_err().contains("size_bytes"));
+        assert!(verify_manifest(&manifest, payload)
+            .unwrap_err()
+            .contains("size_bytes"));
         manifest.size_bytes -= 1;
         sign_manifest(&mut manifest, &signing_key);
         manifest.permissions.push("storage.write".into());
@@ -1287,7 +1615,10 @@ mod tests {
         // Tampered payload
         let tampered_payload = b"malicious_injected_code";
         let verify_result = verify_manifest(&manifest, tampered_payload);
-        assert!(verify_result.is_err(), "Verification must fail when payload is tampered");
+        assert!(
+            verify_result.is_err(),
+            "Verification must fail when payload is tampered"
+        );
     }
 
     #[test]
@@ -1310,13 +1641,17 @@ mod tests {
         };
 
         let verify_result = verify_manifest(&manifest, payload);
-        assert!(verify_result.is_err(), "Verification must fail for unsigned manifest");
+        assert!(
+            verify_result.is_err(),
+            "Verification must fail for unsigned manifest"
+        );
     }
 
     #[test]
     fn test_pack_package_and_archive_roundtrip() {
         let (signer, _verifier) = generate_keypair();
-        let temp = std::env::temp_dir().join(format!("nilpkg-packtest-{:016x}", rand::random::<u64>()));
+        let temp =
+            std::env::temp_dir().join(format!("nilpkg-packtest-{:016x}", rand::random::<u64>()));
         fs::create_dir_all(&temp).unwrap();
         let bin_path = temp.join("dummy_bin");
         fs::write(&bin_path, b"test executable binary payload").unwrap();
@@ -1332,7 +1667,8 @@ mod tests {
             &bin_path,
             &dir_out,
             &signer,
-        ).expect("pack_package to dir");
+        )
+        .expect("pack_package to dir");
 
         assert_eq!(manifest.app_id, "org.onuron.packtest");
         assert!(manifest.signature_hex.is_some());
@@ -1354,7 +1690,8 @@ mod tests {
             &bin_path,
             &archive_out,
             &signer,
-        ).expect("pack_package to .nilax archive");
+        )
+        .expect("pack_package to .nilax archive");
 
         assert_eq!(archive_manifest.app_id, "org.onuron.archtest");
         assert!(archive_out.is_file());
@@ -1362,7 +1699,8 @@ mod tests {
         // Extract and verify archive
         let extract_dest = temp.join("extracted_archive");
         extract::extract_archive(&archive_out, &extract_dest).expect("extract_archive");
-        let (read_arc_manifest, arc_payload) = read_package(&extract_dest).expect("read extracted archive");
+        let (read_arc_manifest, arc_payload) =
+            read_package(&extract_dest).expect("read extracted archive");
         assert_eq!(read_arc_manifest.app_id, "org.onuron.archtest");
         assert_eq!(arc_payload, b"test executable binary payload");
 

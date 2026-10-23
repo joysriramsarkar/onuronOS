@@ -1,22 +1,25 @@
 // runtime/nilui/src/lib.rs — Declarative UI Framework & Binary Wire Protocol
+pub mod a11y;
 pub mod anim;
+pub mod components;
+pub mod design;
+pub mod render;
+pub mod share;
 pub mod state;
 pub mod testharness;
-pub mod share;
-pub mod a11y;
 pub mod widget;
-pub mod render;
 
 pub use render::*;
 
+use serde::{Deserialize, Serialize};
 #[cfg(unix)]
 use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
-use serde::{Serialize, Deserialize};
 
-pub use anim::{SpringConfig, SpringState, FlingDecay};
+pub use anim::{FlingDecay, SpringConfig, SpringState};
+pub use design::{DesignSystem, Palette, Spacing, Typography};
 pub use state::SnapshotPayload;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -45,7 +48,9 @@ impl From<&alap::Component> for Element {
                     on_click_id: hash,
                 }
             }
-            alap::Component::TextField { placeholder, value, .. } => Element::Input {
+            alap::Component::TextField {
+                placeholder, value, ..
+            } => Element::Input {
                 placeholder: placeholder.clone(),
                 text: value.clone(),
             },

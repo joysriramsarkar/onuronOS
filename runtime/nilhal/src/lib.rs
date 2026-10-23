@@ -1,15 +1,15 @@
 // runtime/nilhal/src/lib.rs — Unified Rust Hardware Abstraction Layer (NilHAL)
 // Supports Mode 1 (QEMU/Simulator), Mode 2 (Android Hosted S25), and Mode 3 (Linux / Native ARM64).
 
-pub mod traits;
 pub mod backends;
+pub mod traits;
 
+pub use backends::{android, fake, linux, qemu, BackendType};
 pub use traits::*;
-pub use backends::{BackendType, qemu, linux, android, fake};
 
-use std::path::Path;
-use std::ffi::{CStr, c_char};
 use libloading::{Library, Symbol};
+use std::ffi::{c_char, CStr};
+use std::path::Path;
 
 // ─── Runtime Environment Auto-Detection ───────────────────────────────────────
 
@@ -91,48 +91,42 @@ impl NilHal {
                     sensors: Box::new(android::AndroidSensors::new(bridge)),
                 }
             }
-            BackendType::Linux => {
-                Self {
-                    backend_type: backend,
-                    display: Box::new(linux::LinuxDisplay::new()),
-                    input: Box::new(linux::LinuxInput::new()),
-                    network: Box::new(linux::LinuxNetwork),
-                    power: Box::new(linux::LinuxPower),
-                    telephony: Box::new(linux::LinuxTelephony),
-                    camera: Box::new(linux::LinuxCamera),
-                    audio: Box::new(linux::LinuxAudio),
-                    bluetooth: Box::new(linux::LinuxBluetooth),
-                    sensors: Box::new(linux::LinuxSensors),
-                }
-            }
-            BackendType::Fake => {
-                Self {
-                    backend_type: backend,
-                    display: Box::new(fake::FakeDisplay::default()),
-                    input: Box::new(fake::FakeInput::new()),
-                    network: Box::new(fake::FakeNetwork::new()),
-                    power: Box::new(fake::FakePower::new()),
-                    telephony: Box::new(fake::FakeTelephony::default()),
-                    camera: Box::new(fake::FakeCamera::default()),
-                    audio: Box::new(fake::FakeAudio::default()),
-                    bluetooth: Box::new(fake::FakeBluetooth::default()),
-                    sensors: Box::new(fake::FakeSensors),
-                }
-            }
-            BackendType::Qemu | BackendType::NativeArm64 => {
-                Self {
-                    backend_type: backend,
-                    display: Box::new(qemu::QemuDisplay::new()),
-                    input: Box::new(qemu::QemuInput::new()),
-                    network: Box::new(qemu::QemuNetwork),
-                    power: Box::new(qemu::QemuPower::new()),
-                    telephony: Box::new(qemu::QemuTelephony::new()),
-                    camera: Box::new(qemu::QemuCamera::new()),
-                    audio: Box::new(qemu::QemuAudio::new()),
-                    bluetooth: Box::new(qemu::QemuBluetooth),
-                    sensors: Box::new(qemu::QemuSensors),
-                }
-            }
+            BackendType::Linux => Self {
+                backend_type: backend,
+                display: Box::new(linux::LinuxDisplay::new()),
+                input: Box::new(linux::LinuxInput::new()),
+                network: Box::new(linux::LinuxNetwork),
+                power: Box::new(linux::LinuxPower),
+                telephony: Box::new(linux::LinuxTelephony),
+                camera: Box::new(linux::LinuxCamera),
+                audio: Box::new(linux::LinuxAudio),
+                bluetooth: Box::new(linux::LinuxBluetooth),
+                sensors: Box::new(linux::LinuxSensors),
+            },
+            BackendType::Fake => Self {
+                backend_type: backend,
+                display: Box::new(fake::FakeDisplay::default()),
+                input: Box::new(fake::FakeInput::new()),
+                network: Box::new(fake::FakeNetwork::new()),
+                power: Box::new(fake::FakePower::new()),
+                telephony: Box::new(fake::FakeTelephony::default()),
+                camera: Box::new(fake::FakeCamera::default()),
+                audio: Box::new(fake::FakeAudio::default()),
+                bluetooth: Box::new(fake::FakeBluetooth::default()),
+                sensors: Box::new(fake::FakeSensors),
+            },
+            BackendType::Qemu | BackendType::NativeArm64 => Self {
+                backend_type: backend,
+                display: Box::new(qemu::QemuDisplay::new()),
+                input: Box::new(qemu::QemuInput::new()),
+                network: Box::new(qemu::QemuNetwork),
+                power: Box::new(qemu::QemuPower::new()),
+                telephony: Box::new(qemu::QemuTelephony::new()),
+                camera: Box::new(qemu::QemuCamera::new()),
+                audio: Box::new(qemu::QemuAudio::new()),
+                bluetooth: Box::new(qemu::QemuBluetooth),
+                sensors: Box::new(qemu::QemuSensors),
+            },
         }
     }
 }
@@ -184,7 +178,9 @@ impl HalDevice {
         if module.is_null() || (*module).name.is_null() {
             "unknown".to_string()
         } else {
-            CStr::from_ptr((*module).name).to_string_lossy().into_owned()
+            CStr::from_ptr((*module).name)
+                .to_string_lossy()
+                .into_owned()
         }
     }
 
@@ -199,7 +195,8 @@ impl HalDevice {
             if Path::new(p).exists() {
                 unsafe {
                     let lib = Library::new(p).map_err(|e| e.to_string())?;
-                    let sym: Symbol<*const NilHalModule> = lib.get(b"NIL_HAL_MODULE_INFO\0")
+                    let sym: Symbol<*const NilHalModule> = lib
+                        .get(b"NIL_HAL_MODULE_INFO\0")
                         .map_err(|e| e.to_string())?;
                     let module = *sym;
                     Self::validate_module(module)?;
@@ -218,13 +215,14 @@ impl HalDevice {
             println!("[nilhal] Attempting libhybris bridge fallback for {}", name);
         }
 
-        Err(format!("HAL driver for '{}' not found in search paths", name))
+        Err(format!(
+            "HAL driver for '{}' not found in search paths",
+            name
+        ))
     }
 
     pub fn get_name(&self) -> String {
-        unsafe {
-            Self::read_module_name(self.module)
-        }
+        unsafe { Self::read_module_name(self.module) }
     }
 }
 
@@ -365,4 +363,3 @@ mod tests {
         }
     }
 }
-

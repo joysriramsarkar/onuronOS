@@ -15,12 +15,9 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 pub fn generate_self_signed_cert(
     device_id: &str,
 ) -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>), String> {
-    let subject_alt_names = vec![
-        format!("{device_id}.nilbus.local"),
-        device_id.to_string(),
-    ];
-    let cert = rcgen::generate_simple_self_signed(subject_alt_names)
-        .map_err(|e| format!("rcgen: {e}"))?;
+    let subject_alt_names = vec![format!("{device_id}.nilbus.local"), device_id.to_string()];
+    let cert =
+        rcgen::generate_simple_self_signed(subject_alt_names).map_err(|e| format!("rcgen: {e}"))?;
 
     let cert_der = CertificateDer::from(cert.cert.der().to_vec());
     let key_der = PrivateKeyDer::try_from(cert.key_pair.serialize_der())
@@ -73,13 +70,19 @@ impl rustls::client::danger::ServerCertVerifier for ToFUVerifier {
     }
 
     fn verify_tls12_signature(
-        &self, _: &[u8], _: &CertificateDer<'_>, _: &rustls::DigitallySignedStruct,
+        &self,
+        _: &[u8],
+        _: &CertificateDer<'_>,
+        _: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
     fn verify_tls13_signature(
-        &self, _: &[u8], _: &CertificateDer<'_>, _: &rustls::DigitallySignedStruct,
+        &self,
+        _: &[u8],
+        _: &CertificateDer<'_>,
+        _: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
         Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
     }
@@ -128,9 +131,7 @@ impl QuicPeerSession {
             .map_err(|_| format!("connect timeout to {remote_addr}"))?
             .map_err(|e| format!("QUIC handshake: {e}"))?;
 
-        println!(
-            "[nilbus:quic] TLS 1.3 QUIC stream established → {remote_id} @ {remote_addr}"
-        );
+        println!("[nilbus:quic] TLS 1.3 QUIC stream established → {remote_id} @ {remote_addr}");
 
         Ok(Self {
             remote_id: remote_id.to_string(),
@@ -147,8 +148,12 @@ impl QuicPeerSession {
             .map_err(|e| format!("open_uni: {e}"))?;
 
         let len = (data.len() as u32).to_le_bytes();
-        send.write_all(&len).await.map_err(|e| format!("write len: {e}"))?;
-        send.write_all(data).await.map_err(|e| format!("write data: {e}"))?;
+        send.write_all(&len)
+            .await
+            .map_err(|e| format!("write len: {e}"))?;
+        send.write_all(data)
+            .await
+            .map_err(|e| format!("write data: {e}"))?;
         send.finish().map_err(|e| format!("finish: {e}"))?;
         Ok(())
     }
@@ -161,7 +166,9 @@ impl QuicPeerSession {
             .map_err(|e| format!("accept_uni: {e}"))?;
 
         let mut len_buf = [0u8; 4];
-        recv.read_exact(&mut len_buf).await.map_err(|e| format!("read len: {e}"))?;
+        recv.read_exact(&mut len_buf)
+            .await
+            .map_err(|e| format!("read len: {e}"))?;
         let len = u32::from_le_bytes(len_buf) as usize;
 
         if len > 16 * 1024 * 1024 {
@@ -169,7 +176,9 @@ impl QuicPeerSession {
         }
 
         let mut buf = vec![0u8; len];
-        recv.read_exact(&mut buf).await.map_err(|e| format!("read data: {e}"))?;
+        recv.read_exact(&mut buf)
+            .await
+            .map_err(|e| format!("read data: {e}"))?;
         Ok(buf)
     }
 }

@@ -36,7 +36,11 @@ impl Locale {
 
 /// Central system UI string catalog: (Key, English, Bengali)
 pub const STRING_CATALOG: &[(&str, &str, &str)] = &[
-    ("app_launcher", "OnuronOS App Launcher", "অনুরণ ওএস অ্যাপ্লিকেশন লঞ্চার"),
+    (
+        "app_launcher",
+        "OnuronOS App Launcher",
+        "অনুরণ ওএস অ্যাপ্লিকেশন লঞ্চার",
+    ),
     ("screen_lock", "Device Locked", "ডিভাইস লক করা আছে"),
     ("screen_home", "Home", "মূল পর্দা"),
     ("app_phone", "Phone & Dialer", "ফোন ও ডায়ালার"),
@@ -55,16 +59,36 @@ pub const STRING_CATALOG: &[(&str, &str, &str)] = &[
     ("cmd_delete", "Delete", "মুছুন"),
     ("cmd_cancel", "Cancel", "বাতিল"),
     ("cmd_confirm", "Confirm", "নিশ্চিত করুন"),
-    ("sec_pin_prompt", "Enter 4-6 digit PIN", "৪-৬ ডিজিটের পিন লিখুন"),
-    ("sec_perm_denied", "Permission Denied: Access restricted by security policy", "অনুমতি প্রত্যাখ্যাত: নিরাপত্তা নীতি দ্বারা প্রবেশাধিকার সংরক্ষিত"),
-    ("sec_unauthorized", "Unauthorized: Action blocked by sandbox boundary", "অননুমোদিত: স্যান্ডবক্স সীমানা দ্বারা কাজ প্রতিহত"),
+    (
+        "sec_pin_prompt",
+        "Enter 4-6 digit PIN",
+        "৪-৬ ডিজিটের পিন লিখুন",
+    ),
+    (
+        "sec_perm_denied",
+        "Permission Denied: Access restricted by security policy",
+        "অনুমতি প্রত্যাখ্যাত: নিরাপত্তা নীতি দ্বারা প্রবেশাধিকার সংরক্ষিত",
+    ),
+    (
+        "sec_unauthorized",
+        "Unauthorized: Action blocked by sandbox boundary",
+        "অননুমোদিত: স্যান্ডবক্স সীমানা দ্বারা কাজ প্রতিহত",
+    ),
     ("stat_battery", "Battery Level", "ব্যাটারির মাত্রা"),
     ("stat_network", "Network Status", "নেটওয়ার্ক স্থিতি"),
     ("stat_storage", "Storage Usage", "স্টোরেজ ব্যবহার"),
     ("stat_simulated", "Simulated Component", "সিমুলেটেড কম্পোনেন্ট"),
-    ("note_saved", "Note saved successfully to encrypted disk", "নোট সফলভাবে এনক্রিপ্ট করা ডিস্কে সংরক্ষিত হয়েছে"),
+    (
+        "note_saved",
+        "Note saved successfully to encrypted disk",
+        "নোট সফলভাবে এনক্রিপ্ট করা ডিস্কে সংরক্ষিত হয়েছে",
+    ),
     ("note_deleted", "Note deleted", "নোট মুছে ফেলা হয়েছে"),
-    ("calc_error", "Math Syntax or Math Domain Error", "গাণিতিক সিনট্যাক্স বা ডোমেন ত্রুটি"),
+    (
+        "calc_error",
+        "Math Syntax or Math Domain Error",
+        "গাণিতিক সিনট্যাক্স বা ডোমেন ত্রুটি",
+    ),
 ];
 
 /// Translates a key to the requested locale with fail-closed English fallback.
@@ -210,7 +234,11 @@ impl AccessibilityNode {
             res.push_str(&format!(" ({})", hint));
         }
         if self.is_disabled {
-            res.push_str(if locale == Locale::Bn { " (অকার্যকর)" } else { " (disabled)" });
+            res.push_str(if locale == Locale::Bn {
+                " (অকার্যকর)"
+            } else {
+                " (disabled)"
+            });
         }
         res
     }
@@ -225,8 +253,14 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for (key, en_str, bn_str) in STRING_CATALOG {
             assert!(seen.insert(*key), "Duplicate catalog key: {key}");
-            assert!(!en_str.is_empty(), "Empty English translation for key: {key}");
-            assert!(!bn_str.is_empty(), "Empty Bengali translation for key: {key}");
+            assert!(
+                !en_str.is_empty(),
+                "Empty English translation for key: {key}"
+            );
+            assert!(
+                !bn_str.is_empty(),
+                "Empty Bengali translation for key: {key}"
+            );
         }
     }
 

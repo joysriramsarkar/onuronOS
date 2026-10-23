@@ -1,8 +1,8 @@
 // runtime/nilrt/src/permbroker.rs — Centralized Permission Broker with 7-Day Auto-Revoke
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
-use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PermissionRecord {
@@ -53,10 +53,7 @@ impl PermissionBroker {
                             quarantine
                         ),
                         Err(re) => {
-                            eprintln!(
-                                "[permbroker] Could not quarantine corrupt database: {}",
-                                re
-                            );
+                            eprintln!("[permbroker] Could not quarantine corrupt database: {}", re);
                             // Fall back to writing elsewhere rather than
                             // destroying evidence of the corruption.
                             self.db_path = quarantine;
@@ -75,7 +72,10 @@ impl PermissionBroker {
         let data = match serde_json::to_string_pretty(&self.records) {
             Ok(d) => d,
             Err(e) => {
-                eprintln!("[permbroker] Could not serialize permission database: {}", e);
+                eprintln!(
+                    "[permbroker] Could not serialize permission database: {}",
+                    e
+                );
                 return;
             }
         };
@@ -107,10 +107,13 @@ impl PermissionBroker {
 
     pub fn grant_permission(&mut self, app_id: &str, perm: &str) {
         let app_perms = self.records.entry(app_id.to_string()).or_default();
-        app_perms.insert(perm.to_string(), PermissionRecord {
-            granted: true,
-            last_used_timestamp: Self::now(),
-        });
+        app_perms.insert(
+            perm.to_string(),
+            PermissionRecord {
+                granted: true,
+                last_used_timestamp: Self::now(),
+            },
+        );
         self.save();
     }
 
@@ -122,7 +125,10 @@ impl PermissionBroker {
                 // saturating_sub: a future timestamp (clock set backwards or a
                 // hand-edited database) must not underflow and revoke or panic.
                 if rec.granted && current.saturating_sub(rec.last_used_timestamp) > max_age_secs {
-                    println!("[permbroker] Auto-revoked inactive permission '{}' for app '{}'", perm, app);
+                    println!(
+                        "[permbroker] Auto-revoked inactive permission '{}' for app '{}'",
+                        perm, app
+                    );
                     rec.granted = false;
                     revoked_count += 1;
                 }
@@ -169,7 +175,10 @@ mod tests {
             "app".into(),
             HashMap::from([(
                 "camera".to_string(),
-                PermissionRecord { granted: true, last_used_timestamp: u64::MAX },
+                PermissionRecord {
+                    granted: true,
+                    last_used_timestamp: u64::MAX,
+                },
             )]),
         );
         // Must not panic and must keep the grant: the timestamp is not stale.
@@ -209,7 +218,11 @@ mod tests {
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().contains("atomic.json.tmp"))
             .collect();
-        assert!(leftovers.is_empty(), "temporary files left behind: {:?}", leftovers);
+        assert!(
+            leftovers.is_empty(),
+            "temporary files left behind: {:?}",
+            leftovers
+        );
         let _ = fs::remove_file(&path);
     }
 }
