@@ -69,6 +69,12 @@ pub struct Spacing {
     pub avatar_radius: u32,
 }
 
+impl Default for Spacing {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Spacing {
     pub fn new() -> Self {
         Spacing {
@@ -98,6 +104,12 @@ pub struct Typography {
     pub label_small: u32,
 }
 
+impl Default for Typography {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Typography {
     pub fn new() -> Self {
         Typography {
@@ -121,6 +133,12 @@ pub struct DesignSystem {
     pub palette: Palette,
     pub spacing: Spacing,
     pub typography: Typography,
+}
+
+impl Default for DesignSystem {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DesignSystem {

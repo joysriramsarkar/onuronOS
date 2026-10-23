@@ -3,7 +3,7 @@
 // Mirrors screen structure from the design folder (PNG) and PDF (same content).
 
 use crate::design::DesignSystem;
-use crate::{Element, Ev};
+use crate::{Element};
 
 /// Status bar: time + network + date
 pub struct StatusBar<'a> {
@@ -15,7 +15,7 @@ pub struct StatusBar<'a> {
 
 impl<'a> StatusBar<'a> {
     pub fn render(&self) -> Element {
-        let (bg, fg) = if self.ds.palette.dark_bg == 0xFF1E1236 {
+        let (_bg, _fg) = if self.ds.palette.dark_bg == 0xFF1E1236 {
             (self.ds.palette.dark_bg, self.ds.palette.dark_text)
         } else {
             (self.ds.palette.light_bg, self.ds.palette.light_text)
@@ -49,7 +49,7 @@ pub struct AppCard {
 
 impl AppCard {
     pub fn render(&self) -> Element {
-        let bg = if self.ds.palette.dark_bg == 0xFF1E1236 {
+        let _bg = if self.ds.palette.dark_bg == 0xFF1E1236 {
             self.ds.palette.dark_card
         } else {
             self.ds.palette.light_card
