@@ -15,7 +15,7 @@ To keep architectural claims transparent and verifiable, every security subsyste
 | **Permission Broker (`nilrt`)** | **Implemented** (Automated tests) | Per-app capability grants with atomic persistence, TTL auto-revocation, and path/device glob checks (`runtime/nilrt/src/permbroker.rs`). | Interactive UI prompt in `nilshell` is console/simulator-based. |
 | **Linux Namespaces (`nilrt`)** | **Implemented** (Linux/QEMU) | `CLONE_NEWPID`, `CLONE_NEWNS`, `CLONE_NEWNET`, `CLONE_NEWIPC` isolation (`runtime/nilrt/src/sandbox.rs`). | Host-side Windows simulator (`nilsim`) uses per-app WebView2 user-data directories instead of Linux namespaces. |
 | **SELinux Policy (`security/selinux`)** | **Functional Prototype** | CIL policy modules (`00-base.cil`..`90-neverallow.cil`) audited in CI (`build/test_selinux_audit.py`) and runtime mode probe in `nilrt`. | Full enforcing mode across all hardware device nodes is a release-hardening milestone. |
-| **Storage Encryption (`nilkeyd`)** | **Functional Prototype** | Argon2/ChaCha20-Poly1305 key wrapping, PIN verification, and Linux `fscrypt v2` ioctl bindings (`services/nilkeyd/src/fscrypt.rs`). | Hardware TEE / Secure Enclave key derivation is planned; currently uses software-derived master keys. |
+| **Storage Encryption (`nilkeyd`)** | **Functional Prototype** | Software key-wrapping (AES-256-GCM / Argon2 / SHA-256) + Linux `fscrypt v2` kernel ioctl bindings (`services/nilkeyd/src/fscrypt.rs`, `nilinit/src/fscrypt.rs`). | Active fscrypt directory encryption requires an fscrypt-enabled ext4 partition; on non-fscrypt/tmpfs storage, protection is key-wrapping only. Hardware TEE derivation is planned. |
 | **Verified Boot (`vbmeta` / A-B)** | **Experimental** | `mkvbmeta.py`, preflight checks, and `nilupd` signed A/B slot transactions (`services/nilupd`). | Bootloader root-of-trust fuse locking on physical reference hardware is not yet enabled. |
 
 ---
@@ -69,13 +69,13 @@ All `.nilax` packages must be cryptographically signed by an enrolled developer 
 
 ## 4. Storage Encryption (`fscrypt v2` & `nilkeyd`)
 
-User data partitions (`/data/user/<uid>`) are protected using native Linux `fscrypt v2`:
-- Encryption cipher: AES-256-XTS for file contents, AES-256-CTS for filenames.
-- Master keys are derived from user credentials (PIN, passphrase, biometric) and enrolled into a secure enclave / TEE keystore.
+Data at rest is secured via a defense-in-depth model combining credential-bound key wrapping and native Linux `fscrypt v2`:
+- **Active Data Protection**: Device master keys are wrapped with AEAD (AES-256-GCM / Argon2 / SHA-256) bound to the device secret fingerprint and user PIN. Unwrapping requires the valid credential and matches device credentials.
+- **Kernel Directory Encryption (`fscrypt v2`)**: `nilkeyd` and `nilinit` provide direct Linux kernel ioctl bindings (`FS_IOC_ADD_ENCRYPTION_KEY` and `FS_IOC_SET_ENCRYPTION_POLICY`) for AES-256-XTS (contents) and AES-256-CTS (filenames). When booted on an ext4 filesystem formatted with encryption flags, native directory encryption is active. On ephemeral tmpfs or filesystems without kernel fscrypt support, protection defaults to user-space key wrapping without claiming false kernel encryption.
 - Keys are managed at runtime by `nilkeyd`:
-  - Enrolled on initial unlock.
+  - Enrolled and unsealed on initial unlock.
   - Automatically evicted from memory on device lock or timeout.
-  - Per-app directory separation ensures one compromised app cannot decrypt data belonging to another.
+  - Per-app directory separation ensures isolated application storage boundaries.
 
 ---
 

@@ -9,17 +9,12 @@
 // by nilkeyd, so a wrong PIN yields a different descriptor (or none at all),
 // and the kernel refuses to set the policy.
 //
-// Steps:
-//   1. Read /data/system/fscrypt/policy (key_specifier, hash_specifier)
-//   2. Connect to /run/nilos/keyd.sock
-//   3. Request the key blob: "GET_KEY <hex_descriptor>"
-//   4. Send the key: FS_IOC_ADD_ENCRYPTION_KEY with the descriptor + key blob
-//   5. Set the encryption policy: FS_IOC_SET_ENCRYPTION_POLICY
-//
-// On non-Linux: no-op (fake HAL used on dev-host).
+// Security invariants:
+// - apply_key() MUST NEVER return Ok(()) if kernel ioctl was not performed or failed.
+// - All failures must cleanly report why the policy could not be set.
 
 /// Parse a 64-byte hex key descriptor from the policy file.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyDescriptor {
     pub descriptor: [u8; 32],
     pub hash_specifier: [u8; 16],
@@ -81,14 +76,15 @@ impl KeyDescriptor {
 
 /// Connect to nilkeyd and ask for the key blob.
 pub fn request_key(sock_path: &str, descriptor: &[u8; 32]) -> Result<Vec<u8>, String> {
-    #[cfg(target_os = "unix")]
+    #[cfg(unix)]
     {
+        use std::io::{Read, Write};
         use std::os::unix::net::UnixStream;
 
         let mut stream = UnixStream::connect(sock_path)
             .map_err(|e| format!("cannot connect to keyd socket {}: {}", sock_path, e))?;
 
-        let request = format!("GET_KEY {:x}\n", hex::encode(&descriptor));
+        let request = format!("GET_KEY {}\n", hex::encode(descriptor));
         stream
             .write_all(request.as_bytes())
             .map_err(|e| format!("cannot write to keyd socket: {}", e))?;
@@ -98,45 +94,216 @@ pub fn request_key(sock_path: &str, descriptor: &[u8; 32]) -> Result<Vec<u8>, St
             .read(&mut response)
             .map_err(|e| format!("cannot read from keyd socket: {}", e))?;
 
-        let response = String::from_utf8_lossy(&response[..n]);
-        if response.starts_with("ERROR") {
-            return Err(response.trim().to_string());
+        let response_str = String::from_utf8_lossy(&response[..n]);
+        if response_str.starts_with("ERROR") {
+            return Err(response_str.trim().to_string());
         }
 
         // Response format: "KEY <hex_blob>" or "OK <hex_blob>"
-        let parts: Vec<&str> = response.splitn(2, ' ').collect();
+        let parts: Vec<&str> = response_str.split_whitespace().collect();
         if parts.len() < 2 {
-            return Err(format!("unexpected keyd response: {}", response.trim()));
+            return Err(format!("unexpected keyd response: {}", response_str.trim()));
         }
 
-        let blob = hex::decode(parts[1]).map_err(|e| e.to_string())?;
+        let blob = hex::decode(parts[1]).map_err(|e| format!("invalid hex in key: {}", e))?;
         Ok(blob)
     }
 
-    #[cfg(not(target_os = "unix"))]
+    #[cfg(not(unix))]
     {
-        // On Windows, socket is not available. Return an error so the caller
-        // knows this is not supported on this platform.
-        Err("Unix domain sockets not supported on Windows (dev-host)".to_string())
+        let _ = (sock_path, descriptor);
+        Err("Unix domain sockets not supported on non-unix dev-host".to_string())
     }
 }
 
-/// Apply the encryption key to /data.
-pub fn apply_key(key: &[u8], descriptor: &[u8; 32], _policy: &[u8]) -> Result<(), String> {
-    // FS_IOC_ADD_ENCRYPTION_KEY and FS_IOC_SET_ENCRYPTION_POLICY are Linux
-    // kernel ioctls. On Windows (dev-host), we skip the actual crypto operation.
+/// Apply the encryption key to `/data` using Linux kernel fscrypt ioctls.
+///
+/// Under no circumstances does this function return `Ok(())` if the kernel
+/// ioctls were not successfully executed.
+pub fn apply_key(key: &[u8], _descriptor: &[u8; 32], _policy: &[u8]) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
-        // Real kernel ioctls would go here using nix or raw libc.
-        // These are platform-specific and require the target kernel headers.
-        println!("[fscrypt] kernel ioctl not implemented on this build");
+        use std::os::unix::io::AsRawFd;
+
+        const IOC_READ: u32 = 2;
+        const IOC_WRITE: u32 = 1;
+
+        const fn ioc(dir: u32, nr: u32, size: usize) -> libc::c_ulong {
+            (((dir as u64) << 30) | ((size as u64) << 16) | ((b'f' as u64) << 8) | nr as u64)
+                as libc::c_ulong
+        }
+
+        const FS_IOC_SET_ENCRYPTION_POLICY: libc::c_ulong = ioc(IOC_READ, 19, 12);
+        const FS_IOC_ADD_ENCRYPTION_KEY: libc::c_ulong = ioc(
+            IOC_READ | IOC_WRITE,
+            23,
+            std::mem::size_of::<FscryptAddKeyArg>(),
+        );
+
+        const FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER: u32 = 2;
+        const FSCRYPT_MAX_KEY_SIZE: usize = 64;
+        const FSCRYPT_POLICY_V2: u8 = 2;
+        const FSCRYPT_MODE_AES_256_XTS: u8 = 1;
+        const FSCRYPT_MODE_AES_256_CTS: u8 = 4;
+        const FSCRYPT_KEY_IDENTIFIER_SIZE: usize = 16;
+
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct FscryptKeySpecifier {
+            type_: u32,
+            reserved: u32,
+            union_bytes: [u8; 32],
+        }
+
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct FscryptAddKeyArg {
+            key_spec: FscryptKeySpecifier,
+            raw_size: u32,
+            key_id: u32,
+            flags: u32,
+            reserved: [u32; 7],
+        }
+
+        #[repr(C)]
+        #[derive(Clone, Copy)]
+        struct FscryptPolicyV2 {
+            version: u8,
+            contents_encryption_mode: u8,
+            filenames_encryption_mode: u8,
+            flags: u8,
+            log2_data_unit_size: u8,
+            reserved: [u8; 3],
+            master_key_identifier: [u8; FSCRYPT_KEY_IDENTIFIER_SIZE],
+        }
+
+        if key.is_empty() || key.len() > FSCRYPT_MAX_KEY_SIZE {
+            return Err(format!(
+                "invalid key size: {} (expected 1..={})",
+                key.len(),
+                FSCRYPT_MAX_KEY_SIZE
+            ));
+        }
+
+        let file = std::fs::File::open("/data")
+            .map_err(|e| format!("cannot open /data for fscrypt: {}", e))?;
+        let fd = file.as_raw_fd();
+
+        let mut key_buf = [0u8; FSCRYPT_MAX_KEY_SIZE];
+        key_buf[..key.len()].copy_from_slice(key);
+
+        let header = FscryptAddKeyArg {
+            key_spec: FscryptKeySpecifier {
+                type_: FSCRYPT_KEY_SPEC_TYPE_IDENTIFIER,
+                reserved: 0,
+                union_bytes: [0u8; 32],
+            },
+            raw_size: key.len() as u32,
+            key_id: 0,
+            flags: 0,
+            reserved: [0u32; 7],
+        };
+
+        let header_size = std::mem::size_of::<FscryptAddKeyArg>();
+        let mut buf = Vec::with_capacity(header_size + key.len());
+        let header_bytes = unsafe {
+            std::slice::from_raw_parts(&header as *const FscryptAddKeyArg as *const u8, header_size)
+        };
+        buf.extend_from_slice(header_bytes);
+        buf.extend_from_slice(&key_buf[..key.len()]);
+
+        let ret = unsafe { libc::ioctl(fd, FS_IOC_ADD_ENCRYPTION_KEY as _, buf.as_mut_ptr()) };
+        if ret < 0 {
+            let err = std::io::Error::last_os_error();
+            let reason = match err.raw_os_error() {
+                Some(libc::ENOTTY) => {
+                    "FS_IOC_ADD_ENCRYPTION_KEY unsupported: filesystem does not support fscrypt (ENOTTY)".to_string()
+                }
+                Some(libc::EOPNOTSUPP) => {
+                    "FS_IOC_ADD_ENCRYPTION_KEY unsupported: fscrypt not enabled on kernel/filesystem (EOPNOTSUPP)".to_string()
+                }
+                Some(libc::EINVAL) => "FS_IOC_ADD_ENCRYPTION_KEY failed: invalid arguments (EINVAL)".to_string(),
+                Some(libc::EPERM) => "FS_IOC_ADD_ENCRYPTION_KEY failed: requires CAP_SYS_ADMIN (EPERM)".to_string(),
+                _ => format!("FS_IOC_ADD_ENCRYPTION_KEY failed: {}", err),
+            };
+            return Err(reason);
+        }
+
+        let mut identifier = [0u8; FSCRYPT_KEY_IDENTIFIER_SIZE];
+        identifier.copy_from_slice(&buf[8..8 + FSCRYPT_KEY_IDENTIFIER_SIZE]);
+
+        let policy_v2 = FscryptPolicyV2 {
+            version: FSCRYPT_POLICY_V2,
+            contents_encryption_mode: FSCRYPT_MODE_AES_256_XTS,
+            filenames_encryption_mode: FSCRYPT_MODE_AES_256_CTS,
+            flags: 0,
+            log2_data_unit_size: 0,
+            reserved: [0u8; 3],
+            master_key_identifier: identifier,
+        };
+
+        let ret = unsafe { libc::ioctl(fd, FS_IOC_SET_ENCRYPTION_POLICY as _, &policy_v2) };
+        if ret < 0 {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::EEXIST) {
+                // Policy already applied to directory from previous boot
+                return Ok(());
+            }
+            let reason = match err.raw_os_error() {
+                Some(libc::ENOTTY) => {
+                    "FS_IOC_SET_ENCRYPTION_POLICY unsupported: filesystem does not support fscrypt (ENOTTY)".to_string()
+                }
+                Some(libc::EOPNOTSUPP) => {
+                    "FS_IOC_SET_ENCRYPTION_POLICY unsupported: fscrypt feature flag missing (EOPNOTSUPP)".to_string()
+                }
+                Some(libc::EINVAL) => "FS_IOC_SET_ENCRYPTION_POLICY failed: invalid policy configuration (EINVAL)".to_string(),
+                _ => format!("FS_IOC_SET_ENCRYPTION_POLICY failed: {}", err),
+            };
+            return Err(reason);
+        }
+
+        Ok(())
     }
 
     #[cfg(not(target_os = "linux"))]
     {
-        // On Windows (dev-host), skip the crypto operation (fake HAL).
-        println!("[fscrypt] key applied (simulated on Windows; use QEMU/Linux for real fscrypt)");
+        let _ = (key, _descriptor, _policy);
+        Err("fscrypt kernel ioctl unsupported on non-Linux dev-host platform".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_key_descriptor_parse_valid() {
+        let content = "key_descriptor 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\nhash_specifier 0123456789abcdef0123456789abcdef\n";
+        let parsed = KeyDescriptor::parse(content).expect("parse should succeed");
+        assert_eq!(parsed.descriptor[0], 0x01);
+        assert_eq!(parsed.hash_specifier[0], 0x01);
     }
 
-    Ok(())
+    #[test]
+    fn test_key_descriptor_parse_all_zeros() {
+        let content = "key_descriptor 0000000000000000000000000000000000000000000000000000000000000000\nhash_specifier 00000000000000000000000000000000\n";
+        let res = KeyDescriptor::parse(content);
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("all zeros"));
+    }
+
+    #[test]
+    fn test_key_descriptor_parse_invalid_length() {
+        let content = "key_descriptor 1234\n";
+        let res = KeyDescriptor::parse(content);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_apply_key_empty_or_non_linux_fails_cleanly() {
+        let desc = [1u8; 32];
+        let policy = b"dummy";
+        let res = apply_key(&[], &desc, policy);
+        assert!(res.is_err(), "Empty key or non-linux must never return Ok");
+    }
 }

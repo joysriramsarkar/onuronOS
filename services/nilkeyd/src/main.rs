@@ -20,6 +20,8 @@ use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::net::UnixListener;
 
+#[cfg(unix)]
+use nilkeyd::hex_encode;
 use nilkeyd::{
     apply_fscrypt_policy, decrypt_data, default_device_secret_path, default_master_key_path,
     default_record_path, device_secret_fingerprint, encrypt_data, init_record, is_unlocked,
@@ -524,11 +526,28 @@ fn run_daemon() -> i32 {
                             }
                         }
                         let cmd = String::from_utf8_lossy(&buf[..n]);
-                        println!("[nilkeyd] Key Request: {}", cmd.trim());
-                        if is_unlocked(&default_record_path(), &default_master_key_path()) {
-                            let _ = s.write_all(b"KEY_UNLOCKED\n");
+                        let cmd_trimmed = cmd.trim();
+                        if cmd_trimmed.starts_with("GET_KEY") {
+                            println!("[nilkeyd] Key Request: GET_KEY [redacted]");
+                            let record = default_record_path();
+                            let master = default_master_key_path();
+                            if is_unlocked(&record, &master) {
+                                if let Ok(master_bytes) = load_master_from_file(&master) {
+                                    let resp = format!("KEY {}\n", hex_encode(&master_bytes));
+                                    let _ = s.write_all(resp.as_bytes());
+                                } else {
+                                    let _ = s.write_all(b"ERROR UNREADABLE_MASTER_KEY\n");
+                                }
+                            } else {
+                                let _ = s.write_all(b"ERROR KEY_LOCKED\n");
+                            }
                         } else {
-                            let _ = s.write_all(b"KEY_LOCKED\n");
+                            println!("[nilkeyd] Status Request: {}", cmd_trimmed);
+                            if is_unlocked(&default_record_path(), &default_master_key_path()) {
+                                let _ = s.write_all(b"KEY_UNLOCKED\n");
+                            } else {
+                                let _ = s.write_all(b"KEY_LOCKED\n");
+                            }
                         }
                     }
                 }

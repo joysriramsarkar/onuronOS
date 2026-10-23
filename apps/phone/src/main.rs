@@ -23,7 +23,7 @@ impl Default for PhoneState {
 
 pub fn update(state: &mut PhoneState, ev: Ev) {
     match ev {
-        Ev::Click(d) if d >= 0 && d <= 9 => {
+        Ev::Click(d) if d <= 9 => {
             state.entered.push(char::from_digit(d, 10).unwrap_or('0'));
         }
         Ev::Click(10) => {
