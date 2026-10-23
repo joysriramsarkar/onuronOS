@@ -1,8 +1,8 @@
 # Cargo toolchain configuration for cross-compilation targets.
 # Required for GitHub Actions runners to build Linux musl binaries for QEMU.
 
-[target.x86_64-unknown-linux-musl]
+["target.x86_64-unknown-linux-musl"]
 linker = "x86_64-linux-musl-gcc"
 
-[target.aarch64-unknown-linux-musl]
+["target.aarch64-unknown-linux-musl"]
 linker = "aarch64-linux-gnu-gcc"
