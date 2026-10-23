@@ -74,7 +74,6 @@ members = [
   "apps/display",
   "apps/sound",
   "apps/security",
-  "apps/storage",
   "apps/language",
   "apps/a11y",
   "apps/vpn",
