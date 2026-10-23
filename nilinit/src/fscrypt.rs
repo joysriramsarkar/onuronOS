@@ -40,10 +40,10 @@ impl KeyDescriptor {
             if parts.len() != 2 {
                 continue;
             }
-            let key = &parts[0];
+            let key = parts[0];
             let value = parts[1];
 
-            if key.eq("key_descriptor") {
+            if key == "key_descriptor" {
                 if value.len() != 64 {
                     return Err(format!(
                         "key_descriptor must be 64 hex chars, got {}",
@@ -52,7 +52,7 @@ impl KeyDescriptor {
                 }
                 let bytes = hex::decode(value).map_err(|e| e.to_string())?;
                 descriptor = bytes.try_into().map_err(|_| "key_descriptor wrong length".to_string())?;
-            } else if key.eq("hash_specifier") {
+            } else if key == "hash_specifier" {
                 if value.len() != 32 {
                     return Err(format!(
                         "hash_specifier must be 32 hex chars, got {}",

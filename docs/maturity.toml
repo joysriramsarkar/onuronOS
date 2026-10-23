@@ -76,10 +76,16 @@ evidence = ["apps/lockscreen/src/main.rs", "runtime/nilauth/"]
 simulated = false
 
 [[entries]]
+name = "Shell Design System (OnuronOS 1.7)"
+tier = "functional-prototype"
+details = "Sampled dark/light tokens, measured 390x796 metrics, vector icon set and shared widgets; 33 reference screens implemented in the simulator, validated by headless export and a behaviour selftest"
+evidence = ["nilsim/src/ui.rs", "nilsim/src/screens.rs", "nilsim/src/apps.rs", "docs/ui-design-spec.md", "docs/adr/0010-shell-design-system.md"]
+
+[[entries]]
 name = "Home Launcher"
 tier = "functional-prototype"
-details = "App grid, live clock/date, interactive search across packages/notes/contacts, notification shade, sandbox app launcher"
-evidence = ["apps/launcher/src/main.rs", "runtime/nilui/"]
+details = "4-column native grid, live clock/date, live package/note status pill, Android launcher section, status-bar entry points, app drawer for the remaining native apps"
+evidence = ["apps/launcher/src/main.rs", "nilsim/src/screens.rs", "nilsim/src/ui.rs"]
 simulated = false
 
 [[entries]]

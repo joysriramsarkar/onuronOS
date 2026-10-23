@@ -20,6 +20,9 @@ out/
 *.dll
 *.exe
 *.pdb
+scratch/
+scratch2/
+nul
 
 # Python build-script caches
 __pycache__/

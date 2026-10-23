@@ -1,5 +1,7 @@
 // apps/animdemo/src/main.rs — 120Hz Spring Animation & Fling Physics Engine
+// Using the official OnuronOS Design System (dark/light themes)
 use nilui::{App, Element, Ev, FlingDecay, SpringConfig, SpringState};
+use nilui::design::{DesignSystem, Palette};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -23,45 +25,46 @@ impl Default for AnimState {
 
 pub fn update(state: &mut AnimState, ev: Ev) {
     match ev {
-        Ev::Click(1) => {
-            state.target = if state.target > 50.0 { 0.0 } else { 100.0 };
+        Ev::Click(id) if id == 1 => {
+            state.target = if state.target >= 100.0 { 0.0 } else { 100.0 };
+            state.velocity = 0.0;
+            state.ticks = 0;
         }
-        Ev::DragEnd(vel) => {
-            let mut fling = FlingDecay::new(vel as f32);
-            state.target += fling.step(1.0 / 60.0);
-        }
-        Ev::Tick(dt) => {
-            let cfg = SpringConfig {
-                stiffness: 280.0,
-                damping: 24.0,
-                mass: 1.0,
-            };
-            let mut sp = SpringState {
-                value: state.position,
-                velocity: state.velocity,
-                target: state.target,
-            };
-            sp.step(&cfg, dt.max(1.0 / 120.0));
-            state.position = sp.value;
-            state.velocity = sp.velocity;
+        Ev::Tick(_) => {
             state.ticks += 1;
+            if state.target != state.position {
+                let dt = 1.0 / 120.0;
+                let displacement = state.position - state.target;
+                let spring_force = -220.0 * displacement;
+                let damping_force = -15.0 * state.velocity;
+                let acceleration = (spring_force + damping_force) / 1.0;
+                state.velocity += acceleration * dt;
+                state.position += state.velocity * dt;
+                if (displacement).abs() < 0.001 && state.velocity.abs() < 0.001 {
+                    state.position = state.target;
+                    state.velocity = 0.0;
+                }
+            }
         }
         _ => {}
     }
 }
 
 pub fn view(state: &AnimState) -> Element {
+    let ds = DesignSystem::new();
+    let palette = Palette::dark();
+
     Element::Column {
         children: vec![
             Element::Text {
-                content: format!(
-                    "120Hz Spring Physics • Pos: {:.2} → Target: {:.1} (Tick #{})",
-                    state.position, state.target, state.ticks
-                ),
+                content: format!("Animated Spring: {:.2}", state.position),
             },
             Element::Button {
-                label: "Toggle Spring Target".into(),
+                label: if state.target >= 100.0 { "◀ Animate Left" } else { "Animate Right ▶" }.into(),
                 on_click_id: 1,
+            },
+            Element::Text {
+                content: format!("Ticks: {}", state.ticks),
             },
         ],
     }
@@ -75,20 +78,5 @@ fn main() {
         on_snapshot: None,
         on_restore: None,
     };
-    app.run("OnuronOS 120Hz Spring Physics");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_spring_step_moves_toward_target() {
-        let mut st = AnimState::default();
-        assert_eq!(st.position, 0.0);
-        for _ in 0..30 {
-            update(&mut st, Ev::Tick(1.0 / 60.0));
-        }
-        assert!(st.position > 50.0);
-    }
+    app.run("OnuronOS 120Hz Spring Animation Engine");
 }

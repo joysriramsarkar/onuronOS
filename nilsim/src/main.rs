@@ -1,7 +1,10 @@
 // nilsim/src/main.rs — Onuron OS Desktop Mobile Simulator (Alap Framework & Figma 330x680)
 #![allow(dead_code, unused_variables, unused_imports)]
 
+mod apps;
 mod memories;
+mod screens;
+mod ui;
 #[cfg(target_os = "windows")]
 mod nilbrowser;
 
@@ -64,6 +67,44 @@ const COLOR_TEAL: u32 = 0x0F766E; // Teal
 const COLOR_PINK: u32 = 0xDB2777; // Pink
 const SIMULATED_BADGE: &str = "[SIMULATED]";
 
+#[derive(Clone, Copy)]
+pub(crate) struct Theme {
+    pub bg: u32,
+    pub surface: u32,
+    pub surface_alt: u32,
+    pub border: u32,
+    pub text_high: u32,
+    pub text_med: u32,
+    pub text_dim: u32,
+    pub purple: u32,
+}
+
+pub(crate) fn get_theme(dark_mode: bool) -> Theme {
+    if dark_mode {
+        Theme {
+            bg: 0x1E1236,          // Sampled from the reference dark screens
+            surface: 0x322748,     // Card surface
+            surface_alt: 0x4C3876, // Leading icon tile
+            border: 0x534A65,      // 1px card border
+            text_high: 0xFFFFFF,   // Primary text
+            text_med: 0xCBBDE6,    // Secondary text
+            text_dim: 0x9588AE,    // Tertiary text
+            purple: 0x9B6BFF,      // Accent fill
+        }
+    } else {
+        Theme {
+            bg: 0xF5F0FF,          // Sampled from the reference light screens
+            surface: 0xFDFCFF,     // Card surface
+            surface_alt: 0xE5D8FF, // Leading icon tile
+            border: 0xE1D9F0,      // 1px card border
+            text_high: 0x1E1236,   // Primary text
+            text_med: 0x5E4B86,    // Secondary text
+            text_dim: 0x7F6F9F,    // Tertiary text
+            purple: 0x9B6BFF,      // Accent fill
+        }
+    }
+}
+
 // Wi-Fi icon from Flaticon (566280), 18x13 alpha mask
 const WIFI_ICON: &[u8] = include_bytes!("../assets/icons/wifi.bin");
 const WIFI_W: usize = 18;
@@ -90,6 +131,24 @@ enum Screen {
     NanoEditor,
     InCall,
     Recents,
+    SettingsWifi,
+    SettingsBluetooth,
+    SettingsDisplay,
+    SettingsSound,
+    SettingsSecurity,
+    SettingsBattery,
+    SettingsStorage,
+    SettingsLanguage,
+    SettingsAccessibility,
+    SettingsVpn,
+    SettingsBackup,
+    SettingsUpdate,
+    SettingsAbout,
+    PowerMenu,
+    AppCamera,
+    AppMusic,
+    AppDrawer,
+    Oobe(u8),
 }
 
 // ─── Interactive Touch/Click Button ──────────────────────────────────────────
@@ -109,6 +168,21 @@ impl TouchButton {
 }
 
 // ─── Indian Standard Time (IST UTC+5:30) & Bengali Digits ─────────────────────
+/// Recursive on-disk size of a directory tree (used for /data accounting).
+fn dir_size(path: &Path) -> u64 {
+    let mut total = 0u64;
+    if let Ok(rd) = fs::read_dir(path) {
+        for e in rd.flatten() {
+            match e.metadata() {
+                Ok(md) if md.is_dir() => total += dir_size(&e.path()),
+                Ok(md) => total += md.len(),
+                Err(_) => {}
+            }
+        }
+    }
+    total
+}
+
 fn get_ist_time_str() -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -119,6 +193,25 @@ fn get_ist_time_str() -> String {
     let mins = ((ist_secs / 60) % 60) as u8;
     let raw = format!("{:02}:{:02}", hours, mins);
     to_bengali_digits(&raw)
+}
+
+/// Compact "day · date" header used by the notification shade.
+fn get_ist_date_short() -> String {
+    let full = get_ist_date_str();
+    let mut parts = full.splitn(2, ',');
+    let dow = parts.next().unwrap_or("").trim().to_string();
+    let rest = parts.next().unwrap_or("").trim().to_string();
+    format!("{} · {}", dow, rest)
+}
+
+/// Hour and minute of the wall clock in the simulated device timezone (IST).
+pub(crate) fn get_ist_time_parts() -> (u8, u8) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let ist_secs = now + 19800;
+    (((ist_secs / 3600) % 24) as u8, ((ist_secs / 60) % 60) as u8)
 }
 
 fn get_ist_date_str() -> String {
@@ -476,17 +569,29 @@ struct FramePainter<'a> {
     height: usize,
     fonts: &'a FontEngine,
     buttons: Vec<TouchButton>,
+    pub(crate) dark_mode: bool,
 }
 
 impl<'a> FramePainter<'a> {
-    fn new(buffer: &'a mut [u32], width: usize, height: usize, fonts: &'a FontEngine) -> Self {
+    fn new(
+        buffer: &'a mut [u32],
+        width: usize,
+        height: usize,
+        fonts: &'a FontEngine,
+        dark_mode: bool,
+    ) -> Self {
         FramePainter {
             buffer,
             width,
             height,
             fonts,
             buttons: Vec::new(),
+            dark_mode,
         }
+    }
+
+    pub(crate) fn theme(&self) -> Theme {
+        get_theme(self.dark_mode)
     }
 
     pub(crate) fn put_px(&mut self, x: i16, y: i16, color: u32) {
@@ -763,6 +868,22 @@ impl<'a> FramePainter<'a> {
         color: u32,
         is_mono: bool,
     ) -> i16 {
+        // Legacy entry point: weight inferred from size (pre-design-system behaviour).
+        self.draw_text_ex(x, y, px_size, text, color, px_size >= 13.0, is_mono)
+    }
+
+    /// Text with an explicit weight, so the design system can use Regular for
+    /// small labels and Bold for headings regardless of pixel size.
+    pub(crate) fn draw_text_ex(
+        &mut self,
+        x: i16,
+        y: i16,
+        px_size: f32,
+        text: &str,
+        color: u32,
+        bold: bool,
+        is_mono: bool,
+    ) -> i16 {
         if text.is_empty() {
             return x;
         }
@@ -772,7 +893,6 @@ impl<'a> FramePainter<'a> {
 
         for (run_text, is_bengali) in runs {
             if is_bengali {
-                let bold = px_size >= 13.0;
                 let face_bytes: &[u8] = if bold {
                     &self.fonts.bengali_bold_face_bytes
                 } else {
@@ -869,6 +989,10 @@ impl<'a> FramePainter<'a> {
     }
 
     fn text_width(&self, px_size: f32, text: &str, is_mono: bool) -> i16 {
+        self.text_w_ex(px_size, text, px_size >= 13.0, is_mono)
+    }
+
+    pub(crate) fn text_w_ex(&self, px_size: f32, text: &str, bold: bool, is_mono: bool) -> i16 {
         if text.is_empty() {
             return 0;
         }
@@ -878,7 +1002,6 @@ impl<'a> FramePainter<'a> {
 
         for (run_text, is_bengali) in runs {
             if is_bengali {
-                let bold = px_size >= 13.0;
                 let face_bytes: &[u8] = if bold {
                     &self.fonts.bengali_bold_face_bytes
                 } else {
@@ -1171,6 +1294,15 @@ struct TermLine {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// A notification surfaced in the shade, the lock screen and the status preview.
+struct Notif {
+    app: String,
+    title: String,
+    time: String,
+    icon: String,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct Note {
     id: usize,
     title: String,
@@ -1290,6 +1422,19 @@ struct SimState {
     torch_enabled: bool,
     brightness_level: u8,
     volume_level: u8,
+    pub(crate) font_size_pct: u8,
+    pub(crate) camera_zoom: String,
+    pub(crate) camera_mode: usize,
+    pub(crate) vibration_enabled: bool,
+    pub(crate) battery_saver: bool,
+    pub(crate) auto_correct: bool,
+    pub(crate) word_suggestions: bool,
+    pub(crate) high_contrast: bool,
+    pub(crate) screen_reader: bool,
+    pub(crate) vpn_enabled: bool,
+    pub(crate) auto_backup: bool,
+    pub(crate) notes_filter: usize,
+    pub(crate) notifications_cleared: bool,
 
     // Real Linux Terminal State
     storage_root: PathBuf,
@@ -1358,6 +1503,52 @@ struct SimState {
     browser_active_tab: usize,
     browser_next_tab_id: usize,
     browser_tab_scroll: i16,
+
+    // ── OnuronOS 1.7 shell state (design-system screens) ────────────────────
+    pub(crate) oobe_lang: usize,
+    pub(crate) oobe_pin: String,
+    pub(crate) theme_mode: u8, // 0 light, 1 dark, 2 auto
+    pub(crate) refresh_hz: u16,
+    pub(crate) screen_timeout: u16,
+    pub(crate) ring_vol: u8,
+    pub(crate) alarm_vol: u8,
+    pub(crate) ringtone: String,
+    pub(crate) encrypt_data: bool,
+    pub(crate) lock_notifications: bool,
+    pub(crate) perm_dialog: bool,
+    pub(crate) backup_last: String,
+    pub(crate) backup_status: String,
+    pub(crate) lang: u8,
+    pub(crate) keyboard_layout: String,
+    pub(crate) secondary_keyboard: String,
+    pub(crate) vpn_profile: String,
+    pub(crate) update_checked: String,
+    pub(crate) update_status: String,
+    pub(crate) bt_scanning: bool,
+    pub(crate) bt_found: Vec<String>,
+    pub(crate) notifications: Vec<Notif>,
+    pub(crate) rotation_lock: bool,
+    pub(crate) airplane: bool,
+    pub(crate) softbus_peers: Vec<(String, String)>,
+    pub(crate) clipboard_sync: bool,
+    pub(crate) nilpkg_filter: usize,
+    pub(crate) publisher_verified: bool,
+    pub(crate) android_enabled: bool,
+    pub(crate) phone_recent: Vec<(String, String, bool)>,
+    pub(crate) camera_flash: bool,
+    pub(crate) storage_used: u64,
+    pub(crate) storage_total: u64,
+    pub(crate) exit_requested: bool,
+    pub(crate) recovery_mode: bool,
+    pub(crate) pin_hash: String,
+    pub(crate) pin_salt: String,
+    pub(crate) pin_change: bool,
+    pub(crate) prefs_dirty: bool,
+    pub(crate) toast_msg: String,
+    pub(crate) toast_ticks: u16,
+    pub(crate) scroll_y: i16,
+    pub(crate) browser_page_open: bool,
+    pub(crate) browser_pending_nav: Option<String>,
 }
 
 impl SimState {
@@ -1896,6 +2087,19 @@ impl SimState {
             torch_enabled: false,
             brightness_level: 100,
             volume_level: 80,
+            font_size_pct: 50,
+            camera_zoom: "১x".to_string(),
+            camera_mode: 0,
+            vibration_enabled: true,
+            battery_saver: false,
+            auto_correct: true,
+            word_suggestions: true,
+            high_contrast: false,
+            screen_reader: false,
+            vpn_enabled: false,
+            auto_backup: true,
+            notes_filter: 0,
+            notifications_cleared: false,
 
             term_input: String::new(),
             term_cursor_pos: 0,
@@ -2009,7 +2213,370 @@ impl SimState {
             browser_active_tab: 0,
             browser_next_tab_id: 2,
             browser_tab_scroll: 0,
+
+            oobe_lang: 0,
+            oobe_pin: String::new(),
+            theme_mode: 1,
+            refresh_hz: 120,
+            screen_timeout: 30,
+            ring_vol: 70,
+            alarm_vol: 80,
+            ringtone: "ডিফল্ট".into(),
+            encrypt_data: true,
+            lock_notifications: false,
+            perm_dialog: false,
+            backup_last: "কখনো নয়".into(),
+            backup_status: "স্বয়ংক্রিয় ব্যাকআপ সক্রিয়".into(),
+            lang: 0,
+            keyboard_layout: "বাংলা (ফোনেটিক)".into(),
+            secondary_keyboard: "English".into(),
+            vpn_profile: String::new(),
+            update_checked: "আজ".into(),
+            update_status: "চ্যানেল ম্যানিফেস্ট যাচাই করা হয়নি".into(),
+            bt_scanning: false,
+            bt_found: Vec::new(),
+            notifications: vec![
+                Notif {
+                    app: "বার্তা".into(),
+                    title: "অনিমেষ: কালকের মিটিং কটায়?".into(),
+                    time: "এখন".into(),
+                    icon: "chat".into(),
+                },
+                Notif {
+                    app: "ফোন".into(),
+                    title: "সুমিত্রা-র মিসড কল".into(),
+                    time: "৬:৪০".into(),
+                    icon: "phone".into(),
+                },
+                Notif {
+                    app: "সিস্টেম".into(),
+                    title: "আপডেট প্রস্তুত".into(),
+                    time: "সকাল".into(),
+                    icon: "sliders".into(),
+                },
+            ],
+            rotation_lock: false,
+            airplane: false,
+            softbus_peers: vec![
+                ("ডিভাইস ক".into(), "পাঠান".into()),
+                ("ডিভাইস খ".into(), "সংযুক্ত করুন".into()),
+            ],
+            clipboard_sync: true,
+            nilpkg_filter: 0,
+            publisher_verified: false,
+            android_enabled: true,
+            phone_recent: vec![
+                ("অনিমেষ".into(), "আজ".into(), false),
+                ("সুমিত্রা".into(), "গতকাল".into(), true),
+                ("মা".into(), "সোম".into(), false),
+            ],
+            camera_flash: false,
+            storage_used: 0,
+            storage_total: 256 * 1024 * 1024,
+            exit_requested: false,
+            recovery_mode: false,
+            pin_hash: String::new(),
+            pin_salt: String::new(),
+            pin_change: false,
+            prefs_dirty: false,
+            toast_msg: String::new(),
+            toast_ticks: 0,
+            scroll_y: 0,
+            browser_page_open: false,
+            browser_pending_nav: None,
         }
+    }
+
+    /// Advances the toast lifetime; the message disappears on its own instead of
+    /// sticking to every screen.
+    pub(crate) fn tick_toast(&mut self) {
+        if self.toast_ticks > 0 {
+            self.toast_ticks -= 1;
+            if self.toast_ticks == 0 {
+                self.toast_msg.clear();
+            }
+        }
+    }
+
+    /// Short-lived on-screen confirmation used by actions that have no
+    /// dedicated status line (backup, camera capture, pairing, ...).
+    pub(crate) fn toast(&mut self, msg: &str) {
+        self.toast_msg = msg.to_string();
+        self.toast_ticks = 150;
+    }
+
+    // ── OnuronOS 1.7 shell: filesystem views, storage accounting, preferences ──
+
+    /// Map a virtual mount path (/data, /etc, /tmp, /data/app) onto the
+    /// simulator's on-disk root, which mirrors the device filesystem layout.
+    fn vpath_to_disk(&self, v: &str) -> PathBuf {
+        match v {
+            "/etc" => self.storage_root.join("etc"),
+            "/tmp" => self.storage_root.join("tmp"),
+            "/data/app" => self.storage_root.join("var").join("app"),
+            _ => self.storage_root.clone(),
+        }
+    }
+
+    pub(crate) fn fs_list(&self) -> Vec<(String, String, bool)> {
+        let dir = self.vpath_to_disk(&self.current_path);
+        let mut items: Vec<PathBuf> = match fs::read_dir(&dir) {
+            Ok(rd) => rd.flatten().map(|e| e.path()).collect(),
+            Err(_) => Vec::new(),
+        };
+        items.sort_by_key(|p| (!p.is_dir(), p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default()));
+        let mut out = Vec::new();
+        for p in items.into_iter().take(12) {
+            let name = match p.file_name() {
+                Some(n) => n.to_string_lossy().to_string(),
+                None => continue,
+            };
+            if name.starts_with('.') {
+                continue;
+            }
+            let is_dir = p.is_dir();
+            let meta = if is_dir {
+                let n = fs::read_dir(&p).map(|r| r.count()).unwrap_or(0);
+                format!("{} ফাইল", to_bengali_digits(&n.to_string()))
+            } else {
+                let sz = fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+                if sz >= 1_000_000 {
+                    format!("{:.1} এমবি", sz as f64 / 1e6)
+                } else {
+                    format!("{} কেবি", to_bengali_digits(&((sz / 1024).max(1)).to_string()))
+                }
+            };
+            out.push((name, meta, is_dir));
+        }
+        out
+    }
+
+    /// Tracks found under /data/music, with a deterministic fallback so the
+    /// player always has something to show in a fresh simulator home.
+    pub(crate) fn tracks(&self) -> Vec<(String, String)> {
+        let dir = self.storage_root.join("music");
+        let mut out = Vec::new();
+        if let Ok(rd) = fs::read_dir(&dir) {
+            let mut files: Vec<PathBuf> = rd
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    matches!(
+                        p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase().as_str(),
+                        "mp3" | "wav" | "flac" | "ogg" | "m4a"
+                    )
+                })
+                .collect();
+            files.sort();
+            for f in files {
+                let name = f.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                let secs = fs::metadata(&f).map(|m| m.len() / 32000).unwrap_or(0);
+                let dur = format!("{}:{:02}", to_bengali_digits(&(secs / 60).to_string()), to_bengali_digits(&format!("{:02}", secs % 60)));
+                out.push((name, dur));
+            }
+        }
+        if out.is_empty() {
+            out.push(("গান ২".into(), "৩:২০".into()));
+            out.push(("গান ৩".into(), "৪:০৫".into()));
+        }
+        out
+    }
+
+    /// Installed native packages as (id, subtitle, action).
+    pub(crate) fn package_list(&self) -> Vec<(String, String, String)> {
+        let mut out = Vec::new();
+        for p in self.installed_pkgs.iter() {
+            out.push((p.clone(), "স্বাক্ষরিত .nilax".into(), "খুলুন".into()));
+        }
+        if out.is_empty() {
+            for p in ["org.onuron.notes", "org.onuron.calculator", "org.onuron.music"] {
+                out.push((p.into(), "বিল্ট-ইন আ্যাপ".into(), "খুলুন".into()));
+            }
+        }
+        out
+    }
+
+    pub(crate) fn android_installed_apps(&self) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for pkg in self.android_installed.iter() {
+            let name = self
+                .android_store_apps
+                .iter()
+                .find(|a| &a.pkg_id == pkg)
+                .map(|a| a.name.clone())
+                .unwrap_or_else(|| pkg.clone());
+            out.push((name, pkg.clone()));
+        }
+        out
+    }
+
+    pub(crate) fn storage_usage(&self) -> (u64, u64) {
+        (self.storage_used, self.storage_total)
+    }
+
+    /// Real on-disk split used by the storage bar: apps, media, everything else.
+    pub(crate) fn storage_breakdown(&self) -> (u64, u64, u64) {
+        let apps = dir_size(&self.storage_root.join("var").join("app"));
+        let media = dir_size(&self.storage_root.join("music"))
+            + dir_size(&self.storage_root.join("videos"));
+        let rest = self.storage_used.saturating_sub(apps + media);
+        (apps, media, rest)
+    }
+
+    fn refresh_storage(&mut self) {
+        self.storage_used = dir_size(&self.storage_root);
+        if self.storage_total == 0 {
+            self.storage_total = 256 * 1024 * 1024;
+        }
+    }
+
+    /// Salted SHA-256 record for the lock PIN. The plaintext PIN is never
+    /// written to disk; an empty record means "not configured yet".
+    fn hash_pin(salt: &str, pin: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(salt.as_bytes());
+        h.update(pin.as_bytes());
+        h.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    pub(crate) fn verify_pin(&self, input: &str) -> bool {
+        if self.pin_hash.is_empty() {
+            // Legacy/session-only record from older images.
+            return input == self.pin;
+        }
+        Self::hash_pin(&self.pin_salt, input) == self.pin_hash
+    }
+
+    pub(crate) fn set_pin(&mut self, pin: &str) {
+        if self.pin_salt.is_empty() {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            self.pin_salt = format!("{:x}{:x}", nanos, std::process::id());
+        }
+        let salt = self.pin_salt.clone();
+        self.pin_hash = Self::hash_pin(&salt, pin);
+        self.pin.clear();
+    }
+
+    pub(crate) fn pin_configured(&self) -> bool {
+        !self.pin_hash.is_empty()
+    }
+
+    fn prefs_path(&self) -> PathBuf {
+        self.storage_root.join("etc").join("prefs.json")
+    }
+
+    /// Persist the settings surface. Kept as a flat JSON object so older
+    /// images keep loading (missing keys fall back to defaults).
+    fn save_prefs(&self) {
+        let v = serde_json::json!({
+            "theme_mode": self.theme_mode,
+            "brightness": self.brightness_level,
+            "refresh_hz": self.refresh_hz,
+            "screen_timeout": self.screen_timeout,
+            "font_size": self.font_size_pct,
+            "volume": self.volume_level,
+            "ring_vol": self.ring_vol,
+            "alarm_vol": self.alarm_vol,
+            "ringtone": self.ringtone,
+            "wifi": self.wifi_enabled,
+            "bt": self.bt_enabled,
+            "cellular": self.cellular_enabled,
+            "location": self.location_enabled,
+            "softbus": self.softbus_enabled,
+            "torch": self.torch_enabled,
+            "battery_saver": self.battery_saver,
+            "vibration": self.vibration_enabled,
+            "auto_correct": self.auto_correct,
+            "word_suggestions": self.word_suggestions,
+            "high_contrast": self.high_contrast,
+            "screen_reader": self.screen_reader,
+            "vpn": self.vpn_enabled,
+            "vpn_profile": self.vpn_profile,
+            "auto_backup": self.auto_backup,
+            "encrypt_data": self.encrypt_data,
+            "lock_notifications": self.lock_notifications,
+            "lang": self.lang,
+            "keyboard_layout": self.keyboard_layout,
+            "secondary_keyboard": self.secondary_keyboard,
+            "clipboard_sync": self.clipboard_sync,
+            "android_enabled": self.android_enabled,
+            "backup_last": self.backup_last,
+            "update_checked": self.update_checked,
+            "update_status": self.update_status,
+            "pin_hash": self.pin_hash,
+            "pin_salt": self.pin_salt,
+        });
+        if let Some(parent) = self.prefs_path().parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(bytes) = serde_json::to_vec_pretty(&v) {
+            let _ = fs::write(self.prefs_path(), bytes);
+        }
+    }
+
+    fn load_prefs(&mut self) {
+        let raw = match fs::read_to_string(self.prefs_path()) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+        let v: serde_json::Value = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        let b = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d);
+        let u = |k: &str, d: u64| v.get(k).and_then(|x| x.as_u64()).unwrap_or(d);
+        let s = |k: &str, d: &str| v.get(k).and_then(|x| x.as_str()).map(|x| x.to_string()).unwrap_or_else(|| d.to_string());
+
+        self.theme_mode = u("theme_mode", self.theme_mode as u64) as u8;
+        self.brightness_level = u("brightness", self.brightness_level as u64) as u8;
+        self.refresh_hz = u("refresh_hz", self.refresh_hz as u64) as u16;
+        self.screen_timeout = u("screen_timeout", self.screen_timeout as u64) as u16;
+        self.font_size_pct = u("font_size", self.font_size_pct as u64) as u8;
+        self.volume_level = u("volume", self.volume_level as u64) as u8;
+        self.ring_vol = u("ring_vol", self.ring_vol as u64) as u8;
+        self.alarm_vol = u("alarm_vol", self.alarm_vol as u64) as u8;
+        self.ringtone = s("ringtone", &self.ringtone);
+        self.wifi_enabled = b("wifi", self.wifi_enabled);
+        self.bt_enabled = b("bt", self.bt_enabled);
+        self.cellular_enabled = b("cellular", self.cellular_enabled);
+        self.location_enabled = b("location", self.location_enabled);
+        self.softbus_enabled = b("softbus", self.softbus_enabled);
+        self.torch_enabled = b("torch", self.torch_enabled);
+        self.battery_saver = b("battery_saver", self.battery_saver);
+        self.vibration_enabled = b("vibration", self.vibration_enabled);
+        self.auto_correct = b("auto_correct", self.auto_correct);
+        self.word_suggestions = b("word_suggestions", self.word_suggestions);
+        self.high_contrast = b("high_contrast", self.high_contrast);
+        self.screen_reader = b("screen_reader", self.screen_reader);
+        self.vpn_enabled = b("vpn", self.vpn_enabled);
+        self.vpn_profile = s("vpn_profile", &self.vpn_profile);
+        self.auto_backup = b("auto_backup", self.auto_backup);
+        self.encrypt_data = b("encrypt_data", self.encrypt_data);
+        self.lock_notifications = b("lock_notifications", self.lock_notifications);
+        self.lang = u("lang", self.lang as u64) as u8;
+        self.keyboard_layout = s("keyboard_layout", &self.keyboard_layout);
+        self.secondary_keyboard = s("secondary_keyboard", &self.secondary_keyboard);
+        self.clipboard_sync = b("clipboard_sync", self.clipboard_sync);
+        self.android_enabled = b("android_enabled", self.android_enabled);
+        self.backup_last = s("backup_last", &self.backup_last);
+        self.update_checked = s("update_checked", &self.update_checked);
+        self.update_status = s("update_status", &self.update_status);
+        self.pin_hash = s("pin_hash", &self.pin_hash);
+        self.pin_salt = s("pin_salt", &self.pin_salt);
+    }
+
+    /// Apply the persisted theme choice; `auto` follows the local clock.
+    fn set_theme_from_mode(&mut self) {
+        let (h, _) = get_ist_time_parts();
+        self.dark_mode = match self.theme_mode {
+            0 => false,
+            1 => true,
+            _ => !(6..18).contains(&h),
+        };
     }
 
     fn save_notes_to_disk(&self) {
@@ -3739,6 +4306,7 @@ fn eval_simple_math(expr: &str) -> Result<f64, ()> {
 }
 
 fn draw_home_vector_icon(p: &mut FramePainter, cx: i16, cy: i16, id: &str, accent: u32) {
+    let th = p.theme();
     match id {
         "app_phone" => {
             p.fill_rounded_rect(cx - 7, cy - 11, 14, 22, 4, accent);
@@ -3747,10 +4315,10 @@ fn draw_home_vector_icon(p: &mut FramePainter, cx: i16, cy: i16, id: &str, accen
         }
         "app_browser" => {
             p.fill_rounded_rect(cx - 11, cy - 11, 22, 22, 11, accent);
-            p.fill_rounded_rect(cx - 8, cy - 8, 16, 16, 8, COLOR_BG);
+            p.fill_rounded_rect(cx - 8, cy - 8, 16, 16, 8, th.bg);
             p.fill_rect(cx - 8, cy - 1, 16, 2, accent);
             p.fill_rounded_rect(cx - 4, cy - 8, 8, 16, 4, accent);
-            p.fill_rounded_rect(cx - 2, cy - 6, 4, 12, 2, COLOR_BG);
+            p.fill_rounded_rect(cx - 2, cy - 6, 4, 12, 2, th.bg);
         }
         "app_messages" => {
             p.fill_rounded_rect(cx - 12, cy - 10, 24, 17, 5, accent);
@@ -3767,7 +4335,7 @@ fn draw_home_vector_icon(p: &mut FramePainter, cx: i16, cy: i16, id: &str, accen
         }
         "app_settings" => {
             p.fill_rounded_rect(cx - 9, cy - 9, 18, 18, 9, accent);
-            p.fill_rounded_rect(cx - 4, cy - 4, 8, 8, 4, COLOR_BG);
+            p.fill_rounded_rect(cx - 4, cy - 4, 8, 8, 4, th.bg);
             for (dx, dy) in [
                 (-10i16, 0i16),
                 (10, 0),
@@ -3830,13 +4398,14 @@ fn draw_home_vector_icon(p: &mut FramePainter, cx: i16, cy: i16, id: &str, accen
     }
 }
 fn render_home(p: &mut FramePainter, state: &SimState) {
-    p.fill_rect(0, 0, p.width as u16, p.height as u16, COLOR_BG);
+    let th = p.theme();
+    p.fill_rect(0, 0, p.width as u16, p.height as u16, th.bg);
     p.draw_text_smooth(
         12,
         38,
         10.0,
         "OnuronOS 1.7.0 • Alap Native",
-        COLOR_CYAN,
+        if p.dark_mode { 0xA78BFA } else { COLOR_CYAN },
         false,
     );
 
@@ -3851,7 +4420,7 @@ fn render_home(p: &mut FramePainter, state: &SimState) {
         start_y + 12,
         44.0,
         &time_str,
-        COLOR_TEXT_HIGH,
+        th.text_high,
         true,
     );
 
@@ -3859,7 +4428,14 @@ fn render_home(p: &mut FramePainter, state: &SimState) {
     let date_str = get_ist_date_str();
     let date_w = p.text_width(13.0, &date_str, false);
     let date_y = start_y + 64;
-    p.draw_text_smooth(cx - date_w / 2, date_y, 13.0, &date_str, COLOR_CYAN, false);
+    p.draw_text_smooth(
+        cx - date_w / 2,
+        date_y,
+        13.0,
+        &date_str,
+        if p.dark_mode { 0xA78BFA } else { COLOR_CYAN },
+        false,
+    );
 
     // Live System Status Chip Card
     let chip_y = date_y + 22;
@@ -4070,6 +4646,12 @@ fn render_status_bar(p: &mut FramePainter, state: &SimState) {
     p.fill_rect(0, 0, p.width as u16, 32, COLOR_BG);
     p.fill_rect(0, 31, p.width as u16, 1, COLOR_BORDER);
 
+    // Keep the legacy shell's status strip compatible with the redesigned
+    // shell: tapping the clock/left side always opens the notification shade.
+    // This was previously only registered by ui::status_bar(), so Terminal,
+    // Memories and the call screen silently lost the old affordance.
+    p.register_button(0, 2, 228, 30, "open_control");
+
     // Time (left)
     let time_str = get_ist_time_str();
     p.draw_text_smooth(12, 8, 13.0, &time_str, COLOR_TEXT_HIGH, true);
@@ -4144,104 +4726,36 @@ fn render_status_bar(p: &mut FramePainter, state: &SimState) {
     p.register_button(0, 0, (loc_x - 6) as u16, 32, "toggle_island");
     p.register_button(bat_x - 2, 4, 32, 24, "toggle_battery_charge");
 }
-fn render_bottom_nav(p: &mut FramePainter, current: &Screen) {
-    let nav_y = (p.height as i16) - 50;
-    let light = true;
-    if light {
-        p.fill_rect(0, nav_y, p.width as u16, 50, 0xF7F8FA);
-    } else {
-        for row in 0..50i16 {
-            let t = row as u32;
-            let base = 0x080F1Bu32;
-            let br = ((base >> 16) & 0xFF) + t * 2 / 50;
-            let bg = ((base >> 8) & 0xFF) + t / 50;
-            let bb = (base & 0xFF) + t * 4 / 50;
-            p.fill_rect(
-                0,
-                nav_y + row,
-                p.width as u16,
-                1,
-                (br << 16) | (bg << 8) | bb,
-            );
-        }
-    }
-    let line = if light { 0xE1E5EC } else { COLOR_BORDER };
-    p.fill_rect(0, nav_y, p.width as u16, 1, line);
+fn render_bottom_nav(p: &mut FramePainter, _current: &Screen) {
+    let th = p.theme();
 
-    let btn_w = (p.width as u16 - 16) / 3;
-    let btn_h = 36u16;
-    let by = nav_y + 7;
-    let btn_bg = if light { 0xFFFFFF } else { COLOR_SURFACE };
+    // Modern floating capsule navigation bar matching official OnuronOS design
+    let cap_w = 170u16;
+    let cap_h = 34u16;
+    let cx = (p.width as i16 - cap_w as i16) / 2;
+    let cy = (p.height as i16) - 42;
 
-    p.fill_rounded_rect(6, by, btn_w, btn_h, 10, btn_bg);
-    if light {
-        p.draw_rect_outline(6, by, btn_w, btn_h, 0xE1E5EC);
-    }
-    let back_fg = if light { 0x4B5563 } else { COLOR_TEXT_MED };
-    p.draw_text_smooth(
-        6 + (btn_w as i16 - p.text_width(13.5, "ব্যাক", false)) / 2,
-        by + 10,
-        13.5,
-        "ব্যাক",
-        back_fg,
-        false,
-    );
-    p.register_button(6, by, btn_w, btn_h, "nav_back");
+    p.fill_rounded_rect(cx, cy, cap_w, cap_h, 17, th.surface);
+    p.draw_rect_outline(cx, cy, cap_w, cap_h, th.border);
 
-    let hx = 6 + btn_w as i16 + 6;
-    let home_bg = if light {
-        0xE4EAFB
-    } else if *current == Screen::Home {
-        0x0C2E55
-    } else {
-        COLOR_SURFACE
-    };
-    p.fill_rounded_rect(hx, by, btn_w, btn_h, 10, home_bg);
-    if *current == Screen::Home {
-        let accent = if light { 0x2A5BE0 } else { COLOR_CYAN };
-        p.fill_rect(
-            hx + btn_w as i16 / 2 - 16,
-            by + btn_h as i16 - 4,
-            32,
-            3,
-            accent,
-        );
-    }
-    let home_fg = if light { 0x2A5BE0 } else { COLOR_CYAN };
-    p.draw_text_smooth(
-        hx + (btn_w as i16 - p.text_width(14.0, "হোম", false)) / 2,
-        by + 10,
-        14.0,
-        "হোম",
-        home_fg,
-        false,
-    );
-    p.register_button(hx, by, btn_w, btn_h, "nav_home");
+    // Left: < (Back) - Standard ASCII '<' guarantees no missing glyph [?]
+    let bw = p.text_width(16.0, "<", true);
+    p.draw_text_smooth(cx + 24 - bw / 2, cy + 8, 16.0, "<", th.text_high, true);
+    p.register_button(cx, cy, 54, cap_h, "nav_back");
 
-    let lx = hx + btn_w as i16 + 6;
-    let rec_bg = if *current == Screen::Recents {
-        0xE4EAFB
-    } else {
-        btn_bg
-    };
-    p.fill_rounded_rect(lx, by, btn_w, btn_h, 10, rec_bg);
-    if light {
-        p.draw_rect_outline(lx, by, btn_w, btn_h, 0xE1E5EC);
-    }
-    let rec_fg = if *current == Screen::Recents {
-        0x2A5BE0
-    } else {
-        0x4B5563
-    };
-    p.draw_text_smooth(
-        lx + (btn_w as i16 - p.text_width(13.5, "রিসেন্ট", false)) / 2,
-        by + 10,
-        13.5,
-        "রিসেন্ট",
-        rec_fg,
-        false,
-    );
-    p.register_button(lx, by, btn_w, btn_h, "nav_recents");
+    // Center: ━━━━ (Home gesture pill)
+    let pill_w = 46u16;
+    let px = cx + (cap_w as i16 - pill_w as i16) / 2;
+    let py = cy + 15;
+    p.fill_rounded_rect(px, py, pill_w, 4, 2, th.purple);
+    p.register_button(px - 10, cy, pill_w + 20, cap_h, "nav_home");
+
+    // Right: Vector Recents Icon (two overlapping squares) - zero font glyph dependency!
+    let rx = cx + cap_w as i16 - 32;
+    let ry = cy + 11;
+    p.draw_rect_outline(rx, ry, 10, 10, th.text_high);
+    p.draw_rect_outline(rx + 3, ry + 3, 10, 10, th.text_high);
+    p.register_button(cx + cap_w as i16 - 54, cy, 54, cap_h, "nav_recents");
 }
 
 fn render_lockscreen(p: &mut FramePainter, state: &SimState) {
@@ -7577,6 +8091,195 @@ impl minifb::InputCallback for InputHandler {
 }
 
 // ─── Main Desktop Simulator Loop ──────────────────────────────────────────────
+fn save_bmp(path: &Path, buf: &[u32], w: usize, h: usize) {
+    let row_stride = (w * 3 + 3) & !3;
+    let data_size = row_stride * h;
+    let file_size = 54 + data_size;
+    let mut bmp = Vec::with_capacity(file_size);
+    bmp.extend_from_slice(b"BM");
+    bmp.extend_from_slice(&(file_size as u32).to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    bmp.extend_from_slice(&54u32.to_le_bytes());
+    bmp.extend_from_slice(&40u32.to_le_bytes());
+    bmp.extend_from_slice(&(w as u32).to_le_bytes());
+    bmp.extend_from_slice(&(-(h as i32)).to_le_bytes());
+    bmp.extend_from_slice(&1u16.to_le_bytes());
+    bmp.extend_from_slice(&24u16.to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    bmp.extend_from_slice(&(data_size as u32).to_le_bytes());
+    bmp.extend_from_slice(&2835u32.to_le_bytes());
+    bmp.extend_from_slice(&2835u32.to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    bmp.extend_from_slice(&0u32.to_le_bytes());
+    for y in 0..h {
+        for x in 0..w {
+            let px = buf[y * w + x];
+            bmp.push((px & 0xFF) as u8);
+            bmp.push(((px >> 8) & 0xFF) as u8);
+            bmp.push(((px >> 16) & 0xFF) as u8);
+        }
+        for _ in (w * 3)..row_stride {
+            bmp.push(0);
+        }
+    }
+    let _ = fs::write(path, bmp);
+}
+
+/// Renders every shell screen (both themes) to BMP files.
+fn export_ui(
+    out_dir: &Path,
+    fonts: &FontEngine,
+    state: &mut SimState,
+) -> Result<(), Box<dyn std::error::Error>> {
+    fs::create_dir_all(out_dir)?;
+    let screens: Vec<(&str, Screen)> = vec![
+        ("home", Screen::Home),
+        ("lockscreen", Screen::Lockscreen),
+        ("notification_panel", Screen::ControlCenter),
+        ("recents", Screen::Recents),
+        ("power_menu", Screen::PowerMenu),
+        ("oobe1", Screen::Oobe(0)),
+        ("oobe2", Screen::Oobe(1)),
+        ("oobe3", Screen::Oobe(2)),
+        ("settings", Screen::AppSettings),
+        ("wifi", Screen::SettingsWifi),
+        ("bluetooth", Screen::SettingsBluetooth),
+        ("display", Screen::SettingsDisplay),
+        ("sound", Screen::SettingsSound),
+        ("security", Screen::SettingsSecurity),
+        ("battery", Screen::SettingsBattery),
+        ("storage", Screen::SettingsStorage),
+        ("backup", Screen::SettingsBackup),
+        ("language", Screen::SettingsLanguage),
+        ("accessibility", Screen::SettingsAccessibility),
+        ("vpn", Screen::SettingsVpn),
+        ("update", Screen::SettingsUpdate),
+        ("about", Screen::SettingsAbout),
+        ("softbus", Screen::AppSoftBus),
+        ("nilpkg", Screen::AppNilPkg),
+        ("android", Screen::AppAndroid),
+        ("phone", Screen::AppPhone),
+        ("messages", Screen::AppMessages),
+        ("files", Screen::AppFiles),
+        ("notes", Screen::AppNotes),
+        ("calculator", Screen::AppCalculator),
+        ("music", Screen::AppMusic),
+        ("browser", Screen::AppBrowser),
+        ("camera", Screen::AppCamera),
+        ("music", Screen::AppMusic),
+        ("app_drawer", Screen::AppDrawer),
+        ("terminal", Screen::AppTerminal),
+        ("memories", Screen::AppMemories),
+    ];
+    let mut buffer = vec![0u32; SCREEN_WIDTH * SCREEN_HEIGHT];
+    state.pin_input.clear();
+    state.lock_error = false;
+    state.camera_zoom = "১X".into();
+    for (name, scr) in screens {
+        state.screen = scr;
+        for dark in [true, false] {
+            state.dark_mode = dark;
+            buffer.fill(get_theme(dark).bg);
+            {
+                let mut painter = FramePainter::new(
+                    &mut buffer,
+                    SCREEN_WIDTH,
+                    SCREEN_HEIGHT,
+                    fonts,
+                    state.dark_mode,
+                );
+                paint_screen(&mut painter, &state);
+            }
+            let suffix = if dark { "dark" } else { "light" };
+            save_bmp(
+                &out_dir.join(format!("{}-{}.bmp", name, suffix)),
+                &buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Paints one complete frame of the OnuronOS shell (screen + system chrome).
+/// Shared by the interactive loop and the headless screenshot exporter so the
+/// exported art is exactly what the simulator shows.
+fn paint_screen(mut painter: &mut FramePainter, state: &SimState) {
+    match &state.screen {
+        Screen::Lockscreen => screens::render_lockscreen(&mut painter, &state),
+        Screen::Home => screens::render_home(&mut painter, &state),
+        Screen::AppPhone => apps::render_app_phone(&mut painter, &state),
+        Screen::AppMessages => apps::render_app_messages(&mut painter, &state),
+        Screen::AppFiles => apps::render_app_files(&mut painter, &state),
+        Screen::AppSettings => screens::render_app_settings(&mut painter, &state),
+        Screen::AppNilPkg => apps::render_app_nilpkg(&mut painter, &state),
+        Screen::AppSoftBus => apps::render_app_softbus(&mut painter, &state),
+        Screen::AppAndroid => apps::render_app_android(&mut painter, &state),
+        Screen::AppTerminal => render_app_terminal(&mut painter, &state),
+        Screen::AppNotes => apps::render_app_notes(&mut painter, &state),
+        Screen::AppCalculator => apps::render_app_calculator(&mut painter, &state),
+        Screen::AppBrowser => apps::render_app_browser(&mut painter, &state),
+        Screen::AppMemories => memories::render(&mut painter, &state),
+        Screen::AppCamera => apps::render_app_camera(&mut painter, &state),
+        Screen::AppMusic => apps::render_app_music(&mut painter, &state),
+        Screen::AppDrawer => screens::render_app_drawer(&mut painter, &state),
+        Screen::ControlCenter => screens::render_control_center(&mut painter, &state),
+        Screen::NanoEditor => render_nano_editor(&mut painter, &state),
+        Screen::InCall => render_in_call(&mut painter, &state),
+        Screen::Recents => screens::render_recents(&mut painter, &state),
+        Screen::SettingsWifi => screens::render_settings_wifi(&mut painter, &state),
+        Screen::SettingsBluetooth => screens::render_settings_bluetooth(&mut painter, &state),
+        Screen::SettingsDisplay => screens::render_settings_display(&mut painter, &state),
+        Screen::SettingsSound => screens::render_settings_sound(&mut painter, &state),
+        Screen::SettingsSecurity => screens::render_settings_security(&mut painter, &state),
+        Screen::SettingsBattery => screens::render_settings_battery(&mut painter, &state),
+        Screen::SettingsStorage => screens::render_settings_storage(&mut painter, &state),
+        Screen::SettingsLanguage => screens::render_settings_language(&mut painter, &state),
+        Screen::SettingsAccessibility => screens::render_settings_accessibility(&mut painter, &state),
+        Screen::SettingsVpn => screens::render_settings_vpn(&mut painter, &state),
+        Screen::SettingsBackup => screens::render_settings_backup(&mut painter, &state),
+        Screen::SettingsUpdate => screens::render_settings_update(&mut painter, &state),
+        Screen::SettingsAbout => screens::render_settings_about(&mut painter, &state),
+        Screen::PowerMenu => screens::render_power_menu(&mut painter, &state),
+        Screen::Oobe(step) => screens::render_oobe(&mut painter, &state, *step),
+    }
+
+    // Chrome. Terminal and Memories keep their original status bar and
+    // navigation bar (they are out of scope for the 1.7 redesign); every
+    // redesigned screen draws the design-system status bar instead.
+    let legacy_chrome = matches!(
+        state.screen,
+        Screen::AppTerminal | Screen::AppMemories | Screen::NanoEditor | Screen::InCall
+    );
+    if legacy_chrome {
+        render_status_bar(&mut painter, &state);
+        if state.screen != Screen::NanoEditor {
+            render_bottom_nav(&mut painter, &state.screen);
+        }
+    } else {
+        ui::status_bar(&mut painter, &state);
+    }
+
+    // Gesture navigation capsule (hidden on lock/OOBE/legacy screens).
+    ui::gesture_bar(painter, state);
+
+    // Invisible edge gestures: left edge = back, bottom edge = home. They are
+    // registered last so screen content always wins the hit test.
+    painter.register_button(0, 40, 14, (SCREEN_HEIGHT as u16) - 60, "gesture:back");
+    painter.register_button(0, (SCREEN_HEIGHT as i16) - 8, SCREEN_WIDTH as u16, 8, "gesture:home");
+
+    if state.toast_ticks > 0 && !state.toast_msg.is_empty() {
+        let th = get_theme(state.dark_mode);
+        let tw = painter.text_w_ex(12.5, &state.toast_msg, false, false);
+        let w = (tw + 36).max(120) as u16;
+        let x = (SCREEN_WIDTH as i16 - w as i16) / 2;
+        let y = SCREEN_HEIGHT as i16 - 150;
+        painter.fill_rounded_rect(x, y, w, 36, 18, th.surface_alt);
+        painter.draw_text_ex(x + 18, y + 10, 12.5, &state.toast_msg, th.text_high, false, false);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "windows")]
     unsafe {
@@ -7587,11 +8290,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=========================================================");
     println!("[*] Initializing Onuron Core Systems, Alap Engine, and NilZar Chromium Browser...");
 
+    if std::env::args().any(|a| a == "--selftest") {
+        let code = run_selftest();
+        std::process::exit(code);
+    }
+
     let fonts = FontEngine::load();
+
+    // Headless art export: renders every shell screen in both themes so the
+    // result can be diffed against the reference PNGs in CI or by hand.
+    if let Some(pos) = std::env::args().position(|a| a == "--export-ui") {
+        let out = std::env::args()
+            .nth(pos + 1)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("onuron_ui"));
+        let mut st = SimState::new();
+        st.load_prefs();
+        st.refresh_storage();
+        export_ui(&out, &fonts, &mut st)?;
+        println!("[OK] exported shell screens to {}", out.display());
+        return Ok(());
+    }
+
     let mut buffer: Vec<u32> = vec![COLOR_BG; SCREEN_WIDTH * SCREEN_HEIGHT];
 
     let mut window = Window::new(
-        "Onuron Mobile Simulator (Chromium V8 & Alap Engine)",
+        "OnuronOS 1.7 — Mobile Simulator",
         SCREEN_WIDTH,
         SCREEN_HEIGHT,
         WindowOptions {
@@ -7607,9 +8331,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut embedded_browser = nilbrowser::chromium::create_embedded_browser(
         parent_hwnd,
         4,
-        126,
+        76,
         382,
-        616,
+        672,
         "https://www.google.com",
     )
     .ok();
@@ -7630,7 +8354,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     window.set_input_callback(handler);
 
+    // The OS window can be smaller than our logical canvas (Windows display
+    // scaling, small screens). Present through a letterboxed resampler so the
+    // whole 390x796 shell is always visible instead of being cropped.
+    let mut present_w = SCREEN_WIDTH;
+    let mut present_h = SCREEN_HEIGHT;
+    #[cfg(target_os = "windows")]
+    unsafe {
+        let mut r = [0i32; 4];
+        if GetClientRect(parent_hwnd, &mut r) != 0 {
+            let cw = (r[2] - r[0]).max(1) as usize;
+            let ch = (r[3] - r[1]).max(1) as usize;
+            if cw > 8 && ch > 8 {
+                present_w = cw;
+                present_h = ch;
+            }
+        }
+    }
+
     let mut state = SimState::new();
+    state.load_prefs();
+    state.set_theme_from_mode();
+    state.refresh_storage();
+    if !state.pin_configured() {
+        // Fresh device: run the first-boot flow before the lock screen.
+        state.screen = Screen::Oobe(0);
+    }
     if std::env::args().any(|a| a == "--memories") {
         state.screen = Screen::AppMemories;
     }
@@ -7691,9 +8440,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.screen = Screen::AppPhone;
         state.dial_number.clear();
         state.phone_tab = 0;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_app_phone(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -7702,9 +8452,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 2. Dialer typed '3'
         state.dial_number = "3".into();
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_app_phone(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -7721,9 +8472,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .into();
         state.notes_cursor_pos = 79;
         state.term_cursor_ticks = 0;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_app_notes(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -7733,9 +8485,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 4. Home screen at 390x796 with installed Android apps
         state.install_android_app(5); // Call of Duty Mobile
         state.screen = Screen::Home;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_home(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -7745,9 +8498,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 5. Android Play Store screen
         state.screen = Screen::AppAndroid;
         state.android_running_app = None;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_app_android(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -7756,9 +8510,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 6. Browser screen at 390x796
         state.screen = Screen::AppBrowser;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_app_browser(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -7770,9 +8525,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.music_playing = true;
         state.media_source_app = "Spotify Music (স্পটিফাই)".into();
         state.media_live_title = "Kesariya - Arijit Singh".into();
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_control_center(&mut p, &state);
             render_status_bar(&mut p, &state);
         }
@@ -7780,9 +8536,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 8. Recent Apps Switcher
         state.screen = Screen::Recents;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_recents(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -7792,9 +8549,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 9. Lockscreen PIN mode (lower-half layout, no artifacts)
         state.screen = Screen::Lockscreen;
         state.lock_mode = 0;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_lockscreen(&mut p, &state);
             render_status_bar(&mut p, &state);
         }
@@ -7803,9 +8561,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 10. Lockscreen Pattern mode
         state.lock_mode = 2;
         state.pattern_input = vec![1, 2, 5];
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_lockscreen(&mut p, &state);
             render_status_bar(&mut p, &state);
         }
@@ -7813,9 +8572,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 11. Calculator full-height layout
         state.screen = Screen::AppCalculator;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_app_calculator(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -7824,9 +8584,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 12. Settings with Screen Lock mode selector
         state.screen = Screen::AppSettings;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_app_settings(&mut p, &state);
             render_status_bar(&mut p, &state);
             render_bottom_nav(&mut p, &state.screen);
@@ -7836,9 +8597,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 13. Control Center in Dark Mode (testing crisp dark theme)
         state.screen = Screen::ControlCenter;
         state.dark_mode = true;
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
         {
-            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+            let mut p = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
             render_control_center(&mut p, &state);
             render_status_bar(&mut p, &state);
         }
@@ -7849,6 +8611,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let mut was_mouse_down = false;
+    let mut volume_synced = state.volume_level;
     let mut drag_start: Option<(f32, f32)> = None;
 
     println!(
@@ -7856,8 +8619,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         SCREEN_WIDTH, SCREEN_HEIGHT
     );
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
+    while window.is_open() && !state.exit_requested {
+        // Desktop-shell navigation shortcuts. Phones use the edge gestures
+        // registered in paint_screen(); these are the keyboard equivalents.
+        {
+            let ctrl = window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl);
+            if ctrl && window.is_key_pressed(Key::Q, KeyRepeat::No) {
+                state.exit_requested = true;
+            }
+            if window.is_key_pressed(Key::F1, KeyRepeat::No) {
+                state.screen = Screen::Home;
+            }
+            if window.is_key_pressed(Key::F2, KeyRepeat::No) {
+                state.screen = Screen::ControlCenter;
+            }
+            if window.is_key_pressed(Key::F3, KeyRepeat::No) {
+                state.screen = Screen::Recents;
+            }
+            if window.is_key_pressed(Key::F4, KeyRepeat::No) {
+                state.screen = Screen::PowerMenu;
+            }
+            if window.is_key_pressed(Key::F5, KeyRepeat::No) {
+                state.screen = Screen::AppCamera;
+            }
+            if window.is_key_pressed(Key::F6, KeyRepeat::No) {
+                state.screen = Screen::AppDrawer;
+            }
+            if window.is_key_pressed(Key::F7, KeyRepeat::No) {
+                state.pin_input.clear();
+                state.lock_error = false;
+                state.screen = Screen::Lockscreen;
+            }
+            if !ctrl && window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+                apps::handle_action(&mut state, "gesture:back");
+            }
+            if window.is_key_pressed(Key::Backspace, KeyRepeat::No)
+                && matches!(state.screen, Screen::Lockscreen)
+            {
+                state.pin_input.pop();
+                state.lock_error = false;
+            }
+        }
+
         state.term_cursor_ticks = state.term_cursor_ticks.wrapping_add(1);
+        state.tick_toast();
         if state.screen == Screen::InCall {
             state.call_duration_ticks = state.call_duration_ticks.wrapping_add(1);
         }
@@ -7874,7 +8679,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 x_scroll
             };
-            if state.screen == Screen::Home {
+            let scrollable = matches!(
+                state.screen,
+                Screen::AppSettings
+                    | Screen::AppFiles
+                    | Screen::AppNotes
+                    | Screen::AppNilPkg
+                    | Screen::AppAndroid
+                    | Screen::AppSoftBus
+                    | Screen::AppMessages
+            );
+            if scrollable {
+                let step = if delta < 0.0 { 28 } else { -28 };
+                state.scroll_y = (state.scroll_y + step).clamp(0, 4000);
+            } else if state.screen == Screen::Home {
                 if delta < 0.0 {
                     state.home_page = 1; // Scroll down/forward -> App Drawer
                 } else if delta > 0.0 {
@@ -7894,8 +8712,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             } else if state.screen == Screen::Recents {
                 if delta < 0.0 {
-                    let max_vis = (((SCREEN_HEIGHT as i16 - 60 - 84) / 106).max(1)) as usize;
-                    let max_sc = state.recent_apps.len().saturating_sub(max_vis);
+                    let max_sc = recent_max_scroll(&state);
                     state.recents_scroll_offset = (state.recents_scroll_offset + 1).min(max_sc);
                 } else if delta > 0.0 {
                     state.recents_scroll_offset = state.recents_scroll_offset.saturating_sub(1);
@@ -8323,8 +9140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         state.recents_scroll_offset = state.recents_scroll_offset.saturating_sub(1);
                     }
                     Key::Down | Key::PageDown | Key::Right => {
-                        let max_vis = (((SCREEN_HEIGHT as i16 - 60 - 84) / 106).max(1)) as usize;
-                        let max_sc = state.recent_apps.len().saturating_sub(max_vis);
+                        let max_sc = recent_max_scroll(&state);
                         state.recents_scroll_offset = (state.recents_scroll_offset + 1).min(max_sc);
                     }
                     _ => {}
@@ -8350,40 +9166,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // 4. Render Frame to Buffer (Deep Space Obsidian Navy Backdrop)
-        buffer.fill(COLOR_BG);
+        let th_bg = get_theme(state.dark_mode).bg;
+        buffer.fill(th_bg);
 
-        let mut painter = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts);
+        let mut painter = FramePainter::new(&mut buffer, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, state.dark_mode);
 
-        match &state.screen {
-            Screen::Lockscreen => render_lockscreen(&mut painter, &state),
-            Screen::Home => render_home(&mut painter, &state),
-            Screen::AppPhone => render_app_phone(&mut painter, &state),
-            Screen::AppMessages => render_app_messages(&mut painter, &state),
-            Screen::AppFiles => render_app_files(&mut painter, &state),
-            Screen::AppSettings => render_app_settings(&mut painter, &state),
-            Screen::AppNilPkg => render_app_nilpkg(&mut painter, &state),
-            Screen::AppSoftBus => render_app_softbus(&mut painter, &state),
-            Screen::AppAndroid => render_app_android(&mut painter, &state),
-            Screen::AppTerminal => render_app_terminal(&mut painter, &state),
-            Screen::AppNotes => render_app_notes(&mut painter, &state),
-            Screen::AppCalculator => render_app_calculator(&mut painter, &state),
-            Screen::AppBrowser => render_app_browser(&mut painter, &state),
-            Screen::AppMemories => memories::render(&mut painter, &state),
-            Screen::ControlCenter => render_control_center(&mut painter, &state),
-            Screen::NanoEditor => render_nano_editor(&mut painter, &state),
-            Screen::InCall => render_in_call(&mut painter, &state),
-            Screen::Recents => render_recents(&mut painter, &state),
-        }
-
-        // One system status bar on every screen (gallery style + Wi-Fi)
-        render_status_bar(&mut painter, &state);
-
-        if state.screen != Screen::Lockscreen
-            && state.screen != Screen::NanoEditor
-            && state.screen != Screen::ControlCenter
-        {
-            render_bottom_nav(&mut painter, &state.screen);
-        }
+        paint_screen(&mut painter, &state);
 
         let buttons = painter.buttons.clone();
 
@@ -8391,6 +9179,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mouse_down = window.get_mouse_down(MouseButton::Left);
         if mouse_down {
             if let Some((mx, my)) = window.get_mouse_pos(MouseMode::Pass) {
+                // Continuous slider drags on the redesigned settings screens.
+                apps::drag_slider(&mut state, mx as i16, my as i16);
                 #[cfg(target_os = "windows")]
                 {
                     let webview_top = if state.screen == Screen::AppAndroid
@@ -8407,31 +9197,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 }
-                // Live continuous drag for Brightness & Volume sliders in Control Center
-                if state.screen == Screen::ControlCenter {
-                    let px = mx as i16;
-                    let py = my as i16;
-                    let bar_w = ((SCREEN_WIDTH as i16) - 56).max(1) as u32;
-                    if (426..=462).contains(&py) && (20..=(SCREEN_WIDTH as i16 - 20)).contains(&px)
+                // Media volume is mirrored into embedded webviews; the slider
+                // geometry itself lives in apps::drag_slider.
+                if state.volume_level != volume_synced {
+                    volume_synced = state.volume_level;
+                    #[cfg(target_os = "windows")]
                     {
-                        let ratio = (((px - 28).max(0) as u32) * 100 / bar_w).clamp(15, 100);
-                        state.brightness_level = ratio as u8;
-                    } else if (486..=522).contains(&py)
-                        && (20..=(SCREEN_WIDTH as i16 - 20)).contains(&px)
-                    {
-                        let ratio = (((px - 28).max(0) as u32) * 100 / bar_w).clamp(0, 100);
-                        if state.volume_level != ratio as u8 {
-                            state.volume_level = ratio as u8;
-                            #[cfg(target_os = "windows")]
-                            {
-                                let js = format!("document.querySelectorAll('video, audio').forEach(m => {{ m.volume = {:.2}; }});", state.volume_level as f32 / 100.0);
-                                if let Some(ref b) = embedded_browser {
-                                    let _ = nilbrowser::chromium::eval_js(b, &js);
-                                }
-                                for sb in android_sandboxes.values() {
-                                    let _ = nilbrowser::chromium::eval_js(sb, &js);
-                                }
-                            }
+                        let js = format!(
+                            "document.querySelectorAll('video, audio').forEach(m => {{ m.volume = {:.2}; }});",
+                            state.volume_level as f32 / 100.0
+                        );
+                        if let Some(ref b) = embedded_browser {
+                            let _ = nilbrowser::chromium::eval_js(b, &js);
+                        }
+                        for sb in android_sandboxes.values() {
+                            let _ = nilbrowser::chromium::eval_js(sb, &js);
                         }
                     }
                 }
@@ -8446,7 +9226,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(btn) = buttons.iter().find(|b| b.contains(px, py)) {
                     let id = &btn.id;
 
-                    if id == "home_page_toggle" {
+                    if apps::handle_action(&mut state, &id) {
+                        // Handled by the OnuronOS 1.7 shell (screens.rs / apps.rs).
+                    } else if id == "home_page_toggle" {
                         state.home_page = if state.home_page == 0 { 1 } else { 0 };
                     } else if id == "home_page_next" {
                         state.home_page = 1;
@@ -8537,8 +9319,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else if id == "recents_scroll_up" {
                         state.recents_scroll_offset = state.recents_scroll_offset.saturating_sub(1);
                     } else if id == "recents_scroll_down" {
-                        let max_vis = (((SCREEN_HEIGHT as i16 - 60 - 84) / 106).max(1)) as usize;
-                        let max_sc = state.recent_apps.len().saturating_sub(max_vis);
+                        let max_sc = recent_max_scroll(&state);
                         state.recents_scroll_offset = (state.recents_scroll_offset + 1).min(max_sc);
                     } else if id == "recents_clear_all" {
                         state.recent_apps.clear();
@@ -8548,9 +9329,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if let Ok(idx) = id.trim_start_matches("recent_close_").parse::<usize>() {
                             if idx < state.recent_apps.len() {
                                 state.recent_apps.remove(idx);
-                                let max_vis =
-                                    (((SCREEN_HEIGHT as i16 - 60 - 84) / 106).max(1)) as usize;
-                                let max_sc = state.recent_apps.len().saturating_sub(max_vis);
+                                let max_sc = recent_max_scroll(&state);
                                 state.recents_scroll_offset =
                                     state.recents_scroll_offset.min(max_sc);
                             }
@@ -8630,6 +9409,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 let _ = nilbrowser::chromium::eval_js(sb, js);
                             }
                         }
+                    } else if id == "disp_bright_slider" {
+                        let card_w = ((SCREEN_WIDTH as i16) - 48).max(1) as u32;
+                        let ratio = (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(15, 100);
+                        state.brightness_level = ratio as u8;
+                    } else if id == "disp_font_slider" {
+                        let card_w = ((SCREEN_WIDTH as i16) - 48).max(1) as u32;
+                        let ratio = (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(25, 150);
+                        state.font_size_pct = ratio as u8;
+                    } else if id == "theme_light" {
+                        state.dark_mode = false;
+                    } else if id == "theme_dark" {
+                        state.dark_mode = true;
+                    } else if id == "theme_auto" {
+                        state.dark_mode = false;
+                    } else if id == "nav_set_display" {
+                        state.screen = Screen::SettingsDisplay;
+                    } else if id == "nav_set_about" {
+                        state.screen = Screen::SettingsAbout;
+                    } else if id == "nav_set_wifi" {
+                        state.screen = Screen::SettingsWifi;
+                    } else if id == "nav_set_bluetooth" {
+                        state.screen = Screen::SettingsBluetooth;
+                    } else if id == "nav_set_sound" {
+                        state.screen = Screen::SettingsSound;
+                    } else if id == "nav_set_security" {
+                        state.screen = Screen::SettingsSecurity;
+                    } else if id == "nav_set_battery" {
+                        state.screen = Screen::SettingsBattery;
+                    } else if id == "nav_set_storage" {
+                        state.screen = Screen::SettingsStorage;
+                    } else if id == "nav_set_language" {
+                        state.screen = Screen::SettingsLanguage;
+                    } else if id == "nav_set_accessibility" {
+                        state.screen = Screen::SettingsAccessibility;
+                    } else if id == "nav_set_update" {
+                        state.screen = Screen::SettingsUpdate;
+                    } else if id == "sub_back" {
+                        state.screen = Screen::AppSettings;
                     } else if id == "bright_bar" {
                         let ratio = (((px - 28).max(0) as u32) * 100
                             / ((SCREEN_WIDTH as u32) - 56).max(1))
@@ -9581,8 +10398,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                     } else if state.screen == Screen::Recents {
-                        let max_vis = (((SCREEN_HEIGHT as i16 - 60 - 84) / 106).max(1)) as usize;
-                        let max_sc = state.recent_apps.len().saturating_sub(max_vis);
+                        let max_sc = recent_max_scroll(&state);
                         if dy < -20.0 || dx < -25.0 {
                             state.recents_scroll_offset =
                                 (state.recents_scroll_offset + 1).min(max_sc);
@@ -9625,13 +10441,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // 1. Browser sandbox visibility & bounds
             if let Some(ref mut b) = embedded_browser {
-                let show_browser = state.screen == Screen::AppBrowser;
+                // The start page is drawn by the shell; the native WebView only
+                // appears once a page is actually opened.
+                let show_browser = state.screen == Screen::AppBrowser && state.browser_page_open;
                 if show_browser {
                     let (vx, vy, vw, vh) = (
-                        4,
-                        126,
-                        (SCREEN_WIDTH as i32) - 8,
-                        (SCREEN_HEIGHT as i32) - 126 - 54,
+                        8,
+                        152,
+                        (SCREEN_WIDTH as i32) - 16,
+                        (SCREEN_HEIGHT as i32) - 152 - 96,
                     );
                     let rx = (vx as f32 * scale_x).round() as i32;
                     let ry = (vy as f32 * scale_y).round() as i32;
@@ -9654,6 +10472,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 None
             };
+            // Home-screen Android shortcuts can enter AppAndroid directly;
+            // provision the same isolated WebView used by the store's Open
+            // button when that path has not created a sandbox yet.
+            if let Some(pkg_id) = active_android_pkg.as_deref() {
+                if !android_sandboxes.contains_key(pkg_id) {
+                    if let Some(app) = state
+                        .android_store_apps
+                        .iter()
+                        .find(|a| a.pkg_id == pkg_id)
+                    {
+                        let sandbox_dir = state
+                            .storage_root
+                            .join("var")
+                            .join("android_sandboxes")
+                            .join(&app.pkg_id);
+                        if let Ok(sb) = nilbrowser::chromium::create_isolated_webview(
+                            parent_hwnd,
+                            &sandbox_dir,
+                            4,
+                            82,
+                            (SCREEN_WIDTH as i32) - 8,
+                            (SCREEN_HEIGHT as i32) - 82 - 54,
+                            &app.runtime_url,
+                        ) {
+                            android_sandboxes.insert(app.pkg_id.clone(), sb);
+                        }
+                    }
+                }
+            }
             for (pkg_id, sb) in android_sandboxes.iter_mut() {
                 let is_active = active_android_pkg.as_deref() == Some(pkg_id.as_str());
                 if is_active {
@@ -9697,16 +10544,369 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        #[cfg(target_os = "windows")]
+        if let Some(url) = state.browser_pending_nav.take() {
+            if let Some(ref b) = embedded_browser {
+                let _ = nilbrowser::chromium::navigate_to(b, &url);
+            }
+            for sb in android_sandboxes.values_mut() {
+                let _ = nilbrowser::chromium::set_visible(sb, false);
+            }
+        }
+
         apply_theme_and_brightness(&mut buffer, state.dark_mode, state.brightness_level);
 
-        window.update_with_buffer(&buffer, SCREEN_WIDTH, SCREEN_HEIGHT)?;
+        if present_w == SCREEN_WIDTH && present_h == SCREEN_HEIGHT {
+            window.update_with_buffer(&buffer, SCREEN_WIDTH, SCREEN_HEIGHT)?;
+        } else {
+            let scaled = rescale_to(
+                &buffer,
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                present_w,
+                present_h,
+                get_theme(state.dark_mode).bg,
+            );
+            window.update_with_buffer(&scaled, present_w, present_h)?;
+        }
+    }
+
+    // Persist any settings the session changed.
+    if state.prefs_dirty {
+        state.save_prefs();
     }
 
     Ok(())
 }
 
-fn apply_theme_and_brightness(buffer: &mut [u32], dark_mode: bool, brightness_level: u8) {
-    if !dark_mode && brightness_level >= 100 {
+/// Headless behaviour check for the redesigned shell. Exercises routing,
+/// toggles, the PIN gate, note persistence, backup, update check and preference
+/// round-tripping against the real on-disk storage root.
+fn run_selftest() -> i32 {
+    let mut pass = 0i32;
+    let mut fail = 0i32;
+    let mut check = |name: &str, ok: bool| {
+        if ok {
+            pass += 1;
+            println!("  ok   {}", name);
+        } else {
+            fail += 1;
+            println!("  FAIL {}", name);
+        }
+    };
+
+    let storage = ensure_nilos_storage().0;
+    let notes_path = storage.join("home").join("joy").join("Documents").join("notes.json");
+    let prefs_path = storage.join("etc").join("prefs.json");
+    let notes_before = fs::read(&notes_path).ok();
+    let prefs_before = fs::read(&prefs_path).ok();
+
+    let mut st = SimState::new();
+    st.load_prefs();
+    st.refresh_storage();
+
+    // App routing
+    let apps = [
+        ("phone", Screen::AppPhone),
+        ("browser", Screen::AppBrowser),
+        ("messages", Screen::AppMessages),
+        ("files", Screen::AppFiles),
+        ("settings", Screen::AppSettings),
+        ("terminal", Screen::AppTerminal),
+        ("softbus", Screen::AppSoftBus),
+        ("memories", Screen::AppMemories),
+        ("notes", Screen::AppNotes),
+        ("calculator", Screen::AppCalculator),
+        ("nilpkg", Screen::AppNilPkg),
+        ("music", Screen::AppMusic),
+        ("camera", Screen::AppCamera),
+    ];
+    let mut routing_ok = true;
+    for (id, want) in apps {
+        let target = format!("app:{}", id);
+        let handled = apps_mod_handle(&mut st, &target);
+        if !handled || std::mem::discriminant(&st.screen) != std::mem::discriminant(&want) {
+            routing_ok = false;
+            println!("       routing mismatch for {}", target);
+        }
+    }
+    check("native app routing (13 entries)", routing_ok);
+
+    // Settings subpages + back
+    let mut sub_ok = true;
+    for (id, want) in [
+        ("wifi", Screen::SettingsWifi),
+        ("bluetooth", Screen::SettingsBluetooth),
+        ("display", Screen::SettingsDisplay),
+        ("sound", Screen::SettingsSound),
+        ("security", Screen::SettingsSecurity),
+        ("battery", Screen::SettingsBattery),
+        ("storage", Screen::SettingsStorage),
+        ("backup", Screen::SettingsBackup),
+        ("language", Screen::SettingsLanguage),
+        ("accessibility", Screen::SettingsAccessibility),
+        ("vpn", Screen::SettingsVpn),
+        ("update", Screen::SettingsUpdate),
+        ("about", Screen::SettingsAbout),
+    ] {
+        let target = format!("set:{}", id);
+        apps_mod_handle(&mut st, &target);
+        if std::mem::discriminant(&st.screen) != std::mem::discriminant(&want) {
+            sub_ok = false;
+            println!("       subpage mismatch for {}", target);
+        }
+        apps_mod_handle(&mut st, "back");
+        // Backup lives under Storage & backup, so its back target is Storage.
+        let expected_back = if id == "backup" {
+            Screen::SettingsStorage
+        } else {
+            Screen::AppSettings
+        };
+        if std::mem::discriminant(&st.screen) != std::mem::discriminant(&expected_back) {
+            sub_ok = false;
+            println!("       back failed for {}", target);
+        }
+    }
+    check("settings subpages + back navigation", sub_ok);
+
+    // Toggles
+    let before = st.wifi_enabled;
+    apps_mod_handle(&mut st, "tg:wifi");
+    check("wifi toggle flips", st.wifi_enabled != before);
+    apps_mod_handle(&mut st, "tg:wifi");
+
+    // Slider drag
+    st.screen = Screen::SettingsDisplay;
+    apps::drag_slider(&mut st, 200, 300);
+    check("brightness slider drag", st.brightness_level > 40);
+
+    // Theme switch
+    apps_mod_handle(&mut st, "theme_0");
+    let light = !st.dark_mode;
+    apps_mod_handle(&mut st, "theme_1");
+    check("theme selector applies light/dark", light && st.dark_mode);
+
+    // PIN gate
+    st.screen = Screen::Lockscreen;
+    st.pin = "1234".into();
+    st.pin_input.clear();
+    for d in ['9', '9', '9', '9'] {
+        apps_mod_handle(&mut st, &format!("pin_{}", digit_index(d)));
+    }
+    check("wrong PIN rejected", st.lock_error && st.screen == Screen::Lockscreen);
+    for d in ['1', '2', '3', '4'] {
+        apps_mod_handle(&mut st, &format!("pin_{}", digit_index(d)));
+    }
+    check("correct PIN unlocks", st.screen == Screen::Home && !st.lock_error);
+
+    // Salted PIN record: no plaintext on disk, verification still works.
+    st.set_pin("2468");
+    let hashed = !st.pin_hash.is_empty()
+        && st.pin.is_empty()
+        && st.verify_pin("2468")
+        && !st.verify_pin("1111");
+    check("PIN stored as salted SHA-256 and verifies", hashed);
+
+    // Notes lifecycle
+    let notes_len = st.notes.len();
+    apps_mod_handle(&mut st, "note:new");
+    st.notes_edit_title = "সেলফটেস্ট নোট".into();
+    st.notes_edit_content = "স্বয়ংক্রিয় যাচাই".into();
+    apps_mod_handle(&mut st, "note:save");
+    let saved = fs::read_to_string(&notes_path).unwrap_or_default();
+    check(
+        "note create + persist to notes.json",
+        st.notes.len() == notes_len + 1 && saved.contains("সেলফটেস্ট নোট") && !st.notes_editing,
+    );
+
+    // Backup (real file copies)
+    apps_mod_handle(&mut st, "backup_now");
+    let backup_dir = st.storage_root.join("var").join("backups").join("latest");
+    let backup_files = dir_size(&backup_dir);
+    check(
+        "backup copies files and stamps the date",
+        backup_files > 0 && st.backup_last != "কখনো নয়",
+    );
+
+    // Update check reaches a verdict
+    apps_mod_handle(&mut st, "update:check");
+    check("update check reports a status", !st.update_status.is_empty());
+
+    // Toast must expire on its own (it used to stick to every screen).
+    st.toast("পরীক্ষা");
+    let shown = st.toast_ticks > 0 && !st.toast_msg.is_empty();
+    for _ in 0..400 {
+        st.tick_toast();
+    }
+    check("toast expires and clears", shown && st.toast_msg.is_empty());
+
+    // Settings list is scrollable and its offset is clamped.
+    let max_scroll = screens::settings_max_scroll();
+    st.scroll_y = 9999;
+    let clamped = st.scroll_y.clamp(0, max_scroll);
+    check("settings list scrolls (11 rows)", max_scroll > 0 && clamped == max_scroll);
+    st.scroll_y = 0;
+
+    // Every sound slider responds, not just media.
+    st.screen = Screen::SettingsSound;
+    st.ring_vol = 5;
+    st.volume_level = 5;
+    st.alarm_vol = 5;
+    apps::drag_slider(&mut st, 300, 130); // ring card
+    apps::drag_slider(&mut st, 300, 216); // media card
+    apps::drag_slider(&mut st, 300, 302); // alarm card
+    check(
+        "ring / media / alarm sliders all respond",
+        st.ring_vol > 40 && st.volume_level > 40 && st.alarm_vol > 40,
+    );
+
+    // Browser: start page vs. opened page, and the navigation request is raised.
+    st.browser_page_open = false;
+    st.browser_pending_nav = None;
+    apps_mod_handle(&mut st, "browser:short0");
+    let opened = st.browser_page_open && st.browser_pending_nav.is_some();
+    apps_mod_handle(&mut st, "browser:close");
+    check(
+        "browser opens a page and returns to the start page",
+        opened && !st.browser_page_open,
+    );
+
+    // Gesture capsule is reachable from any screen.
+    st.screen = Screen::AppSettings;
+    apps_mod_handle(&mut st, "gesture:home");
+    let home_ok = st.screen == Screen::Home;
+    apps_mod_handle(&mut st, "gesture:recents");
+    check(
+        "gesture home/recents work everywhere",
+        home_ok && st.screen == Screen::Recents,
+    );
+
+    // Recents rail scroll state is bounded to the horizontal card count and
+    // Android shortcuts enter the compatibility runtime, never the browser.
+    st.record_recent_app("one", "এক", "test", 0x123456);
+    st.record_recent_app("two", "দুই", "test", 0x123456);
+    st.record_recent_app("three", "তিন", "test", 0x123456);
+    let recent_max = recent_max_scroll(&st);
+    st.recents_scroll_offset = (recent_max + 10).min(recent_max);
+    check(
+        "recents rail has a scrollable bounded range",
+        recent_max > 0 && st.recents_scroll_offset == recent_max,
+    );
+    apps_mod_handle(&mut st, "android:youtube");
+    check(
+        "Android shortcut opens compatibility runtime",
+        st.screen == Screen::AppAndroid && st.android_running_app.is_some(),
+    );
+
+    // Preference round-trip
+    st.brightness_level = 42;
+    st.ring_vol = 33;
+    st.save_prefs();
+    let mut st2 = SimState::new();
+    st2.load_prefs();
+    check(
+        "prefs survive a restart",
+        st2.brightness_level == 42 && st2.ring_vol == 33,
+    );
+
+    // Restore user data touched by the test
+    match notes_before {
+        Some(b) => {
+            let _ = fs::write(&notes_path, b);
+        }
+        None => {
+            let _ = fs::remove_file(&notes_path);
+        }
+    }
+    match prefs_before {
+        Some(b) => {
+            let _ = fs::write(&prefs_path, b);
+        }
+        None => {
+            let _ = fs::remove_file(&prefs_path);
+        }
+    }
+    let _ = fs::remove_dir_all(backup_dir);
+
+    println!("\nselftest: {} passed, {} failed", pass, fail);
+    if fail == 0 {
+        0
+    } else {
+        1
+    }
+}
+
+/// Small adapter so the selftest can reach the action router without a `use`.
+fn apps_mod_handle(state: &mut SimState, id: &str) -> bool {
+    apps::handle_action(state, id)
+}
+
+/// Maps a decimal digit to the keypad index used by the `pin_N` ids.
+fn digit_index(d: char) -> usize {
+    match d {
+        '1' => 0,
+        '2' => 1,
+        '3' => 2,
+        '4' => 3,
+        '5' => 4,
+        '6' => 5,
+        '7' => 6,
+        '8' => 7,
+        '9' => 8,
+        '0' => 10,
+        _ => 99,
+    }
+}
+
+/// Letterboxed bilinear resample of the logical canvas onto the window surface.
+fn rescale_to(src: &[u32], sw: usize, sh: usize, dw: usize, dh: usize, bg: u32) -> Vec<u32> {
+    if dw == 0 || dh == 0 {
+        return Vec::new();
+    }
+    let mut out = vec![bg; dw * dh];
+    let s = (dw as f32 / sw as f32).min(dh as f32 / sh as f32);
+    let vw = ((sw as f32) * s).round() as usize;
+    let vh = ((sh as f32) * s).round() as usize;
+    let ox = (dw - vw) / 2;
+    let oy = (dh - vh) / 2;
+    for y in 0..vh {
+        let sy = ((y as f32 + 0.5) / s - 0.5).clamp(0.0, (sh - 1) as f32);
+        let y0 = sy.floor() as usize;
+        let y1 = (y0 + 1).min(sh - 1);
+        let ty = sy - y0 as f32;
+        for x in 0..vw {
+            let sx = ((x as f32 + 0.5) / s - 0.5).clamp(0.0, (sw - 1) as f32);
+            let x0 = sx.floor() as usize;
+            let x1 = (x0 + 1).min(sw - 1);
+            let tx = sx - x0 as f32;
+            let p00 = src[y0 * sw + x0];
+            let p10 = src[y0 * sw + x1];
+            let p01 = src[y1 * sw + x0];
+            let p11 = src[y1 * sw + x1];
+            let mix = |a: u32, b: u32, t: f32| -> u32 {
+                let ch = |v: u32| (v & 0xFF) as f32;
+                let r = ch(a) * (1.0 - t) + ch(b) * t;
+                r as u32
+            };
+            let mut px = 0u32;
+            for shift in [16u32, 8, 0] {
+                let a0 = (p00 >> shift) & 0xFF;
+                let a1 = (p10 >> shift) & 0xFF;
+                let a2 = (p01 >> shift) & 0xFF;
+                let a3 = (p11 >> shift) & 0xFF;
+                let top = mix(a0, a1, tx);
+                let bot = mix(a2, a3, tx);
+                let v = ((top as f32) * (1.0 - ty) + (bot as f32) * ty).round() as u32;
+                px |= (v.min(255)) << shift;
+            }
+            out[(oy + y) * dw + ox + x] = px;
+        }
+    }
+    out
+}
+
+fn apply_theme_and_brightness(buffer: &mut [u32], _dark_mode: bool, brightness_level: u8) {
+    if brightness_level >= 100 {
         return;
     }
     let br_factor = (brightness_level as f32 / 100.0).clamp(0.15, 1.0);
@@ -9715,29 +10915,20 @@ fn apply_theme_and_brightness(buffer: &mut [u32], dark_mode: bool, brightness_le
         let mut gf = ((*px >> 8) & 0xFF) as f32 / 255.0;
         let mut bf = (*px & 0xFF) as f32 / 255.0;
 
-        if dark_mode {
-            // Smooth luminance-invert + 180-degree hue rotation so anti-aliased glyph edges never halo
-            rf = 1.0 - rf;
-            gf = 1.0 - gf;
-            bf = 1.0 - bf;
-            // Rotate RGB -> BGR and lift dark slate floor slightly (#0E131F)
-            let tmp = rf;
-            rf = (bf * 0.90 + 0.055).clamp(0.0, 1.0);
-            gf = (gf * 0.90 + 0.075).clamp(0.0, 1.0);
-            bf = (tmp * 0.90 + 0.120).clamp(0.0, 1.0);
-        }
-
-        if br_factor < 1.0 {
-            rf *= br_factor;
-            gf *= br_factor;
-            bf *= br_factor;
-        }
+        rf *= br_factor;
+        gf *= br_factor;
+        bf *= br_factor;
 
         let r = (rf * 255.0).round() as u32;
         let g = (gf * 255.0).round() as u32;
         let b = (bf * 255.0).round() as u32;
         *px = (r << 16) | (g << 8) | b;
     }
+}
+
+/// Number of horizontal card steps available in the recents rail.
+fn recent_max_scroll(state: &SimState) -> usize {
+    state.recent_apps.len().saturating_sub(1)
 }
 
 #[cfg(test)]

@@ -1,6 +1,8 @@
 // runtime/nilui/src/lib.rs — Declarative UI Framework & Binary Wire Protocol
 pub mod a11y;
 pub mod anim;
+pub mod components;
+pub mod design;
 pub mod render;
 pub mod share;
 pub mod state;
@@ -17,6 +19,7 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 pub use anim::{FlingDecay, SpringConfig, SpringState};
+pub use design::{DesignSystem, Palette, Spacing, Typography};
 pub use state::SnapshotPayload;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

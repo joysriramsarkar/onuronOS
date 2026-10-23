@@ -35,7 +35,7 @@ impl SoftwareFramebufferBackend {
         Self {
             width,
             height,
-            buffer: vec![0xFF0A0E17; size], // Deep space navy default
+            buffer: vec![0xFF1E1236; size], // OnuronOS Deep Midnight Violet default
         }
     }
 

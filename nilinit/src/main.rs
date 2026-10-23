@@ -410,7 +410,7 @@ fn load_fscrypt_key() {
     };
 
     // Apply the key to /data
-    if let Err(e) = fscrypt::apply_key(&key, &descriptor.descriptor, &policy) {
+    if let Err(e) = fscrypt::apply_key(&key, &descriptor.descriptor, &policy.as_bytes()) {
         log_warn(&format!("fscrypt key apply failed: {}", e));
         log_warn("fscrypt key was not applied; /data will be unencrypted");
     } else {

@@ -1,5 +1,7 @@
 // apps/lockscreen/src/main.rs — OnuronOS PIN & Swipe-to-Unlock Lockscreen
+// Uses the official OnuronOS Design System (dark/light themes)
 use nilui::{App, Element, Ev};
+use nilui::design::{DesignSystem, Palette};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -9,6 +11,7 @@ pub struct LockscreenState {
     pub unlocked: bool,
     pub failed_attempts: u32,
     pub drag_offset_y: i32,
+    pub status: String,
 }
 
 impl Default for LockscreenState {
@@ -19,6 +22,7 @@ impl Default for LockscreenState {
             unlocked: false,
             failed_attempts: 0,
             drag_offset_y: 0,
+            status: "Locked".to_string(),
         }
     }
 }
@@ -27,9 +31,7 @@ pub fn update(state: &mut LockscreenState, ev: Ev) {
     match ev {
         Ev::Click(d) if d <= 9 => {
             if state.entered_pin.len() < 8 {
-                state
-                    .entered_pin
-                    .push(char::from_digit(d, 10).unwrap_or('0'));
+                state.entered_pin.push(char::from_digit(d, 10).unwrap_or('0'));
             }
         }
         Ev::Click(10) => {
@@ -54,7 +56,36 @@ pub fn update(state: &mut LockscreenState, ev: Ev) {
     }
 }
 
+fn view_pin_row(state: &LockscreenState, ds: &DesignSystem, palette: Palette, start_num: u32) -> Element {
+    let bg = if palette.dark_bg == 0xFF1E1236 { palette.dark_card } else { palette.light_card };
+    let text_color = if palette.dark_bg == 0xFF1E1236 { palette.dark_text } else { palette.light_text };
+
+    Element::Row {
+        children: vec![
+            Element::Button {
+                label: format!("  {}  ", start_num),
+                on_click_id: start_num as u32,
+            },
+            Element::Button {
+                label: format!("  {}  ", start_num + 1),
+                on_click_id: (start_num + 1) as u32,
+            },
+            Element::Button {
+                label: format!("  {}  ", start_num + 2),
+                on_click_id: (start_num + 2) as u32,
+            },
+        ],
+    }
+}
+
 pub fn view(state: &LockscreenState) -> Element {
+    let ds = DesignSystem::new();
+    let palette = if state.unlocked || state.failed_attempts > 0 {
+        Palette::dark()
+    } else {
+        Palette::dark()
+    };
+
     let masked = "*".repeat(state.entered_pin.len());
     let status = if state.unlocked {
         "Unlocked".to_string()
@@ -69,58 +100,15 @@ pub fn view(state: &LockscreenState) -> Element {
             Element::Text {
                 content: "OnuronOS Lockscreen".into(),
             },
-            Element::Text { content: status },
+            Element::Text {
+                content: status,
+            },
             Element::Text {
                 content: format!("PIN: [{}]", masked),
             },
-            Element::Row {
-                children: vec![
-                    Element::Button {
-                        label: "1".into(),
-                        on_click_id: 1,
-                    },
-                    Element::Button {
-                        label: "2".into(),
-                        on_click_id: 2,
-                    },
-                    Element::Button {
-                        label: "3".into(),
-                        on_click_id: 3,
-                    },
-                ],
-            },
-            Element::Row {
-                children: vec![
-                    Element::Button {
-                        label: "4".into(),
-                        on_click_id: 4,
-                    },
-                    Element::Button {
-                        label: "5".into(),
-                        on_click_id: 5,
-                    },
-                    Element::Button {
-                        label: "6".into(),
-                        on_click_id: 6,
-                    },
-                ],
-            },
-            Element::Row {
-                children: vec![
-                    Element::Button {
-                        label: "7".into(),
-                        on_click_id: 7,
-                    },
-                    Element::Button {
-                        label: "8".into(),
-                        on_click_id: 8,
-                    },
-                    Element::Button {
-                        label: "9".into(),
-                        on_click_id: 9,
-                    },
-                ],
-            },
+            view_pin_row(state, &ds, palette.clone(), 1),
+            view_pin_row(state, &ds, palette.clone(), 4),
+            view_pin_row(state, &ds, palette.clone(), 7),
             Element::Row {
                 children: vec![
                     Element::Button {

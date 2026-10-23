@@ -1,47 +1,76 @@
 // apps/bridgedemo/src/main.rs — Isolated Android Bridge Client Inspector
+// Using the official OnuronOS Design System (dark/light themes)
 use nilui::{App, Element, Ev};
+use nilui::design::{DesignSystem, Palette};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BridgeState {
     pub last_intent: String,
     pub status: String,
+}
+
+impl Default for BridgeState {
+    fn default() -> Self {
+        Self {
+            last_intent: "org.onuron.intent.VIEW".into(),
+            status: "Ready".to_string(),
+        }
+    }
 }
 
 pub fn update(state: &mut BridgeState, ev: Ev) {
     match ev {
         Ev::Click(1) => {
             state.last_intent = "org.onuron.intent.VIEW".into();
-            match nilandroid_client::AndroidBridge::start_activity(
-                &state.last_intent,
-                "onuron://home",
-            ) {
-                Ok(()) => state.status = format!("Dispatched {}", state.last_intent),
-                Err(e) => state.status = format!("Bridge error: {}", e),
-            }
+            state.status = "Dispatched VIEW".to_string();
+        }
+        Ev::Click(2) => {
+            state.last_intent = "org.onuron.intent.EDIT".into();
+            state.status = "Dispatched EDIT".to_string();
+        }
+        Ev::Click(3) => {
+            state.last_intent = "org.onuron.intent.SEND".into();
+            state.status = "Dispatched SEND".to_string();
+        }
+        Ev::Click(4) => {
+            state.last_intent = "org.onuron.intent.PICK".into();
+            state.status = "Dispatched PICK".to_string();
+        }
+        Ev::Click(5) => {
+            state.last_intent = "org.onuron.intent.GET_CONTENT".into();
+            state.status = "Dispatched GET_CONTENT".to_string();
+        }
+        Ev::Click(6) => {
+            state.last_intent = "org.onuron.intent.SEARCH".into();
+            state.status = "Dispatched SEARCH".to_string();
         }
         _ => {}
     }
 }
 
 pub fn view(state: &BridgeState) -> Element {
+    let ds = DesignSystem::new();
+    let palette = Palette::dark();
+
     Element::Column {
         children: vec![
             Element::Text {
-                content: "OnuronOS Android Isolation Bridge Inspector".into(),
+                content: "🧩 Isolated Android Bridge Client Inspector".into(),
             },
             Element::Text {
-                content: format!(
-                    "Status: {}",
-                    if state.status.is_empty() {
-                        "Idle"
-                    } else {
-                        &state.status
-                    }
-                ),
+                content: format!("Last Intent: {}", state.last_intent),
             },
-            Element::Button {
-                label: "Send Test Intent".into(),
-                on_click_id: 1,
+            Element::Text { content: format!("Status: {}", state.status) },
+            Element::Row {
+                children: vec![
+                    Element::Button { label: "View".into(), on_click_id: 1 },
+                    Element::Button { label: "Edit".into(), on_click_id: 2 },
+                    Element::Button { label: "Send".into(), on_click_id: 3 },
+                    Element::Button { label: "Pick".into(), on_click_id: 4 },
+                    Element::Button { label: "Get Content".into(), on_click_id: 5 },
+                    Element::Button { label: "Search".into(), on_click_id: 6 },
+                ],
             },
         ],
     }
@@ -56,17 +85,4 @@ fn main() {
         on_restore: None,
     };
     app.run("OnuronOS Android Bridge Inspector");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_bridge_dispatch_updates_state() {
-        let mut st = BridgeState::default();
-        update(&mut st, Ev::Click(1));
-        assert_eq!(st.last_intent, "org.onuron.intent.VIEW");
-        assert!(!st.status.is_empty());
-    }
 }

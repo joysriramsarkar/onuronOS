@@ -28,7 +28,8 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **DRM/KMS Direct Compositor (`nilui-gpu`)** | 🔵 Functional prototype | Direct `/dev/dri/card0` modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, interactive touch compositor, bootsplash & presentation demo |
 | **First-Boot Setup (OOBE)** | 🔵 Functional prototype | Name & PIN setup wizard, writes configuration to `/data/config/` |
 | **Lock Screen** | 🔵 Functional prototype | Salted + stretched (100k-round SHA-256) PIN record with constant-time verify and live system clock/date |
-| **Home Launcher** | 🔵 Functional prototype | App grid, live clock/date, interactive search across packages/notes/contacts, notification shade, and sandbox app launcher |
+| **Shell Design System (OnuronOS 1.7)** | 🔵 Functional prototype | Sampled dark/light tokens, measured 390×796 metrics, vector icon set and shared widgets; 33 reference screens implemented in the simulator with headless export and a behaviour selftest (`nilsim --export-ui`, `nilsim --selftest`) |
+| **Home Launcher** | 🔵 Functional prototype | 4-column native grid, live clock/date, live package/note status pill, Android launcher section, status-bar entry points, and an app drawer for the remaining native apps |
 | **Phone App** | 🔵 Functional prototype | Dialer UI, persistent contacts (`/data/contacts/`) and call history (`/data/calls/`); VoLTE call layer uses simulated fallback when modem hardware is absent **[SIMULATED]** |
 | **Messages App** | 🔵 Functional prototype | SMS message threads, composer, reply & delete with atomic persistent storage under `/data/sms/` |
 | **Files App** | 🔵 Functional prototype | Directory explorer for `/data`, `/etc`, `/tmp`, `/data/app` |

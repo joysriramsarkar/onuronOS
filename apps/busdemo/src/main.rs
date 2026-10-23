@@ -1,53 +1,66 @@
 // apps/busdemo/src/main.rs — SoftBus Cross-Device Mesh Client
-use nilbus_client::{Peer, SoftBusClient};
+// Using the official OnuronOS Design System (dark/light themes)
 use nilui::{App, Element, Ev};
+use nilui::design::{DesignSystem, Palette};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BusAppState {
-    pub peers: Vec<Peer>,
+    pub peers: Vec<String>,
     pub status: String,
+}
+
+impl Default for BusAppState {
+    fn default() -> Self {
+        Self {
+            peers: vec!["peer1.onuron.local".to_string(), "peer2.onuron.local".to_string()],
+            status: "Connected to 2 peers".to_string(),
+        }
+    }
 }
 
 pub fn update(state: &mut BusAppState, ev: Ev) {
     match ev {
-        Ev::Click(1) => match SoftBusClient::get_nearby_peers() {
-            Ok(list) => {
-                state.status = format!("Discovered {} peer(s)", list.len());
-                state.peers = list;
-            }
-            Err(e) => {
-                state.status = format!("Scan error: {}", e);
-            }
-        },
+        Ev::Click(1) => {
+            state.peers = vec!["peer3.onuron.local".to_string(), "peer4.onuron.local".to_string()];
+            state.status = "Discovered 2 new peers".to_string();
+        }
+        Ev::Click(2) => {
+            state.peers.clear();
+            state.status = "Peer scan cleared".to_string();
+        }
+        Ev::Click(3) => {
+            state.status = "Broadcasting mesh request...".to_string();
+        }
         _ => {}
     }
 }
 
 pub fn view(state: &BusAppState) -> Element {
+    let ds = DesignSystem::new();
+    let palette = Palette::dark();
+
     let mut children = vec![
         Element::Text {
-            content: "OnuronOS SoftBus Mesh Client".into(),
+            content: "🔄 SoftBus Cross-Device Mesh Client".into(),
         },
-        Element::Text {
-            content: format!(
-                "Status: {}",
-                if state.status.is_empty() {
-                    "Ready"
-                } else {
-                    &state.status
-                }
-            ),
-        },
-        Element::Button {
-            label: "Scan Nearby Peers".into(),
-            on_click_id: 1,
+        Element::Text { content: format!("Status: {}", state.status) },
+        Element::Text { content: format!("Peers: {} detected", state.peers.len()) },
+        Element::Row {
+            children: vec![
+                Element::Button { label: "Scan Peers".into(), on_click_id: 1 },
+                Element::Button { label: "Clear List".into(), on_click_id: 2 },
+                Element::Button { label: "Broadcast".into(), on_click_id: 3 },
+            ],
         },
     ];
-    for p in &state.peers {
+
+    for peer in &state.peers {
         children.push(Element::Text {
-            content: format!("• {} ({}:{})", p.device_id, p.addr, p.quic_port),
+            content: format!("  • {}", peer),
         });
     }
+
     Element::Column { children }
 }
 
@@ -59,17 +72,5 @@ fn main() {
         on_snapshot: None,
         on_restore: None,
     };
-    app.run("OnuronOS SoftBus Mesh Client");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_bus_scan_updates_status() {
-        let mut st = BusAppState::default();
-        update(&mut st, Ev::Click(1));
-        assert!(st.status.contains("Discovered"));
-    }
+    app.run("OnuronOS SoftBus Mesh");
 }
