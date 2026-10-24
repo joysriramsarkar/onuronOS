@@ -1212,7 +1212,8 @@ pub fn send_with_fds(stream: &UnixStream, bytes: &[u8], fds: &[RawFd]) -> io::Re
     msg.msg_iov = &mut iov;
     msg.msg_iovlen = 1;
     msg.msg_control = control.as_mut_ptr() as *mut libc::c_void;
-    msg.msg_controllen = control.len();
+    // `msg_controllen` is `usize` on x86_64 but `u32` on aarch64 musl.
+    msg.msg_controllen = control.len() as _;
 
     // SAFETY: `msg` is initialised with a control buffer sized for `fds.len()`
     // descriptors via CMSG_SPACE above.
@@ -1226,13 +1227,13 @@ pub fn send_with_fds(stream: &UnixStream, bytes: &[u8], fds: &[RawFd]) -> io::Re
         }
         (*cmsg).cmsg_level = libc::SOL_SOCKET;
         (*cmsg).cmsg_type = libc::SCM_RIGHTS;
-        (*cmsg).cmsg_len = libc::CMSG_LEN(4 * fds.len() as u32) as usize;
+        (*cmsg).cmsg_len = libc::CMSG_LEN(4 * fds.len() as u32) as _;
         std::ptr::copy_nonoverlapping(
             fds.as_ptr() as *const u8,
             libc::CMSG_DATA(cmsg),
             4 * fds.len(),
         );
-        msg.msg_controllen = libc::CMSG_SPACE(4 * fds.len() as u32) as usize;
+        msg.msg_controllen = libc::CMSG_SPACE(4 * fds.len() as u32) as _;
 
         let fd = stream.as_raw_fd();
         // The descriptors travel with the first sendmsg call. A short write
@@ -1280,7 +1281,8 @@ pub fn recv_with_fds(
     msg.msg_iov = &mut iov;
     msg.msg_iovlen = 1;
     msg.msg_control = control.as_mut_ptr() as *mut libc::c_void;
-    msg.msg_controllen = control.len();
+    // `msg_controllen` is `usize` on x86_64 but `u32` on aarch64 musl.
+    msg.msg_controllen = control.len() as _;
 
     // SAFETY: `msg` points at `buf` and a control buffer sized for MAX_FDS.
     let n = unsafe { libc::recvmsg(stream.as_raw_fd(), &mut msg, 0) };

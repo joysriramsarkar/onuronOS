@@ -412,7 +412,7 @@ def prepare_rootfs(arch="x86_64", rootfs_dir=None, allow_host_fallback=False):
         "nilc", "nilrt-launch", "nilrt",
         "a11y", "backup", "bluetooth", "browser", "calculator", "camera",
         "display", "files", "language", "messages", "music", "notes",
-        "phone", "security", "sound", "sysupdate", "vpn", "wifi", "nilbrowser",
+        "phone", "security", "sound", "sysupdate", "vpn", "wifi",
     ]
     installed_bins = {}
 

@@ -67,8 +67,8 @@ To maintain radical engineering honesty and credibility, Onuron OS uses a 5-tier
 | **Music Player App** | 🔵 Functional prototype | Filesystem audio scanner (/data/music), playlist persistence, and audiod (nilaudio) volume/mute/route control; audio output simulated when ALSA hardware is absent [SIMULATED] **[SIMULATED]** |
 | **Camera Viewfinder App** | 🔵 Functional prototype | Viewfinder UI wired to nilcam::CameraClient (get_info, capture_frame to /data/dcim, set_torch, sensor switch); frame buffer simulated when V4L2 hardware is absent [SIMULATED] **[SIMULATED]** |
 | **SoftBus Test App** | 🔵 Functional prototype | Demonstration of SoftBus mesh capabilities (busdemo, bridgedemo, animdemo) |
-| **Browser (nilshell text client)** | 🔵 Functional prototype | Real HTTP/HTTPS fetch over ureq/rustls with a 20 s timeout and 512 KiB body cap; HTML reduced to text (script/style contents dropped, block tags become line breaks, entities decoded), title extraction, bounded scrolling; CSS, JavaScript and images are not rendered and the UI says so |
-| **NilBrowser** | 🟡 Experimental | Desktop webview shell (wry/tao) used by the simulator host; not part of the mobile native platform [SIMULATED] **[SIMULATED]** |
+| **Browser (native web engine)** | 🔵 Functional prototype | Real HTTP/HTTPS fetch over ureq/rustls with a 20 s timeout and 512 KiB body cap; HTML reduced to text (script/style contents dropped, block tags become line breaks, entities decoded), title extraction, bounded scrolling; CSS, JavaScript and images are not rendered and the UI says so. One engine (runtime/nilweb) backs both the shell Browser screen and the standalone `browser` app |
+| **NilBrowser (simulator host webview)** | 🟡 Experimental | Windows-only WebView2 (Evergreen Chromium) embed used by the desktop simulator host; not part of the mobile native platform and never built on Linux/ARM [SIMULATED] **[SIMULATED]** |
 <!-- END GENERATED: maturity -->
 ---
 

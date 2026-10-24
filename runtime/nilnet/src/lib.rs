@@ -7,6 +7,8 @@
 
 use std::path::Path;
 
+use nilprotocol::{Frame, MessageType};
+
 /// Socket paths netd may be listening on, in preference order.
 pub const NET_SOCKET_PATHS: &[&str] = &["/run/nilos/net.sock", "/run/onuron/net.sock"];
 
