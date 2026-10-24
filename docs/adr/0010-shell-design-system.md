@@ -66,3 +66,25 @@ existing implementation.
 - Hardware-backed controls are simulator state and are described as such; the
   desktop shell does not claim driver-level Wi-Fi, Bluetooth, VPN or camera
   behaviour.
+
+## Amendments (2026-10-23)
+
+Five shell defects reported after the first pass, and their resolutions:
+
+1. **Browser.** The embedded WebView2 was shown for the whole `AppBrowser`
+   screen and painted over the redesigned start page. It is now created/visible
+   only for an opened page and bounded to the content area; closing a page hides
+   it again.
+2. **Scrolling.** The settings list is now scrollable (11 rows, wheel + hairline
+   scrollbar); Files, Notes, nilpkg, Android and SoftBus lists scroll too.
+   Rows are clipped to their card.
+3. **Notification status bar.** The pre-1.7 behaviour is restored: the left part
+   of the status bar is the notification-panel handle.
+4. **Gesture bar.** The back/home/recents capsule is drawn on every interactive
+   screen, except lock/OOBE (security) and the two legacy apps.
+5. **Media-only volume.** Slider drags captured only a thin strip near the
+   track; the three sound cards now capture the pointer across their full
+   height, so ringtone, media and alarm all respond.
+
+The toast timer was also fixed: messages expired by wall-clock but never
+decremented, so the last one stuck to every screen.

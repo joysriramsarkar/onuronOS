@@ -8425,7 +8425,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !state.pin_configured() {
         // Fresh device: run the first-boot flow before the lock screen.
         state.screen = Screen::Oobe(0);
+    } else {
+        // A device with a PIN boots locked, as on a real handset.
+        state.screen = Screen::Lockscreen;
+        state.pin_input.clear();
+        state.lock_error = false;
     }
+    // Diagnostic start screen, e.g. ONURON_START=browser-page. Used by the
+    // verification harness because synthetic mouse input needs window focus,
+    // which headless CI shells do not have.
+    if let Ok(start) = std::env::var("ONURON_START") {
+        match start.as_str() {
+            "home" => state.screen = Screen::Home,
+            "lock" => state.screen = Screen::Lockscreen,
+            "browser" => state.screen = Screen::AppBrowser,
+            "browser-page" => {
+                state.screen = Screen::AppBrowser;
+                state.browser_page_open = true;
+                state.browser_url = "https://www.google.com".into();
+                state.browser_url_input = state.browser_url.clone();
+                state.browser_title = "Google".into();
+                state.browser_pending_nav = Some(state.browser_url.clone());
+            }
+            "settings" => state.screen = Screen::AppSettings,
+            _ => {}
+        }
+    }
+
     if std::env::args().any(|a| a == "--memories") {
         state.screen = Screen::AppMemories;
     }
@@ -9358,6 +9384,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if apps::handle_action(&mut state, &id) {
                         // Handled by the OnuronOS 1.7 shell (screens.rs / apps.rs).
+                        if std::env::var("ONURON_TRACE").is_ok() {
+                            println!(
+                                "[trace] click {} -> {} page_open={} url={}",
+                                id,
+                                screen_tag(&state.screen),
+                                state.browser_page_open,
+                                state.browser_url
+                            );
+                        }
                     } else if id == "home_page_toggle" {
                         state.home_page = if state.home_page == 0 { 1 } else { 0 };
                     } else if id == "home_page_next" {
@@ -10572,6 +10607,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let scale_y = ch as f32 / SCREEN_HEIGHT as f32;
 
             // 1. Browser sandbox visibility & bounds
+            if std::env::var("ONURON_TRACE").is_ok() && state.term_cursor_ticks % 60 == 0 {
+                println!(
+                    "[trace] frame screen={} page_open={} nav_pending={}",
+                    screen_tag(&state.screen),
+                    state.browser_page_open,
+                    state.browser_pending_nav.is_some()
+                );
+            }
             if let Some(ref mut b) = embedded_browser {
                 // The start page is drawn by the shell; the native WebView only
                 // appears once a page is actually opened.
@@ -10978,6 +11021,48 @@ fn run_selftest() -> i32 {
         0
     } else {
         1
+    }
+}
+
+/// Stable short name for a screen, used by `ONURON_TRACE` diagnostics.
+fn screen_tag(s: &Screen) -> &'static str {
+    match s {
+        Screen::Lockscreen => "lockscreen",
+        Screen::Home => "home",
+        Screen::AppPhone => "phone",
+        Screen::AppMessages => "messages",
+        Screen::AppFiles => "files",
+        Screen::AppSettings => "settings",
+        Screen::AppNilPkg => "nilpkg",
+        Screen::AppSoftBus => "softbus",
+        Screen::AppAndroid => "android",
+        Screen::AppTerminal => "terminal",
+        Screen::AppNotes => "notes",
+        Screen::AppCalculator => "calculator",
+        Screen::AppBrowser => "browser",
+        Screen::AppMemories => "memories",
+        Screen::ControlCenter => "control",
+        Screen::NanoEditor => "nano",
+        Screen::InCall => "incall",
+        Screen::Recents => "recents",
+        Screen::SettingsWifi => "set-wifi",
+        Screen::SettingsBluetooth => "set-bt",
+        Screen::SettingsDisplay => "set-display",
+        Screen::SettingsSound => "set-sound",
+        Screen::SettingsSecurity => "set-security",
+        Screen::SettingsBattery => "set-battery",
+        Screen::SettingsStorage => "set-storage",
+        Screen::SettingsLanguage => "set-language",
+        Screen::SettingsAccessibility => "set-a11y",
+        Screen::SettingsVpn => "set-vpn",
+        Screen::SettingsBackup => "set-backup",
+        Screen::SettingsUpdate => "set-update",
+        Screen::SettingsAbout => "set-about",
+        Screen::PowerMenu => "power",
+        Screen::AppCamera => "camera",
+        Screen::AppMusic => "music",
+        Screen::AppDrawer => "drawer",
+        Screen::Oobe(_) => "oobe",
     }
 }
 

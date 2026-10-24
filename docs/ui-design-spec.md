@@ -89,3 +89,19 @@ Call of Duty `#A5540F`, Spotify `#15803D`, 2048 `#B45309`.
 
 `টার্মিনাল` (Terminal) and `স্মৃতি` (Memories) keep their existing renderers,
 status bar and navigation bar; the 1.7 redesign does not touch them.
+
+## Shell behaviour (implemented, verified)
+
+These behaviours are not visible in the static art but are part of the shell
+contract. Each is covered by `nilsim --selftest`.
+
+| Behaviour | Rule |
+|---|---|
+| Scrolling | Settings (11 rows), Files, Notes, nilpkg, Android and SoftBus lists scroll with the wheel; the settings list shows a hairline scrollbar in the right margin. Rows are clipped to the card, so nothing bleeds into the title or the gesture bar. Offset resets on every navigation. |
+| Gesture bar | A 160×28 capsule at the bottom (back / home / recents) is drawn on every interactive screen. It is intentionally absent on the lock screen and the first-boot flow (home-from-lock would bypass the PIN) and on Terminal/Memories (they keep their original navigation bar). |
+| Notification handle | The left part of the status bar (0–228 × 2–32) opens the notification panel, as the pre-1.7 `toggle_island` zone did; tapping it again returns home. Suppressed on the lock screen and OOBE. |
+| Toast lifetime | Toasts live ~150 frames, then clear. They never persist across screens. |
+| Volume sliders | Ringtone, media and alarm sliders each capture the pointer anywhere on their card (104–174, 190–260, 276–346), not only on the 6px track. |
+| Browser | The screen is a start page (address field, shortcuts, history, toolbar). The native WebView2 surface is created only for an opened page and is positioned at (8,152)–(382,700); on the start page it is hidden, so it can never overlap the shell chrome. |
+| Boot state | A device with a stored PIN boots to the lock screen; a device without one boots into the first-boot flow. |
+| PIN storage | Salted SHA-256 in `/etc/prefs.json` (`pin_salt`, `pin_hash`); the plaintext is never written. |
