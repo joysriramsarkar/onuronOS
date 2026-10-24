@@ -5,8 +5,11 @@
 // and to launch activities; it never fabricates a success reply.
 
 #[cfg(unix)]
+use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 
+use nilprotocol::{Frame, MessageType};
 
 pub const ANDROID_SOCK: &str = "/run/nilos/android.sock";
 
