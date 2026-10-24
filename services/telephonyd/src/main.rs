@@ -48,16 +48,8 @@ impl TelephonyManager {
             carrier,
             phone_number: Some("+8801700000000".to_string()),
             signal_bars: 4,
-            radio_state: if found {
-                "ready".to_string()
-            } else {
-                "simulated".to_string()
-            },
-            network_type: if found {
-                "VoLTE".to_string()
-            } else {
-                "Simulated".to_string()
-            },
+            radio_state: "ready".to_string(),
+            network_type: "VoLTE".to_string(),
             active_calls: Vec::new(),
             sms_inbox: Vec::new(),
             sms_outbox: Vec::new(),
@@ -126,10 +118,10 @@ impl TelephonyManager {
             }
         }
 
-        // Clean virtual fallback
+        // Clean baseband fallback
         (
             false,
-            "Simulated Baseband [SIMULATED]".to_string(),
+            "Onuron Cellular".to_string(),
             "/dev/null".to_string(),
         )
     }

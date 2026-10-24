@@ -48,7 +48,17 @@ fn main() {
                         }
                         let cmd = String::from_utf8_lossy(&buf[..n]);
                         println!("[nilandroidd] Forwarding Intent: {}", cmd.trim());
-                        let _ = s.write_all(b"OK\n");
+                        let mut resp = b"{\"status\":\"OK\"}\n".to_vec();
+                        if let Ok(mut agent_stream) = std::os::unix::net::UnixStream::connect("/dev/socket/nilagent") {
+                            let _ = agent_stream.write_all(cmd.as_bytes());
+                            let mut agent_reply = [0u8; 1024];
+                            if let Ok(m) = agent_stream.read(&mut agent_reply) {
+                                if m > 0 {
+                                    resp = agent_reply[..m].to_vec();
+                                }
+                            }
+                        }
+                        let _ = s.write_all(&resp);
                     }
                 }
             }

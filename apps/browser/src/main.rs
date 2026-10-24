@@ -40,22 +40,38 @@ pub fn update(state: &mut BrowserState, ev: Ev) {
             state.loading = false;
         }
         Ev::Click(2) => {
-            state.url = "https://github.com".to_string();
-            state.title = "GitHub".to_string();
-            state.loading = false;
+            state.loading = true;
+            state.progress = 1.0;
+            state.title = format!("Web: {}", state.url);
+            let _ = std::process::Command::new("/usr/bin/nilbrowser")
+                .arg(&state.url)
+                .spawn()
+                .or_else(|_| {
+                    std::process::Command::new("nilbrowser")
+                        .arg(&state.url)
+                        .spawn()
+                });
         }
         Ev::Click(3) => {
-            state.url = "https://bsky.app".to_string();
-            state.title = "Bluesky".to_string();
+            state.url = "https://maps.google.com".to_string();
+            state.title = "Maps".to_string();
             state.loading = false;
+            let _ = std::process::Command::new("/usr/bin/nilbrowser")
+                .arg(&state.url)
+                .spawn()
+                .or_else(|_| {
+                    std::process::Command::new("nilbrowser")
+                        .arg(&state.url)
+                        .spawn()
+                });
         }
         _ => {}
     }
 }
 
 pub fn view(state: &BrowserState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![
@@ -99,3 +115,19 @@ fn main() {
     };
     app.run("OnuronOS NilZar Browser");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_browser_url_input_and_title() {
+        let mut state = BrowserState::default();
+        update(&mut state, Ev::Ime("https://onuron.org".into()));
+        assert_eq!(state.url, "https://onuron.org");
+
+        update(&mut state, Ev::Click(1)); // Bookmark
+        assert_eq!(state.url, "https://nilos.dev");
+    }
+}
+

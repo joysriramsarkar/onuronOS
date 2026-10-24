@@ -4,13 +4,13 @@ use nilui::design::{DesignSystem, Palette};
 use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
-struct State {
-    count: u32,
-    message: String,
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq)]
+pub struct State {
+    pub count: u32,
+    pub message: String,
 }
 
-fn update(state: &mut State, ev: Ev) {
+pub fn update(state: &mut State, ev: Ev) {
     match ev {
         Ev::Click(1) => {
             state.count += 1;
@@ -21,8 +21,8 @@ fn update(state: &mut State, ev: Ev) {
 }
 
 pub fn view(state: &State) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![
@@ -58,4 +58,20 @@ fn main() {
         }),
     };
     app.run("OnuronOS Hello App");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hello_counter_increment() {
+        let mut state = State {
+            count: 0,
+            message: "Initial".into(),
+        };
+        update(&mut state, Ev::Click(1));
+        assert_eq!(state.count, 1);
+        assert!(state.message.contains("1 times"));
+    }
 }

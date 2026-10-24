@@ -46,14 +46,29 @@ pub fn update(state: &mut CameraState, ev: Ev) {
         Ev::Click(5) => {
             state.captured += 1;
             state.torch = false;
+            let _ = std::fs::create_dir_all("/data/dcim");
+            let secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let img_name = format!("/data/dcim/IMG_{}.jpg", secs);
+            state.status = format!("সংরক্ষিত: {}", img_name);
+
+            #[cfg(unix)]
+            {
+                use std::io::Write;
+                if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/nilos/camera.sock") {
+                    let _ = s.write_all(b"CAPTURE\n");
+                }
+            }
         }
         _ => {}
     }
 }
 
 pub fn view(state: &CameraState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![
@@ -99,3 +114,22 @@ fn main() {
     };
     app.run("OnuronOS Camera Viewfinder");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_camera_flip_and_capture() {
+        let mut state = CameraState::default();
+        assert_eq!(state.facing, "back");
+
+        update(&mut state, Ev::Click(1)); // Flip
+        assert_eq!(state.facing, "front");
+
+        let initial_captured = state.captured;
+        update(&mut state, Ev::Click(5)); // Capture
+        assert_eq!(state.captured, initial_captured + 1);
+    }
+}
+

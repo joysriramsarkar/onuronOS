@@ -7,4 +7,7 @@ edition = "2021"
 ash = "0.37"
 raw-window-handle = "0.5"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [build-dependencies]

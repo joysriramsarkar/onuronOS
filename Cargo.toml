@@ -65,6 +65,7 @@ members = [
   "apps/music",
   "apps/notes",
   "apps/browser",
+  "apps/nilbrowser",
   "apps/phone",
   "apps/messages",
   "apps/files",

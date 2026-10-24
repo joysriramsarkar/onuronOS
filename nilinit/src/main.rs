@@ -111,6 +111,8 @@ fn mount_early_fs() {
             ("proc", "/proc", "proc", 0),
             ("sysfs", "/sys", "sysfs", 0),
             ("devtmpfs", "/dev", "devtmpfs", 0),
+            ("devpts", "/dev/pts", "devpts", 0),
+            ("binder", "/dev/binderfs", "binder", 0),
             ("tmpfs", "/run", "tmpfs", 0),
             ("tmpfs", "/tmp", "tmpfs", 0),
             ("cgroup2", "/sys/fs/cgroup", "cgroup2", 0),
@@ -204,8 +206,16 @@ fn mount_data_partition() {
 
     #[cfg(target_os = "linux")]
     {
-        // Try virtio-blk disk (/dev/vda) first, then IDE (/dev/sda), then fall back to tmpfs
-        let candidates = ["/dev/vda", "/dev/vda1", "/dev/sda", "/dev/sda1", "/dev/hda"];
+        // Try real mobile hardware partitions first, then virtio-blk disk (/dev/vda), then IDE (/dev/sda)
+        let candidates = [
+            "/dev/disk/by-partlabel/userdata",
+            "/dev/sda15",
+            "/dev/vda",
+            "/dev/vda1",
+            "/dev/sda",
+            "/dev/sda1",
+            "/dev/hda",
+        ];
         let mut attempts: Vec<(String, Result<(), String>)> = Vec::new();
 
         for dev in &candidates {

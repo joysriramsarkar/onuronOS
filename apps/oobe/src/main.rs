@@ -41,6 +41,16 @@ pub fn update(state: &mut OobeState, ev: Ev) {
                 OobeStep::UserProfile => OobeStep::PinSetup,
                 OobeStep::PinSetup => {
                     if state.pin.len() >= 4 {
+                        let p = std::path::Path::new("/data/system/user.json");
+                        if let Some(parent) = p.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let config = serde_json::json!({
+                            "user_name": state.user_name,
+                            "locale": state.locale,
+                            "pin_configured": true,
+                        });
+                        let _ = std::fs::write(p, config.to_string());
                         OobeStep::Completed
                     } else {
                         OobeStep::PinSetup
@@ -69,8 +79,8 @@ pub fn update(state: &mut OobeState, ev: Ev) {
 }
 
 pub fn view(state: &OobeState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     let step_title = match state.step {
         OobeStep::Welcome => "Step 1/4: Welcome to OnuronOS",

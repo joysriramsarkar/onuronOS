@@ -56,9 +56,9 @@ pub fn update(state: &mut SecurityState, ev: Ev) {
     }
 }
 
-pub fn view(state: &SecurityState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+pub fn view(_state: &SecurityState) -> Element {
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![

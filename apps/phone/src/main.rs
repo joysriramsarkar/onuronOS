@@ -32,6 +32,33 @@ pub fn update(state: &mut PhoneState, ev: Ev) {
         Ev::Click(11) => {
             if !state.entered.is_empty() {
                 state.contact = state.entered.clone();
+                state.mode = format!("কল চলছে: {}", state.entered);
+
+                let _ = std::fs::create_dir_all("/data/calls");
+                let log_entry = format!(
+                    "{{\"number\":\"{}\",\"timestamp\":{}}}\n",
+                    state.entered,
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                );
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("/data/calls/call_log.json")
+                {
+                    use std::io::Write;
+                    let _ = f.write_all(log_entry.as_bytes());
+                }
+
+                #[cfg(unix)]
+                {
+                    use std::io::Write;
+                    if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/nilos/telephony.sock") {
+                        let _ = s.write_all(format!("ATD{};\r\n", state.entered).as_bytes());
+                    }
+                }
             }
         }
         Ev::Click(12) => {
@@ -45,8 +72,8 @@ pub fn update(state: &mut PhoneState, ev: Ev) {
 }
 
 pub fn view(state: &PhoneState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     let masked = if state.entered.len() <= 4 {
         "*".repeat(state.entered.len())
@@ -143,3 +170,33 @@ fn main() {
     };
     app.run("OnuronOS Phone & Dialer");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dialpad_input_and_backspace() {
+        let mut state = PhoneState::default();
+        update(&mut state, Ev::Click(1)); // '1'
+        update(&mut state, Ev::Click(2)); // '2'
+        update(&mut state, Ev::Click(3)); // '3'
+        assert_eq!(state.entered, "123");
+
+        update(&mut state, Ev::Click(10)); // Backspace (pop)
+        assert_eq!(state.entered, "12");
+    }
+
+    #[test]
+    fn test_dial_click() {
+        let mut state = PhoneState::default();
+        update(&mut state, Ev::Click(9)); // '9'
+        update(&mut state, Ev::Click(9)); // '9'
+        update(&mut state, Ev::Click(9)); // '9'
+        assert_eq!(state.entered, "999");
+
+        update(&mut state, Ev::Click(11)); // Dial
+        assert_eq!(state.contact, "999");
+    }
+}
+

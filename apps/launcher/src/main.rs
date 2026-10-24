@@ -1,6 +1,6 @@
 // apps/launcher/src/main.rs — OnuronOS Home Launcher (Design System)
 // Uses the official OnuronOS Design System (dark/light themes)
-use nilui::design::{DesignSystem, Palette, Spacing, Typography};
+use nilui::design::{DesignSystem, Palette};
 use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
@@ -137,13 +137,7 @@ pub fn view(state: &LauncherState) -> Element {
         .installed_apps
         .iter()
         .filter(|(_, label, icon)| {
-            let query = state.search_query.to_lowercase();
-            if query.is_empty() {
-                return true;
-            }
-            let label_lower = label.to_lowercase();
-            let icon_lower = icon.to_lowercase();
-            label_lower.contains(&query) || icon_lower.contains(&query)
+            label_contains(&state.search_query, label) || icon.contains(&state.search_query)
         })
         .enumerate()
         .map(|(idx, (_, label, icon))| Element::Button {

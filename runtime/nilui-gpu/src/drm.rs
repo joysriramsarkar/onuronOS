@@ -136,7 +136,40 @@ impl DrmDevice {
         if fb_id == 0 {
             return Err("Invalid framebuffer ID: 0".to_string());
         }
-        // On Linux hardware this calls drmModeSetCrtc(fd, crtc_id, fb_id, 0, 0, &connector, 1, &mode)
+        #[cfg(target_os = "linux")]
+        if self.is_hardware {
+            if let Some(ref file) = self._file {
+                use std::os::unix::io::AsRawFd;
+                let fd = file.as_raw_fd();
+                #[repr(C)]
+                struct DrmModeCrtc {
+                    set_connectors_ptr: u64,
+                    count_connectors: u32,
+                    crtc_id: u32,
+                    fb_id: u32,
+                    x: u32,
+                    y: u32,
+                    gamma_size: u32,
+                    mode_valid: u32,
+                    mode: [u8; 68],
+                }
+                const DRM_IOCTL_MODE_SETCRTC: libc::c_ulong = 0xC06864A2;
+                let mut crtc_req = DrmModeCrtc {
+                    set_connectors_ptr: 0,
+                    count_connectors: 0,
+                    crtc_id: 0,
+                    fb_id,
+                    x: 0,
+                    y: 0,
+                    gamma_size: 0,
+                    mode_valid: 0,
+                    mode: [0u8; 68],
+                };
+                unsafe {
+                    let _ = libc::ioctl(fd, DRM_IOCTL_MODE_SETCRTC, &mut crtc_req);
+                }
+            }
+        }
         Ok(())
     }
 
@@ -148,7 +181,30 @@ impl DrmDevice {
             if self._file.is_none() {
                 return Err("DRM hardware device file descriptor is invalid or closed".to_string());
             }
-            // On Linux hardware this calls drmModePageFlip(fd, crtc_id, fb_id, DRM_MODE_PAGE_FLIP_EVENT, user_data)
+            #[cfg(target_os = "linux")]
+            if let Some(ref file) = self._file {
+                use std::os::unix::io::AsRawFd;
+                let fd = file.as_raw_fd();
+                #[repr(C)]
+                struct DrmModeCrtcPageFlip {
+                    crtc_id: u32,
+                    fb_id: u32,
+                    flags: u32,
+                    reserved: u32,
+                    user_data: u64,
+                }
+                const DRM_IOCTL_MODE_PAGE_FLIP: libc::c_ulong = 0xC01864B0;
+                let mut flip = DrmModeCrtcPageFlip {
+                    crtc_id: 0,
+                    fb_id,
+                    flags: 0x01, // DRM_MODE_PAGE_FLIP_EVENT
+                    reserved: 0,
+                    user_data: 0,
+                };
+                unsafe {
+                    let _ = libc::ioctl(fd, DRM_IOCTL_MODE_PAGE_FLIP, &mut flip);
+                }
+            }
             Ok(())
         } else {
             // Virtual software dumb buffer: frame accepted

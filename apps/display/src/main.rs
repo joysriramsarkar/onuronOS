@@ -65,8 +65,8 @@ pub fn update(state: &mut DisplayState, ev: Ev) {
 }
 
 pub fn view(state: &DisplayState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = if state.theme {
+    let _ds = DesignSystem::new();
+    let _palette = if state.theme {
         Palette::dark()
     } else {
         Palette::light()

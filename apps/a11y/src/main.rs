@@ -45,8 +45,8 @@ pub fn update(state: &mut A11yState, ev: Ev) {
 }
 
 pub fn view(state: &A11yState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![

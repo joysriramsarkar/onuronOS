@@ -42,8 +42,8 @@ pub fn update(state: &mut BackupState, ev: Ev) {
 }
 
 pub fn view(state: &BackupState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![

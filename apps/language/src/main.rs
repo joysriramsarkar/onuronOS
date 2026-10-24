@@ -47,8 +47,8 @@ pub fn update(state: &mut LanguageState, ev: Ev) {
 }
 
 pub fn view(state: &LanguageState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![

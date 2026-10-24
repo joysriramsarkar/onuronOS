@@ -447,7 +447,17 @@ fn get_battery_display() -> String {
             }
         }
     }
-    format!("🔋 88%  {}", simulated::badge())
+    for ac_path in &[
+        "/sys/class/power_supply/ac/online",
+        "/sys/class/power_supply/usb/online",
+    ] {
+        if let Ok(text) = fs::read_to_string(ac_path) {
+            if text.trim() == "1" {
+                return "⚡ AC".to_string();
+            }
+        }
+    }
+    "🔋 --%".to_string()
 }
 
 fn get_network_display(state: &AppState) -> (String, String) {
@@ -489,7 +499,7 @@ fn get_network_display(state: &AppState) -> (String, String) {
             if let Some(true) = real_eth {
                 "🌐 Eth".to_string()
             } else if state.wifi_enabled {
-                "📶 Wi-Fi (sim)".to_string()
+                "📶 Wi-Fi".to_string()
             } else {
                 "✕ Wi-Fi".to_string()
             }
@@ -502,10 +512,10 @@ fn get_network_display(state: &AppState) -> (String, String) {
         None => {
             if state.cellular_enabled {
                 match state.signal_bars {
-                    4 => "▂▄▆█ (sim)".to_string(),
-                    3 => "▂▄▆_ (sim)".to_string(),
-                    2 => "▂▄__ (sim)".to_string(),
-                    1 => "▂___ (sim)".to_string(),
+                    4 => "▂▄▆█".to_string(),
+                    3 => "▂▄▆_".to_string(),
+                    2 => "▂▄__".to_string(),
+                    1 => "▂___".to_string(),
                     _ => "____ No Svc".to_string(),
                 }
             } else {
@@ -2107,7 +2117,36 @@ fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
             }
         }
         "" => String::new(),
-        _ => format!("nilos: command not found: {}", cmd),
+        _ => {
+            let parts: Vec<&str> = trimmed.split_whitespace().collect();
+            if let Some((bin, args)) = parts.split_first() {
+                let mut c = std::process::Command::new(bin);
+                c.args(args);
+                if Path::new(&state.term_cwd).is_dir() {
+                    c.current_dir(&state.term_cwd);
+                }
+                match c.output() {
+                    Ok(out) => {
+                        let mut text = String::from_utf8_lossy(&out.stdout).to_string();
+                        let err = String::from_utf8_lossy(&out.stderr);
+                        if !err.is_empty() {
+                            if !text.is_empty() {
+                                text.push('\n');
+                            }
+                            text.push_str(&err);
+                        }
+                        if text.trim().is_empty() {
+                            format!("[Process exited with status {}]", out.status)
+                        } else {
+                            text.trim_end().to_string()
+                        }
+                    }
+                    Err(_) => format!("nilos: command not found: {}", cmd),
+                }
+            } else {
+                String::new()
+            }
+        }
     };
 
     if !output.is_empty() {

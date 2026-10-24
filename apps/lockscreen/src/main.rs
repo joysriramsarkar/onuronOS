@@ -58,48 +58,28 @@ pub fn update(state: &mut LockscreenState, ev: Ev) {
     }
 }
 
-fn view_pin_row(
-    state: &LockscreenState,
-    ds: &DesignSystem,
-    palette: Palette,
-    start_num: u32,
-) -> Element {
-    let bg = if palette.dark_bg == 0xFF1E1236 {
-        palette.dark_card
-    } else {
-        palette.light_card
-    };
-    let text_color = if palette.dark_bg == 0xFF1E1236 {
-        palette.dark_text
-    } else {
-        palette.light_text
-    };
-
+fn view_pin_row(start_num: u32) -> Element {
     Element::Row {
         children: vec![
             Element::Button {
                 label: format!("  {}  ", start_num),
-                on_click_id: start_num as u32,
+                on_click_id: start_num,
             },
             Element::Button {
                 label: format!("  {}  ", start_num + 1),
-                on_click_id: (start_num + 1) as u32,
+                on_click_id: start_num + 1,
             },
             Element::Button {
                 label: format!("  {}  ", start_num + 2),
-                on_click_id: (start_num + 2) as u32,
+                on_click_id: start_num + 2,
             },
         ],
     }
 }
 
 pub fn view(state: &LockscreenState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = if state.unlocked || state.failed_attempts > 0 {
-        Palette::dark()
-    } else {
-        Palette::dark()
-    };
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     let masked = "*".repeat(state.entered_pin.len());
     let status = if state.unlocked {
@@ -119,9 +99,9 @@ pub fn view(state: &LockscreenState) -> Element {
             Element::Text {
                 content: format!("PIN: [{}]", masked),
             },
-            view_pin_row(state, &ds, palette.clone(), 1),
-            view_pin_row(state, &ds, palette.clone(), 4),
-            view_pin_row(state, &ds, palette.clone(), 7),
+            view_pin_row(1),
+            view_pin_row(4),
+            view_pin_row(7),
             Element::Row {
                 children: vec![
                     Element::Button {

@@ -101,20 +101,49 @@ pub fn update(state: &mut MessagesState, ev: Ev) {
             state.selected_contact = None;
             state.draft.clear();
         }
+        Ev::Click(10) => {
+            if !state.draft.is_empty() {
+                let text = state.draft.clone();
+                let contact = state
+                    .selected_contact
+                    .clone()
+                    .unwrap_or_else(|| "মা".to_string());
+                state.messages.push(Message {
+                    contact: contact.clone(),
+                    time: "এখন".to_string(),
+                    text: text.clone(),
+                    new: false,
+                });
+                state.draft.clear();
+
+                let _ = std::fs::create_dir_all("/data/sms");
+                if let Ok(json) = serde_json::to_string_pretty(&state.messages) {
+                    let _ = std::fs::write("/data/sms/threads.json", json);
+                }
+
+                #[cfg(unix)]
+                {
+                    use std::io::Write;
+                    if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/nilos/telephony.sock") {
+                        let _ = s.write_all(format!("AT+CMGS=\"{}\"\r\n{}\x1A", contact, text).as_bytes());
+                    }
+                }
+            }
+        }
         _ => {}
     }
 }
 
 pub fn view(state: &MessagesState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     let mut list_children = vec![Element::Text {
         content: "বার্তা · এখন".to_string(),
     }];
 
     for msg in &state.messages {
-        let is_selected = state.selected_contact.as_ref() == Some(&msg.contact);
+        let _is_selected = state.selected_contact.as_ref() == Some(&msg.contact);
         let is_new = msg.new;
         list_children.push(Element::Row {
             children: vec![
@@ -157,6 +186,10 @@ pub fn view(state: &MessagesState) -> Element {
                         label: "📎 ফাইল যোগ করুন".into(),
                         on_click_id: 3,
                     },
+                    Element::Button {
+                        label: "📤 পাঠান".into(),
+                        on_click_id: 10,
+                    },
                 ],
             },
         ],
@@ -173,3 +206,22 @@ fn main() {
     };
     app.run("OnuronOS Encrypted SMS");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_send_message_dispatches_and_clears_draft() {
+        let mut state = MessagesState::default();
+        let initial_count = state.messages.len();
+
+        state.draft = "হ্যালো, কেমন আছো?".to_string();
+        update(&mut state, Ev::Click(10)); // Send
+
+        assert_eq!(state.messages.len(), initial_count + 1);
+        assert_eq!(state.messages.last().unwrap().text, "হ্যালো, কেমন আছো?");
+        assert!(state.draft.is_empty());
+    }
+}
+

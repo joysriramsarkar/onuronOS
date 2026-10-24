@@ -1,7 +1,7 @@
 // apps/animdemo/src/main.rs — 120Hz Spring Animation & Fling Physics Engine
 // Using the official OnuronOS Design System (dark/light themes)
 use nilui::design::{DesignSystem, Palette};
-use nilui::{App, Element, Ev, FlingDecay, SpringConfig, SpringState};
+use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -51,8 +51,8 @@ pub fn update(state: &mut AnimState, ev: Ev) {
 }
 
 pub fn view(state: &AnimState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![

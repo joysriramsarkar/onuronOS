@@ -64,7 +64,7 @@ pub fn update(state: &mut CalcState, ev: Ev) {
         }
         Ev::Click(43) | Ev::Click(45) | Ev::Click(42) | Ev::Click(47) => {
             // + - * /
-            let op = match ev {
+            let next_op = match ev {
                 Ev::Click(43) => '+',
                 Ev::Click(45) => '-',
                 Ev::Click(42) => '*',
@@ -73,20 +73,19 @@ pub fn update(state: &mut CalcState, ev: Ev) {
             };
             if let Ok(val) = state.display.parse::<f64>() {
                 if let Some(op) = state.operation {
-                    let result =
-                        calculate(state.prev_operand, state.display.parse().unwrap_or(0.0), op);
+                    let result = calculate(state.prev_operand, val, op);
                     if result.is_nan() {
                         state.display = "Error".to_string();
                     } else {
                         state.display = result.to_string();
-                        state.expression = format!("{} {}", state.expression, op);
                     }
                     state.prev_operand = result;
-                    state.operation = None;
-                    state.waiting_for_operand = true;
-                    state.waiting_for_operand = true;
-                    state.expression = format!("{}", op);
+                } else {
+                    state.prev_operand = val;
                 }
+                state.operation = Some(next_op);
+                state.expression = format!("{} {}", state.prev_operand, next_op);
+                state.waiting_for_operand = true;
             }
         }
         Ev::Click(61) => {
@@ -128,7 +127,7 @@ pub fn update(state: &mut CalcState, ev: Ev) {
 }
 
 pub fn view(state: &CalcState) -> Element {
-    let palette = Palette::dark();
+    let _palette = Palette::dark();
 
     let button = |label, id| Element::Button {
         label: format!("  {}  ", label),
@@ -138,45 +137,51 @@ pub fn view(state: &CalcState) -> Element {
     Element::Column {
         children: vec![
             Element::Text {
-                content: state.expression.clone(),
+                content: "🧮 Alap ক্যালকুলেটর".to_string(),
             },
             Element::Text {
-                content: state.display.clone(),
+                content: format!("  {}", state.expression),
+            },
+            Element::Text {
+                content: format!("  {}", state.display),
             },
             Element::Row {
                 children: vec![
-                    button('C', 100),
-                    button('⌫', 101),
-                    button('/', 102),
-                    button('*', 103),
+                    button("C", 67),
+                    button("⌫", 8324),
+                    button("/", 47),
+                    button("*", 42),
                 ],
             },
             Element::Row {
                 children: vec![
-                    button('7', 104),
-                    button('8', 105),
-                    button('9', 106),
-                    button('-', 107),
+                    button("7", 7),
+                    button("8", 8),
+                    button("9", 9),
+                    button("-", 45),
                 ],
             },
             Element::Row {
                 children: vec![
-                    button('4', 108),
-                    button('5', 109),
-                    button('6', 110),
-                    button('+', 111),
+                    button("4", 4),
+                    button("5", 5),
+                    button("6", 6),
+                    button("+", 43),
                 ],
             },
             Element::Row {
                 children: vec![
-                    button('1', 112),
-                    button('2', 113),
-                    button('3', 114),
-                    button('=', 115),
+                    button("1", 1),
+                    button("2", 2),
+                    button("3", 3),
+                    button("=", 61),
                 ],
             },
             Element::Row {
-                children: vec![button('0', 116), button('.', 117)],
+                children: vec![
+                    button("0", 0),
+                    button(".", 46),
+                ],
             },
         ],
     }
@@ -191,4 +196,41 @@ fn main() {
         on_restore: None,
     };
     app.run("OnuronOS Alap Calculator");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_math() {
+        assert_eq!(calculate(10.0, 5.0, '+'), 15.0);
+        assert_eq!(calculate(10.0, 5.0, '-'), 5.0);
+        assert_eq!(calculate(10.0, 5.0, '*'), 50.0);
+        assert_eq!(calculate(10.0, 5.0, '/'), 2.0);
+        assert!(calculate(10.0, 0.0, '/').is_nan());
+    }
+
+    #[test]
+    fn test_calculator_full_flow() {
+        let mut state = CalcState::default();
+
+        // 7 + 3 = 10
+        update(&mut state, Ev::Click(7));
+        assert_eq!(state.display, "7");
+
+        update(&mut state, Ev::Click(43)); // +
+        assert_eq!(state.operation, Some('+'));
+
+        update(&mut state, Ev::Click(3));
+        assert_eq!(state.display, "3");
+
+        update(&mut state, Ev::Click(61)); // =
+        assert_eq!(state.display, "10");
+
+        // Clear
+        update(&mut state, Ev::Click(67)); // C
+        assert_eq!(state.display, "0");
+        assert_eq!(state.operation, None);
+    }
 }

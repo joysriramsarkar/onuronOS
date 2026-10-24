@@ -59,8 +59,8 @@ pub fn update(state: &mut VpnState, ev: Ev) {
 }
 
 pub fn view(state: &VpnState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![

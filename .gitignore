@@ -43,6 +43,5 @@ android-host/app/local.properties
 local.properties
 *.apk
 *.aab
-
-
-
+.commandcode/
+.pytest_cache/

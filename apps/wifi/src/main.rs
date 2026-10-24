@@ -75,8 +75,8 @@ pub fn update(state: &mut WifiState, ev: Ev) {
 }
 
 pub fn view(state: &WifiState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![

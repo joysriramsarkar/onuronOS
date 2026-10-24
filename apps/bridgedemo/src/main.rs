@@ -50,8 +50,8 @@ pub fn update(state: &mut BridgeState, ev: Ev) {
 }
 
 pub fn view(state: &BridgeState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     Element::Column {
         children: vec![

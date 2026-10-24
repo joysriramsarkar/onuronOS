@@ -43,8 +43,8 @@ pub fn update(state: &mut BusAppState, ev: Ev) {
 }
 
 pub fn view(state: &BusAppState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     let mut children = vec![
         Element::Text {

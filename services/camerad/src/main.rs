@@ -113,6 +113,40 @@ impl CameraManager {
             return (true, devices);
         }
 
+        // Check direct devfs /dev/video* nodes if sysfs was unmounted or unpopulated
+        let mut devfs_devices = Vec::new();
+        for i in 0..10 {
+            let node_path = format!("/dev/video{}", i);
+            if Path::new(&node_path).exists() {
+                let is_front = i % 2 == 1;
+                devfs_devices.push(CameraDevice {
+                    id: i as u32,
+                    facing: if is_front {
+                        "front".to_string()
+                    } else {
+                        "back".to_string()
+                    },
+                    resolution: if is_front {
+                        "1920x1080".to_string()
+                    } else {
+                        "4032x3024".to_string()
+                    },
+                    torch_active: false,
+                    preview_active: false,
+                    supported_formats: vec![
+                        "JPEG".to_string(),
+                        "RGBA8888".to_string(),
+                        "NV12".to_string(),
+                    ],
+                    sensor_name: format!("V4L2 Sensor ({})", node_path),
+                    device_node: node_path,
+                });
+            }
+        }
+        if !devfs_devices.is_empty() {
+            return (true, devfs_devices);
+        }
+
         // Clean mobile virtual fallback for QEMU / dev targets
         let fallback_devs = vec![
             CameraDevice {

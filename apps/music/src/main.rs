@@ -29,6 +29,18 @@ pub fn update(state: &mut MusicState, ev: Ev) {
     match ev {
         Ev::Click(1) => {
             state.is_playing = !state.is_playing;
+            state.status = if state.is_playing {
+                "Playing".to_string()
+            } else {
+                "Paused".to_string()
+            };
+            #[cfg(unix)]
+            {
+                use std::io::Write;
+                if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/onuron/audio.sock") {
+                    let _ = s.write_all(format!("SET_VOL {}\n", state.volume).as_bytes());
+                }
+            }
         }
         Ev::Click(2) => {
             state.current_time = 0.0;
@@ -53,29 +65,13 @@ pub fn update(state: &mut MusicState, ev: Ev) {
 }
 
 pub fn view(state: &MusicState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
-
-    let track_bg = if palette.dark_bg == 0xFF1E1236 {
-        palette.dark_card
-    } else {
-        palette.light_card
-    };
-    let text_color = if palette.dark_bg == 0xFF1E1236 {
-        palette.dark_text
-    } else {
-        palette.light_text
-    };
-    let accent = if palette.dark_bg == 0xFF1E1236 {
-        palette.dark_accent_green
-    } else {
-        palette.light_accent_green
-    };
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
 
     fn format_time(t: f32) -> String {
         let s = t as u64;
         format!("{:02}:{:02}", s / 60, s % 60)
-    };
+    }
 
     Element::Column {
         children: vec![

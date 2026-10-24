@@ -1,5 +1,8 @@
 // apps/files/src/main.rs — OnuronOS File Manager
 // Using the official OnuronOS Design System (dark/light themes)
+// Backed by real Linux virtual & persistent filesystem boundaries.
+use std::fs;
+use std::path::Path;
 use nilui::design::{DesignSystem, Palette};
 use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
@@ -20,36 +23,59 @@ pub struct FilesState {
     pub search: String,
 }
 
+pub fn read_real_directory(dir_path: &str) -> Vec<FileItem> {
+    let mut items = Vec::new();
+    let p = Path::new(dir_path);
+    if let Ok(entries) = fs::read_dir(p) {
+        let mut sorted_entries: Vec<_> = entries.flatten().collect();
+        sorted_entries.sort_by_key(|e| e.file_name());
+        for entry in sorted_entries {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let size = if is_dir {
+                "Folder".to_string()
+            } else if let Ok(meta) = entry.metadata() {
+                let len = meta.len();
+                if len < 1024 {
+                    format!("{} B", len)
+                } else if len < 1024 * 1024 {
+                    format!("{:.1} KB", len as f64 / 1024.0)
+                } else {
+                    format!("{:.1} MB", len as f64 / (1024.0 * 1024.0))
+                }
+            } else {
+                "0 B".to_string()
+            };
+            items.push(FileItem {
+                name,
+                size,
+                modified: "Local".to_string(),
+                is_dir,
+            });
+        }
+    }
+    if items.is_empty() {
+        items.push(FileItem {
+            name: "(empty or unmounted)".to_string(),
+            size: "-".to_string(),
+            modified: "-".to_string(),
+            is_dir: false,
+        });
+    }
+    items
+}
+
 impl Default for FilesState {
     fn default() -> Self {
+        let initial_path = if Path::new("/data").is_dir() {
+            "/data".to_string()
+        } else {
+            ".".to_string()
+        };
+        let items = read_real_directory(&initial_path);
         Self {
-            path: "/data".to_string(),
-            items: vec![
-                FileItem {
-                    name: "notes".to_string(),
-                    size: "3 ফাইল".to_string(),
-                    modified: "আজ".to_string(),
-                    is_dir: true,
-                },
-                FileItem {
-                    name: "app".to_string(),
-                    size: "৫ প্যাকেজ".to_string(),
-                    modified: "আজ".to_string(),
-                    is_dir: true,
-                },
-                FileItem {
-                    name: "settings.toml".to_string(),
-                    size: "2 কেবি".to_string(),
-                    modified: "আজ".to_string(),
-                    is_dir: false,
-                },
-                FileItem {
-                    name: "recording.wav".to_string(),
-                    size: "1.4 এমবি".to_string(),
-                    modified: "সোম".to_string(),
-                    is_dir: false,
-                },
-            ],
+            path: initial_path,
+            items,
             selected: None,
             search: String::new(),
         }
@@ -60,65 +86,27 @@ pub fn update(state: &mut FilesState, ev: Ev) {
     match ev {
         Ev::Click(1) => {
             state.path = "/data".to_string();
-            state.items = vec![
-                FileItem {
-                    name: "notes".to_string(),
-                    size: "3 ফাইল".to_string(),
-                    modified: "আজ".to_string(),
-                    is_dir: true,
-                },
-                FileItem {
-                    name: "app".to_string(),
-                    size: "৫ প্যাকেজ".to_string(),
-                    modified: "আজ".to_string(),
-                    is_dir: true,
-                },
-            ];
+            state.items = read_real_directory(&state.path);
         }
         Ev::Click(2) => {
             state.path = "/etc".to_string();
-            state.items = vec![FileItem {
-                name: "settings.toml".to_string(),
-                size: "2 কেবি".to_string(),
-                modified: "আজ".to_string(),
-                is_dir: false,
-            }];
+            state.items = read_real_directory(&state.path);
         }
         Ev::Click(3) => {
             state.path = "/tmp".to_string();
-            state.items = vec![FileItem {
-                name: "cache.dat".to_string(),
-                size: "500 কেবি".to_string(),
-                modified: "গতকাল".to_string(),
-                is_dir: false,
-            }];
+            state.items = read_real_directory(&state.path);
         }
         Ev::Click(4) => {
             state.path = "/data/app".to_string();
-            state.items = vec![FileItem {
-                name: "com.activision".to_string(),
-                size: "৫০০ মেগা".to_string(),
-                modified: "আজ".to_string(),
-                is_dir: true,
-            }];
+            state.items = read_real_directory(&state.path);
         }
         Ev::Click(5) => {
-            state.path = "/contacts".to_string();
-            state.items = vec![FileItem {
-                name: "contacts.db".to_string(),
-                size: "১.২ এমবি".to_string(),
-                modified: "আজ".to_string(),
-                is_dir: false,
-            }];
+            state.path = "/run".to_string();
+            state.items = read_real_directory(&state.path);
         }
         Ev::Click(6) => {
-            state.path = "/music".to_string();
-            state.items = vec![FileItem {
-                name: "song.mp3".to_string(),
-                size: "৩.২ এমবি".to_string(),
-                modified: "আজ".to_string(),
-                is_dir: false,
-            }];
+            state.path = "/system".to_string();
+            state.items = read_real_directory(&state.path);
         }
         Ev::Ime(text) => {
             state.search = text;
@@ -128,19 +116,56 @@ pub fn update(state: &mut FilesState, ev: Ev) {
 }
 
 pub fn view(state: &FilesState) -> Element {
-    let ds = DesignSystem::new();
-    let palette = Palette::dark();
+    let _ds = DesignSystem::new();
+    let _palette = Palette::dark();
+
+    let nav_row = Element::Row {
+        children: vec![
+            Element::Button {
+                label: "/data".into(),
+                on_click_id: 1,
+            },
+            Element::Button {
+                label: "/etc".into(),
+                on_click_id: 2,
+            },
+            Element::Button {
+                label: "/tmp".into(),
+                on_click_id: 3,
+            },
+            Element::Button {
+                label: "/data/app".into(),
+                on_click_id: 4,
+            },
+            Element::Button {
+                label: "/run".into(),
+                on_click_id: 5,
+            },
+            Element::Button {
+                label: "/system".into(),
+                on_click_id: 6,
+            },
+        ],
+    };
 
     let mut children = vec![
         Element::Text {
-            content: format!("📁 {}", state.path),
+            content: format!("📁 Location: {}", state.path),
         },
-        Element::Text {
-            content: format!("📂 {:?}", state.selected),
-        },
+        nav_row,
     ];
 
-    for item in &state.items {
+    let filtered_items: Vec<_> = if state.search.is_empty() {
+        state.items.iter().collect()
+    } else {
+        state
+            .items
+            .iter()
+            .filter(|it| it.name.to_lowercase().contains(&state.search.to_lowercase()))
+            .collect()
+    };
+
+    for item in filtered_items {
         children.push(Element::Row {
             children: vec![
                 if item.is_dir {
@@ -153,7 +178,7 @@ pub fn view(state: &FilesState) -> Element {
                     }
                 },
                 Element::Text {
-                    content: format!("{}  {}", item.name, item.size),
+                    content: format!("{}  [{}]", item.name, item.size),
                 },
                 Element::Text {
                     content: format!("  {}", item.modified),
@@ -174,4 +199,25 @@ fn main() {
         on_restore: None,
     };
     app.run("OnuronOS File Manager");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_real_directory() {
+        let items = read_real_directory(".");
+        assert!(!items.is_empty());
+    }
+
+    #[test]
+    fn test_navigation_clicks() {
+        let mut state = FilesState::default();
+        update(&mut state, Ev::Click(2));
+        assert_eq!(state.path, "/etc");
+
+        update(&mut state, Ev::Click(3));
+        assert_eq!(state.path, "/tmp");
+    }
 }
