@@ -461,7 +461,7 @@ mod tests {
         msg.msg_iov = &mut iov;
         msg.msg_iovlen = 1;
         msg.msg_control = cmsg_buf.as_mut_ptr() as *mut libc::c_void;
-        msg.msg_controllen = cmsg_buf.len();
+        msg.msg_controllen = cmsg_buf.len() as _;
         // SAFETY: `msg` is fully initialised above with a control buffer large
         // enough for one fd.
         let cmsg = unsafe { libc::CMSG_FIRSTHDR(&msg) };
@@ -469,14 +469,14 @@ mod tests {
         unsafe {
             (*cmsg).cmsg_level = libc::SOL_SOCKET;
             (*cmsg).cmsg_type = libc::SCM_RIGHTS;
-            (*cmsg).cmsg_len = libc::CMSG_LEN(4) as usize;
+            (*cmsg).cmsg_len = libc::CMSG_LEN(4) as _;
             std::ptr::copy_nonoverlapping(
                 (&pool_fd as *const i32) as *const u8,
                 libc::CMSG_DATA(cmsg),
                 4,
             );
         }
-        msg.msg_controllen = unsafe { libc::CMSG_SPACE(4) } as usize;
+        msg.msg_controllen = unsafe { libc::CMSG_SPACE(4) } as _;
 
         // SAFETY: `a` is a live socket and `msg` is a valid msghdr.
         let sent = unsafe { libc::sendmsg(a, &msg, 0) };
@@ -493,7 +493,7 @@ mod tests {
         rmsg.msg_iov = &mut riov;
         rmsg.msg_iovlen = 1;
         rmsg.msg_control = rcmsg.as_mut_ptr() as *mut libc::c_void;
-        rmsg.msg_controllen = rcmsg.len();
+        rmsg.msg_controllen = rcmsg.len() as _;
         // SAFETY: `b` is a live socket and `rmsg` is initialised.
         let got = unsafe { libc::recvmsg(b, &mut rmsg, 0) };
         assert_eq!(got, 1, "recvmsg");
