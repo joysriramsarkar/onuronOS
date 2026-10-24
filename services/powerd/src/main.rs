@@ -1,37 +1,15 @@
 // services/powerd/src/main.rs — Onuron OS Power Governor & Suspend/Wakelock Manager
 // Reads Linux sysfs (/sys/class/power_supply), manages wakelocks, and controls screen brightness/suspend.
 
-use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct BatteryInfo {
-    pub capacity: u8,   // 0 - 100%
-    pub status: String, // "Charging", "Discharging", "Full", "Not charging"
-    pub is_charging: bool,
-    pub voltage_mv: u32, // Millivolts
-    pub temp_c: f32,     // Celsius
-    pub health: String,  // "Good", "Overheat", "Dead"
-    pub is_simulated: bool,
-}
-
-impl Default for BatteryInfo {
-    fn default() -> Self {
-        Self {
-            capacity: 85,
-            status: "Discharging".into(),
-            is_charging: false,
-            voltage_mv: 3820,
-            temp_c: 29.5,
-            health: "Good".into(),
-            is_simulated: true,
-        }
-    }
-}
+/// Battery telemetry. The definition lives in `nilprotocol` so that clients can
+/// name the same type; this alias keeps the daemon's internal call sites short.
+pub use nilprotocol::BatteryInfoPayload as BatteryInfo;
 
 pub const MAX_WAKELOCK_DURATION: Duration = Duration::from_secs(30 * 60); // 30 minutes hard limit
 pub const DEFAULT_WAKELOCK_TIMEOUT: Duration = Duration::from_secs(10 * 60); // 10 minutes default auto-expire
@@ -313,10 +291,20 @@ pub fn handle_ipc_request(frame: &Frame, governor: &Arc<Mutex<PowerGovernor>>) -
     }
 }
 
+/// The socket path this instance binds. Overridable so a test (or a second
+/// instance) can use a private path; defaults to the device path.
+fn ipc_socket_path() -> String {
+    std::env::var("ONURON_POWER_SOCKET")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/run/onuron/power.sock".to_string())
+}
+
 fn main() {
     println!(
         "\x1b[1;36m[powerd]\x1b[0m Onuron OS Power Governor & Suspend Manager Initializing..."
     );
+    let sock_path = ipc_socket_path();
 
     let governor = Arc::new(Mutex::new(PowerGovernor::new()));
     let _ = fs::create_dir_all("/run/onuron");
@@ -359,22 +347,31 @@ fn main() {
         }
     });
 
+    // Tracks whether the IPC socket was actually bound. A failed bind means no
+    // client can reach this daemon, so reporting "active" afterwards would be
+    // false. The bind happens on a worker thread, so the outcome is shared back.
+    let ipc_bound = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     #[cfg(unix)]
     {
         let gov_ipc = Arc::clone(&governor);
+        let bound = Arc::clone(&ipc_bound);
+        let bind_path = sock_path.clone();
         thread::spawn(move || {
-            let listener = match nilsd::first_listener_or_bind("/run/onuron/power.sock") {
+            let listener = match nilsd::first_listener_or_bind(&bind_path) {
                 Ok(l) => l,
                 Err(e) => {
                     eprintln!(
-                        "[powerd] Failed to bind IPC socket /run/onuron/power.sock: {}",
-                        e
+                        "[powerd] [ FAIL ] Could not bind IPC socket {}: {}",
+                        bind_path, e
                     );
                     return;
                 }
             };
+            bound.store(true, std::sync::atomic::Ordering::SeqCst);
             println!(
-                "\x1b[1;32m[powerd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/power.sock"
+                "\x1b[1;32m[powerd] [  OK  ]\x1b[0m IPC Server listening on {}",
+                bind_path
             );
 
             for stream in listener.incoming() {
@@ -394,10 +391,28 @@ fn main() {
         });
     }
 
-    let _ = nilsd::notify_ready("powerd", Some("/run/onuron/power.sock"));
-    println!(
-        "\x1b[1;32m[powerd] [  OK  ]\x1b[0m Power manager daemon active (/run/onuron/power.sock)"
-    );
+    // The bind runs on a worker thread; give it a moment before deciding
+    // whether to advertise readiness.
+    for _ in 0..100 {
+        if ipc_bound.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    if ipc_bound.load(std::sync::atomic::Ordering::SeqCst) {
+        let _ = nilsd::notify_ready("powerd", Some(&sock_path));
+        println!(
+            "\x1b[1;32m[powerd] [  OK  ]\x1b[0m Power manager daemon active ({})",
+            sock_path
+        );
+    } else {
+        // Battery policy still runs, but nothing can query it. Say so, and do
+        // not advertise readiness to the supervisor.
+        eprintln!(
+            "\x1b[1;31m[powerd] [ FAIL ]\x1b[0m IPC unavailable; battery telemetry cannot be queried"
+        );
+    }
 
     // Keep service alive
     loop {

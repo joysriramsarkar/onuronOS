@@ -2,54 +2,19 @@
 // Discovers Linux network interfaces (/sys/class/net), monitors carrier link states, and parses DNS servers.
 
 use nilprotocol::{Frame, MessageType};
-use serde::{Deserialize, Serialize};
+
 use std::fs;
 use std::net::IpAddr;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub enum ConnectionType {
-    None,
-    Ethernet,
-    Wifi,
-    Cellular,
-    Loopback,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct NetworkInterface {
-    pub name: String,
-    pub conn_type: ConnectionType,
-    pub operstate: String,       // "up", "down", "unknown"
-    pub carrier_connected: bool, // true if physical link carrier is detected
-    pub mac_address: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
-pub struct NetworkState {
-    pub is_connected: bool,
-    pub active_interface: Option<String>,
-    pub connection_type: ConnectionType,
-    pub interfaces: Vec<NetworkInterface>,
-    pub dns_servers: Vec<String>,
-    pub is_simulated: bool,
-}
-
-impl Default for NetworkState {
-    fn default() -> Self {
-        Self {
-            // Never report a fabricated link/DNS configuration as live.
-            is_connected: false,
-            active_interface: None,
-            connection_type: ConnectionType::None,
-            interfaces: Vec::new(),
-            dns_servers: Vec::new(),
-            is_simulated: true,
-        }
-    }
-}
+// The wire types live in `nilprotocol` so that clients (the shell status bar,
+// Settings) can name the same definitions instead of each re-declaring them.
+pub use nilprotocol::{
+    ConnectionType, NetworkInterfacePayload as NetworkInterface,
+    NetworkStatePayload as NetworkState,
+};
 
 pub fn classify_interface(name: &str) -> ConnectionType {
     let lower = name.to_lowercase();
@@ -104,7 +69,7 @@ pub fn scan_network_interfaces() -> NetworkState {
             .map(|name| {
                 vec![NetworkInterface {
                     name: name.clone(),
-                    conn_type: conn_t.clone(),
+                    conn_type: conn_t,
                     operstate: if st.is_connected { "up" } else { "down" }.into(),
                     carrier_connected: st.is_connected,
                     // The old hard-coded MAC address was fabricated device data.
@@ -236,6 +201,15 @@ pub fn handle_ipc_request(frame: &Frame) -> Frame {
     }
 }
 
+/// The socket path this instance binds. Overridable so a test (or a second
+/// instance) can use a private path; defaults to the device path.
+fn ipc_socket_path() -> String {
+    std::env::var("ONURON_NET_SOCKET")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "/run/onuron/net.sock".to_string())
+}
+
 fn main() {
     println!("\x1b[1;36m[netd]\x1b[0m Onuron OS Network Subsystem Initializing...");
 
@@ -266,21 +240,29 @@ fn main() {
         }
     });
 
+    // Tracks whether the IPC socket was actually bound, so the daemon does not
+    // report itself "active" when no client could reach it.
+    let ipc_bound = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
     #[cfg(unix)]
     {
+        let bound = std::sync::Arc::clone(&ipc_bound);
+        let bind_path = ipc_socket_path();
         thread::spawn(move || {
-            let listener = match nilsd::first_listener_or_bind("/run/onuron/net.sock") {
+            let listener = match nilsd::first_listener_or_bind(&bind_path) {
                 Ok(l) => l,
                 Err(e) => {
                     eprintln!(
-                        "[netd] Failed to bind IPC socket /run/onuron/net.sock: {}",
-                        e
+                        "[netd] [ FAIL ] Could not bind IPC socket {}: {}",
+                        bind_path, e
                     );
                     return;
                 }
             };
+            bound.store(true, std::sync::atomic::Ordering::SeqCst);
             println!(
-                "\x1b[1;32m[netd] [  OK  ]\x1b[0m IPC Server listening on /run/onuron/net.sock"
+                "\x1b[1;32m[netd] [  OK  ]\x1b[0m IPC Server listening on {}",
+                bind_path
             );
 
             for stream in listener.incoming() {
@@ -299,8 +281,24 @@ fn main() {
         });
     }
 
-    let _ = nilsd::notify_ready("netd", Some("/run/onuron/net.sock"));
-    println!("\x1b[1;32m[netd] [  OK  ]\x1b[0m Network manager active (/run/onuron/net.sock)");
+    for _ in 0..100 {
+        if ipc_bound.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    if ipc_bound.load(std::sync::atomic::Ordering::SeqCst) {
+        let _ = nilsd::notify_ready("netd", Some(&ipc_socket_path()));
+        println!(
+            "\x1b[1;32m[netd] [  OK  ]\x1b[0m Network manager active ({})",
+            ipc_socket_path()
+        );
+    } else {
+        eprintln!(
+            "\x1b[1;31m[netd] [ FAIL ]\x1b[0m IPC unavailable; network state cannot be queried"
+        );
+    }
 
     loop {
         thread::sleep(Duration::from_secs(60));

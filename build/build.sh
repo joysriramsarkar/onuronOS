@@ -50,6 +50,11 @@ BINS=(
   nilrt-launch nilinstall nilfastbootd nilverify nilrecovery halctl
   present_demo bootsplash nilbus nilpkg hello busdemo animdemo lockscreen
   bridgedemo oobe launcher settings camdemo clockwidget nilshell nilc nilrt
+  # inputd owns evdev touch/key acquisition; without it the device has no input.
+  inputd nilup
+  # Native NilUI applications.
+  a11y backup bluetooth browser calculator camera display files language
+  messages music notes phone security sound sysupdate vpn wifi
 )
 
 for b in "${BINS[@]}"; do

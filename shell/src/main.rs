@@ -6,10 +6,12 @@ use std::fs::{self};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
+mod browser;
 mod i18n;
 mod notes;
 mod pin;
 mod simulated;
+mod term;
 
 // ─── ANSI Colors ──────────────────────────────────────────────────────────────
 const R: &str = "\x1b[0m"; // Reset
@@ -149,6 +151,7 @@ enum Screen {
     AppTerminal,
     AppCalculator,
     AppNotes,
+    AppBrowser,
     AppMusic,
     AppCamera,
     // Dialogs
@@ -168,6 +171,10 @@ struct AppState {
     compose_to: String,
     compose_body: String,
     terminal_history: Vec<String>,
+    /// Real command-execution session (cwd, exported env, exit status).
+    term: term::TermSession,
+    /// Real network browser state.
+    browser: browser::BrowserState,
     #[allow(dead_code)]
     settings_cursor: usize,
     files_path: String,
@@ -286,9 +293,11 @@ impl AppState {
             compose_to: String::new(),
             compose_body: String::new(),
             terminal_history: vec![
-                "OnuronOS Native Diagnostic Shell v1.0".into(),
-                "Type 'help' for available commands.".into(),
+                "OnuronOS terminal — real command execution (see 'help')".into(),
+                "Commands resolve against $PATH and run as child processes.".into(),
             ],
+            term: term::TermSession::new("/data".into(), "/data".into()),
+            browser: browser::BrowserState::default(),
             settings_cursor: 0,
             files_path: "/data".into(),
             pkg_cursor: 0,
@@ -434,69 +443,66 @@ fn read_line() -> String {
     line.trim().to_string()
 }
 
+/// Battery indicator for the status bar and lockscreen.
+///
+/// The reading comes from `powerd` through the `nilpower` client, not from
+/// `/sys/class/power_supply`. The shell is a native application and must not
+/// read hardware directly (AGENTS.md §6); going through the service also means
+/// the HAL (sysfs, Android Host Bridge, or QEMU) is resolved in one place.
+///
+/// When `powerd` is unreachable the payload is flagged `is_simulated` and the
+/// visible badge is appended, so a placeholder is never mistaken for a reading.
 fn get_battery_display() -> String {
-    for path in &[
-        "/sys/class/power_supply/battery/capacity",
-        "/sys/class/power_supply/BAT0/capacity",
-        "/sys/class/power_supply/BAT1/capacity",
-        "/data/nilos/battery",
-    ] {
-        if let Ok(text) = fs::read_to_string(path) {
-            if let Ok(val) = text.trim().parse::<u8>() {
-                return format!("🔋 {}%", val);
-            }
-        }
+    let info = nilpower::PowerClient::battery_info().unwrap_or_default();
+    if info.is_simulated {
+        format!("🔋 {}%  {}", info.capacity, simulated::badge())
+    } else if info.is_charging {
+        format!("🔋 {}% ⚡", info.capacity)
+    } else {
+        format!("🔋 {}%", info.capacity)
     }
-    for ac_path in &[
-        "/sys/class/power_supply/ac/online",
-        "/sys/class/power_supply/usb/online",
-    ] {
-        if let Ok(text) = fs::read_to_string(ac_path) {
-            if text.trim() == "1" {
-                return "⚡ AC".to_string();
-            }
-        }
-    }
-    "🔋 --%".to_string()
 }
 
+/// Battery telemetry from `powerd`, for screens that need more than the
+/// one-line indicator.
+fn get_battery_info() -> nilprotocol::BatteryInfoPayload {
+    nilpower::PowerClient::battery_info().unwrap_or_default()
+}
+
+/// Wi-Fi and cellular indicators for the status bar.
+///
+/// Network state comes from `netd` through the `nilnet` client rather than from
+/// `/sys/class/net`, for the same reason as the battery: the shell is a native
+/// application and the interface naming rules (`wl*`, `rmnet*`, ...) belong to
+/// the network service, not to the UI.
+///
+/// `state.wifi_enabled` / `state.cellular_enabled` remain meaningful as *user
+/// intent* (the airplane-mode toggles and the `wifi`/`cell` shell commands), so
+/// they are honoured when netd reports no corresponding hardware. When netd does
+/// report a real interface, the daemon's view wins and the "(sim)" suffix is
+/// dropped.
 fn get_network_display(state: &AppState) -> (String, String) {
-    let mut real_wifi: Option<bool> = None;
-    let mut real_cell: Option<bool> = None;
-    let mut real_eth: Option<bool> = None;
+    let net = nilnet::NetClient::state().unwrap_or_default();
 
-    if let Ok(entries) = fs::read_dir("/sys/class/net") {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name == "lo" {
-                continue;
-            }
-            let oper_path = entry.path().join("operstate");
-            let is_up = if let Ok(s) = fs::read_to_string(&oper_path) {
-                let st = s.trim();
-                st == "up" || st == "unknown"
-            } else {
-                false
-            };
-
-            if name.starts_with("wl") {
-                real_wifi = Some(is_up);
-            } else if name.starts_with("rmnet")
-                || name.starts_with("wwan")
-                || name.starts_with("cdc-wdm")
-            {
-                real_cell = Some(is_up);
-            } else if name.starts_with("eth") || name.starts_with("en") {
-                real_eth = Some(is_up);
-            }
-        }
-    }
+    // A real link of a given type, as reported by netd.
+    let real_wifi = net
+        .interfaces
+        .iter()
+        .find(|i| i.conn_type == nilprotocol::ConnectionType::Wifi);
+    let real_cell = net
+        .interfaces
+        .iter()
+        .find(|i| i.conn_type == nilprotocol::ConnectionType::Cellular);
+    let real_eth = net
+        .interfaces
+        .iter()
+        .find(|i| i.conn_type == nilprotocol::ConnectionType::Ethernet);
 
     let wifi_str = match real_wifi {
-        Some(true) => "📶 Wi-Fi".to_string(),
-        Some(false) => "✕ Wi-Fi".to_string(),
+        Some(iface) if iface.carrier_connected => "📶 Wi-Fi".to_string(),
+        Some(_) => "✕ Wi-Fi".to_string(),
         None => {
-            if let Some(true) = real_eth {
+            if real_eth.map(|i| i.carrier_connected).unwrap_or(false) {
                 "🌐 Eth".to_string()
             } else if state.wifi_enabled {
                 "📶 Wi-Fi".to_string()
@@ -507,10 +513,15 @@ fn get_network_display(state: &AppState) -> (String, String) {
     };
 
     let cell_str = match real_cell {
-        Some(true) => "▂▄▆█ 5G".to_string(),
-        Some(false) => "____ No Svc".to_string(),
+        Some(iface) if iface.carrier_connected => {
+            // Report the type netd actually detected, not a hard-coded "5G".
+            format!("▂▄▆█ {}", iface.conn_type.label())
+        }
+        Some(_) => "____ No Svc".to_string(),
         None => {
             if state.cellular_enabled {
+                // No modem hardware: `signal_bars` is a user-set demo value and
+                // is labelled as such.
                 match state.signal_bars {
                     4 => "▂▄▆█".to_string(),
                     3 => "▂▄▆_".to_string(),
@@ -753,10 +764,10 @@ fn draw_home(sink: &mut Sink, state: &AppState) {
     sink.println("  │   Alap Math        NilLang Notebook  Sonic Lab Player │");
     sink.println("  │                                                        │");
     sink.println(&format!(
-        "  │  {}[13] 📷 Camera{}                                          │",
-        FG_MAGENTA, FG_CYAN
+        "  │  {}[13] 📷 Camera{}    {}[14] 🌐 Browser{}                     │",
+        FG_MAGENTA, FG_CYAN, FG_BLUE, FG_CYAN
     ));
-    sink.println("  │   HDR Cam Subsystem                                    │");
+    sink.println("  │   HDR Cam Subsystem  Text HTTP Client                 │");
     sink.println("  │                                                        │");
     sink.println(&format!(
         "  │  {}[n] 🔔 Notifications  [l] 🔒 Lock screen  [run <id>]{}   │",
@@ -774,7 +785,7 @@ fn draw_home(sink: &mut Sink, state: &AppState) {
     sink.println("  ╰────────────────────────────────────────────────────────╯");
     sink.println(R);
     sink.print(&format!(
-        "  {}Choice (1-13 / search <q> / run <id> / n / l): {}",
+        "  {}Choice (1-14 / search <q> / run <id> / n / l): {}",
         FG_YELLOW, R
     ));
 }
@@ -1111,19 +1122,29 @@ fn draw_settings_section(sink: &mut Sink, section: usize, state: &AppState) {
             ));
         }
         4 => {
-            let batt = get_battery_display();
-            let status_str = fs::read_to_string("/sys/class/power_supply/battery/status")
-                .or_else(|_| fs::read_to_string("/sys/class/power_supply/BAT0/status"))
-                .unwrap_or_else(|_| "Discharging (Virtual)".into());
-            sink.println(&format!("  Battery Level:   {}", batt));
-            sink.println(&format!("  Charge Status:   {}", status_str.trim()));
+            // Telemetry comes from powerd via nilpower; the shell does not read
+            // /sys/class/power_supply itself.
+            let info = get_battery_info();
+            let sim = if info.is_simulated {
+                format!("  {}", simulated::badge())
+            } else {
+                String::new()
+            };
+            sink.println(&format!("  Battery Level:   🔋 {}%{}", info.capacity, sim));
+            sink.println(&format!("  Charge Status:   {}", info.status));
+            sink.println(&format!("  Voltage:         {} mV", info.voltage_mv));
+            sink.println(&format!("  Temperature:     {:.1} °C", info.temp_c));
+            sink.println(&format!("  Battery Health:  {}", info.health));
             sink.println(&format!(
                 "  Power Profile:   [{}]",
                 state.power_profile.to_uppercase()
             ));
             sink.println(&format!(
-                "  Power Daemon:    [socket: {}]",
-                get_socket_status("/run/onuron/power.sock")
+                "  Power Daemon:    [{}]",
+                match nilpower::PowerClient::socket_path() {
+                    Some(p) => format!("socket: {p}"),
+                    None => "OFFLINE — telemetry unavailable".to_string(),
+                }
             ));
             sink.println(&format!(
                 "  {}Commands: 'profile <balanced|powersave|performance>'{}",
@@ -1452,50 +1473,133 @@ fn draw_softbus(sink: &mut Sink) {
 fn draw_android(sink: &mut Sink) {
     sink.print(CL);
     sink.println(&format!(
-        "{}  🤖 Android Compatibility Layer (Track C) — Status: STUB  {}{}",
-        FG_YELLOW,
-        simulated::badge(),
-        R
+        "{}  🤖 Android Compatibility Layer (Track C){}",
+        FG_YELLOW, R
     ));
     sink.println(&format!(
         "{}  ──────────────────────────────────────────{}",
         FG_GRAY, R
     ));
     sink.println("");
-    sink.println(&format!(
-        "  {}Subsystem Architecture Boundary:{}",
-        FG_WHITE, R
-    ));
-    sink.println("  • Container Engine:  LXC [STUB — No container process running]");
-    sink.println("  • Userspace Status:  Planned (Track C) — not part of native platform spine");
-    sink.println("  • Architecture Note: Samsung S25 Track B is an isolated hosted preview,");
-    sink.println("                       NOT an embedded Android container runtime.");
-    sink.println("  • binder-shim:       Stub / Architectural prototype");
-    sink.println("  • Graphics Passthru: Wayland wl_surface proxy (Planned)");
+
+    // Query the real daemon. If it is not running we say so; we never invent a
+    // container state.
+    match nilandroid_client::AndroidBridge::status() {
+        Ok(st) => {
+            let (badge, color) = if st.is_running() {
+                ("RUNNING", FG_GREEN)
+            } else {
+                ("STOPPED", FG_YELLOW)
+            };
+            sink.println(&format!("  {}Container: {}{}{}", FG_WHITE, color, badge, R));
+            sink.println(&format!("  {}", st.status_line));
+            if let Some(pid) = st.pid {
+                sink.println(&format!("  • init PID:          {}", pid));
+            }
+            sink.println(&format!("  • rootfs:            {}", st.rootfs));
+        }
+        Err(e) => {
+            sink.println(&format!("  {}Container: UNAVAILABLE{}", FG_RED, R));
+            sink.println(&format!("  {}bridge error: {}{}", FG_GRAY, e, R));
+            sink.println(&format!(
+                "  {}Install a container rootfs, then start nilandroidd.{}",
+                FG_GRAY, R
+            ));
+        }
+    }
+
+    sink.println("");
+    sink.println("  • Isolation:         PID/mount/IPC/UTS/NET namespaces + cgroup v2");
+    sink.println("  • Architecture Note: Android runs as an isolated guest, never as");
+    sink.println("                       part of the native Onuron platform spine.");
     sink.println("");
     sink.println(&format!(
-        "  {}IPC Socket: /run/nilos/android.sock (Inactive){}",
+        "  {}IPC Socket: /run/nilos/android.sock{}",
         FG_GRAY, R
     ));
     sink.println("");
     sink.println(&format!(
-        "  {}Commands: 'status', 'start', 'home', 'back'{}",
+        "  {}Commands: 'status', 'start', 'stop', 'open <uri>', 'home', 'back'{}",
         FG_YELLOW, R
     ));
     sink.print(&format!("  {}> {}", FG_CYAN, R));
+}
+
+// ─── Browser App ─────────────────────────────────────────────────────────────
+fn draw_browser(sink: &mut Sink, state: &AppState) {
+    sink.print(CL);
+    sink.println(&format!(
+        "{}  🌐 Browser — real HTTP/HTTPS fetch (text mode){}",
+        FG_WHITE, R
+    ));
+    sink.println(&format!(
+        "{}  ──────────────────────────────────────────{}",
+        FG_GRAY, R
+    ));
+
+    if let Some(err) = &state.browser.error {
+        sink.println(&format!("  {}✕ {}{}", FG_RED, err, R));
+        sink.println(&format!(
+            "  {}Check the network: is netd up and is the interface configured?{}",
+            FG_GRAY, R
+        ));
+    } else if let Some(page) = &state.browser.page {
+        sink.println(&format!(
+            "  {}[{}]{} {}",
+            FG_GREEN, page.status, R, page.title
+        ));
+        sink.println(&format!(
+            "  {}{}{}{}",
+            FG_GRAY,
+            page.final_url,
+            if page.truncated { " [truncated]" } else { "" },
+            R
+        ));
+        sink.println(&format!(
+            "{}  ──────────────────────────────────────────{}",
+            FG_GRAY, R
+        ));
+        // Show a window of the page, starting at the scroll offset.
+        let view_height = 16;
+        let start = state.browser.scroll.min(page.lines.len());
+        let end = (start + view_height).min(page.lines.len());
+        for line in &page.lines[start..end] {
+            sink.println(&format!("  {}", line));
+        }
+        if end < page.lines.len() {
+            sink.println(&format!(
+                "  {}… {} more lines (press 'd' to scroll){}",
+                FG_GRAY,
+                page.lines.len() - end,
+                R
+            ));
+        }
+    } else {
+        sink.println("  Type an address to begin.");
+        sink.println("  A bare word is treated as a search query.");
+    }
+
+    sink.println(&format!(
+        "{}  ──────────────────────────────────────────{}",
+        FG_GRAY, R
+    ));
+    sink.println(&format!("  Status: {}", state.browser.status));
+    sink.println(&format!(
+        "  {}Enter a URL, or: 'd' down  'u' up  'top'  'home'  'back'{}",
+        FG_GRAY, R
+    ));
+    sink.print(&format!("  {}url> {}", FG_CYAN, R));
 }
 
 // ─── Terminal App ─────────────────────────────────────────────────────────────
 fn draw_terminal(sink: &mut Sink, state: &AppState) {
     sink.print(CL);
     sink.println(&format!(
-        "{}  💻 NilOS Diagnostic Shell  {}{}",
-        FG_WHITE,
-        simulated::badge(),
-        R
+        "{}  💻 OnuronOS terminal — real command execution{}",
+        FG_WHITE, R
     ));
     sink.println(&format!(
-        "{}  Type 'help' for commands, 'home' to exit{}",
+        "{}  Commands run as child processes. 'help' lists builtins, 'exit' closes.{}",
         FG_GRAY, R
     ));
     sink.println("");
@@ -1749,413 +1853,55 @@ fn eval_simple_math(expr: &str) -> Result<String, ()> {
     }
 }
 
-fn normalize_terminal_path(cwd: &str, target: &str) -> String {
-    let raw = if target == "~" || target.is_empty() {
-        "/data".to_string()
-    } else if target.starts_with('/') {
-        target.to_string()
-    } else if cwd == "/" {
-        format!("/{}", target)
-    } else {
-        format!("{}/{}", cwd, target)
-    };
-
-    let mut parts: Vec<&str> = Vec::new();
-    for seg in raw.split('/') {
-        match seg {
-            "" | "." => continue,
-            ".." => {
-                parts.pop();
-            }
-            other => parts.push(other),
-        }
-    }
-
-    if parts.is_empty() {
-        "/".to_string()
-    } else {
-        format!("/{}", parts.join("/"))
-    }
-}
-
-fn validate_terminal_dir(path: &str) -> Result<(), String> {
-    let p = Path::new(path);
-    if p.exists() {
-        if p.is_dir() {
-            Ok(())
-        } else {
-            Err(format!("cd: not a directory: {}", path))
-        }
-    } else {
-        // Fallback for well-known canonical system root mount points if not mounted on host
-        let allowed_roots = ["/", "/data", "/etc", "/tmp", "/run", "/proc", "/sys"];
-        if allowed_roots.contains(&path) {
-            Ok(())
-        } else {
-            Err(format!("cd: no such file or directory: {}", path))
-        }
-    }
-}
-
+/// Execute one terminal command line and append its real output to the
+/// scrollback. The actual work happens in `term::run_line`: builtins are
+/// handled in-process, everything else is resolved against $PATH and spawned as
+/// a child process. Nothing here fabricates output.
 fn handle_terminal_cmd(_sink: &mut Sink, state: &mut AppState, cmd: &str) {
+    use term::TermOutcome;
+
     let trimmed = cmd.trim();
-    if trimmed == "clear" {
-        state.terminal_history.clear();
+    if trimmed.is_empty() {
         return;
     }
-    let output = match trimmed {
-        "help" => {
-            format!("Commands: cd <dir>, pwd, ls [dir], cat <file>, python, calc <expr>, notes, music, camera, services, mem, disk, net, ps, bt, modem, audio, clear, uname, reboot, home, --diag  {}", simulated::badge())
-        }
-        "--diag" => {
-            let mut out = String::from("Diagnostic: Real vs Simulated Commands\n");
-            out.push_str("────────────────────────────────────────\n");
-            out.push_str("  [REAL]    mem      → /proc/meminfo (Linux)\n");
-            out.push_str("  [REAL]    net      → /sys/class/net (Linux sysfs)\n");
-            out.push_str("  [REAL]    ps       → /proc/*/comm (Linux)\n");
-            out.push_str("  [REAL]    bt       → /sys/class/bluetooth (Linux sysfs)\n");
-            out.push_str("  [REAL]    services → /run/nilos/*.sock + /proc\n");
-            out.push_str("  [REAL]    uname    → /proc/sys/kernel/osrelease\n");
-            out.push_str("  [REAL]    disk     → /proc/mounts + /data live file count\n");
-            out.push_str("  [REAL]    audio    → nilaudio / audiod IPC + /proc/asound\n");
-            out.push_str("  [REAL]    camera   → nilcam / camerad IPC + /dev/video*\n");
-            out.push_str("  [SIM]     modem    → fallback when no cellular modem hardware\n");
-            out
-        }
-        "pwd" => state.term_cwd.clone(),
-        "cd" | "cd ~" => {
-            state.term_cwd = "/data".into();
-            format!("Changed directory to {}", state.term_cwd)
-        }
-        _ if trimmed.starts_with("cd ") => {
-            let target = trimmed.trim_start_matches("cd ").trim();
-            let resolved = normalize_terminal_path(&state.term_cwd, target);
-            match validate_terminal_dir(&resolved) {
-                Ok(()) => {
-                    state.term_cwd = resolved;
-                    format!("Changed directory to {}", state.term_cwd)
-                }
-                Err(err_msg) => err_msg,
-            }
-        }
-        "ls" => {
-            match fs::read_dir(&state.term_cwd) {
-                Ok(entries) => {
-                    let mut out = format!("Contents of {}:\n", state.term_cwd);
-                    for e in entries.flatten() {
-                        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-                        out.push_str(&format!("  {}{}\n", e.file_name().to_string_lossy(), if is_dir { "/" } else { "" }));
-                    }
-                    out
-                }
-                Err(e) => {
-                    format!("ls: cannot access '{}': {}", state.term_cwd, e)
-                }
-            }
-        }
-        "python" | "python3" => {
-            "python: Full Python runtime is not embedded in OnuronOS minimal mobile userland. For arithmetic calculations, use 'calc <expr>'.".to_string()
-        }
-        _ if trimmed.starts_with("python ") || trimmed.starts_with("python3 ") || trimmed.starts_with("python -c") => {
-            "python: Full Python runtime is not embedded in OnuronOS minimal mobile userland. For arithmetic calculations, use 'calc <expr>'.".to_string()
-        }
-        _ if trimmed.starts_with("calc ") => {
-            let expr = trimmed.trim_start_matches("calc ").trim();
-            if let Ok(res) = eval_simple_math(expr) {
-                format!("🧮 Calculator Result: {} = {}", expr, res)
-            } else {
-                format!("🧮 Calculator: could not evaluate '{}'", expr)
-            }
-        }
-        "notes" => {
-            let mut out = String::from("📝 NilLang Notes (/data/notes/notes.json):\n");
-            for n in &state.notes {
-                out.push_str(&format!("  {}. [{}] {} ({})\n", n.id, n.tag, n.title, n.priority));
-            }
-            out
-        }
-        "music" => {
-            let status = nilaudio::AudioClient::get_status().ok();
-            let vol = status.as_ref().map(|s| s.volume).unwrap_or(75);
-            let sink_name = status.map(|s| s.sink_name).unwrap_or_else(|| "Speaker".into());
-            let mut out = format!("🎵 Audio & Playlist (Route: {}, Vol: {}%):\n", sink_name, vol);
-            if state.music_tracks.is_empty() {
-                out.push_str("  (No local audio files found in /data/music)\n");
-            } else {
-                for (i, (title, artist, path)) in state.music_tracks.iter().enumerate() {
-                    let mark = if i == state.music_track { "▶" } else { "•" };
-                    out.push_str(&format!("  {} {} — {} [{}]\n", mark, title, artist, path));
-                }
-            }
-            out
-        }
-        "services" => {
-            let mut out = String::from("OnuronOS Supervised Services:\n");
-            let sockets = [
-                ("powerd", "/run/onuron/power.sock"),
-                ("powerd-legacy", "/run/nilos/power.sock"),
-                ("inputd", "/run/nilos/input.sock"),
-                ("netd", "/run/onuron/net.sock"),
-                ("netd-legacy", "/run/nilos/net.sock"),
-                ("btd", "/run/nilos/bt.sock"),
-                ("telephonyd", "/run/nilos/telephony.sock"),
-                ("audiod", "/run/onuron/audio.sock"),
-                ("camerad", "/run/nilos/camera.sock"),
-                ("nilupd", "/run/nilos/update.sock"),
-                ("nilkeyd", "/run/nilos/keyd.sock"),
-                ("nilimed", "/run/nilos/ime.sock"),
-                ("softbus", "/run/nilos/bus.sock"),
-                ("notifyd", "/run/nilos/notify.sock"),
-                ("androidd", "/run/nilos/android.sock"),
-            ];
-            let mut found = false;
-            for (name, sock) in sockets {
-                if Path::new(sock).exists() {
-                    found = true;
-                    out.push_str(&format!("  • {:<14} ACTIVE ({})\n", name, sock));
-                }
-            }
-            if !found {
-                let mut proc_daemons = Vec::new();
-                if let Ok(entries) = fs::read_dir("/proc") {
-                    for entry in entries.flatten() {
-                        let fname = entry.file_name();
-                        if let Ok(pid) = fname.to_string_lossy().parse::<u32>() {
-                            if let Ok(comm) = fs::read_to_string(format!("/proc/{pid}/comm")) {
-                                let c = comm.trim().to_string();
-                                if ["nilinit", "powerd", "inputd", "netd", "btd", "telephonyd", "audiod", "camerad", "nilupd", "nilkeyd", "nilimed", "nilshell", "shell"].contains(&c.as_str()) {
-                                    proc_daemons.push((c, pid));
-                                }
-                            }
-                        }
-                    }
-                }
-                if !proc_daemons.is_empty() {
-                    out.push_str("Live Supervised Mobile Daemons (from /proc):\n");
-                    proc_daemons.sort_by_key(|(_, pid)| *pid);
-                    for (name, pid) in proc_daemons {
-                        out.push_str(&format!("  • {:<12} PID {:<5} ACTIVE\n", name, pid));
-                    }
-                } else {
-                    out.push_str(&format!(
-                        "  No live daemon sockets in /run/onuron or /proc (host PID: {}) {}\n",
-                        std::process::id(),
-                        simulated::badge()
-                    ));
-                }
-            }
-            out
-        }
-        "bt" => {
-            let mut out = String::from("Bluetooth Subsystem (btd):\n");
-            let bt_sysfs = Path::new("/sys/class/bluetooth");
-            if bt_sysfs.is_dir() {
-                if let Ok(entries) = fs::read_dir(bt_sysfs) {
-                    for entry in entries.flatten() {
-                        let name = entry.file_name().to_string_lossy().to_string();
-                        if name.starts_with("hci") {
-                            let addr = fs::read_to_string(entry.path().join("address"))
-                                .unwrap_or_else(|_| "00:00:00:00:00:00".into())
-                                .trim().to_uppercase();
-                            out.push_str(&format!("  • Adapter: {} [{}]\n", name, addr));
-                        }
-                    }
-                }
-            } else {
-                out.push_str("  bluetooth: no adapter detected (simulated environment)\n");
-            }
-            out.push_str(&format!("  • IPC Socket: /run/nilos/bt.sock ({})\n", get_socket_status("/run/nilos/bt.sock")));
-            out
-        }
-        "modem" | "telephony" => {
-            let sock_status = get_socket_status("/run/nilos/telephony.sock");
-            let has_tty = Path::new("/dev/ttyUSB0").exists() || Path::new("/dev/cdc-wdm0").exists();
-            if has_tty {
-                format!("Telephony (telephonyd): Hardware modem present • Socket: {}", sock_status)
-            } else {
-                format!("modem: no cellular modem detected (simulated environment) • Socket: {}", sock_status)
-            }
-        }
-        "audio" => {
-            match nilaudio::AudioClient::get_status() {
-                Ok(st) => format!(
-                    "Audio Policy (audiod): Sink='{}', Volume={}%, Muted={}",
-                    st.sink_name, st.volume, st.is_muted
-                ),
-                Err(_) => "audio: no audio hardware detected (simulated environment)".to_string(),
-            }
-        }
-        "camera" => {
-            match nilcam::CameraClient::get_info(state.camera_id) {
-                Ok(info) => format!(
-                    "Camera Subsystem (camerad): ID={}, Facing={}, Resolution={}, Formats={:?} {}",
-                    info.camera_id,
-                    info.facing,
-                    info.resolution,
-                    info.supported_formats,
-                    if Path::new("/dev/video0").exists() { "[V4L2 HARDWARE]" } else { simulated::badge() }
-                ),
-                Err(_) => "camera: no camera hardware detected (simulated environment)".to_string(),
-            }
-        }
-        "mem" => {
-            match fs::read_to_string("/proc/meminfo") {
-                Ok(info) => format!("Memory Info:\n{}", info),
-                Err(_) => "mem: meminfo not available on this platform".to_string(),
-            }
-        }
-        "disk" => {
-            let (data_files, data_bytes) = directory_usage_summary(Path::new("/data"));
-            let (tmp_files, tmp_bytes) = directory_usage_summary(Path::new("/tmp"));
-            let mounts_summary = fs::read_to_string("/proc/mounts")
-                .ok()
-                .and_then(|m| {
-                    m.lines()
-                        .find(|l| l.contains(" /data "))
-                        .map(|l| l.to_string())
-                })
-                .unwrap_or_else(|| "/data (unmounted host directory)".into());
-            format!(
-                "Storage:\n  Mount: {}\n  /data: {} files ({} bytes)\n  /tmp:  {} files ({} bytes)\n  OOBE:  {}\n  User:  {}",
-                mounts_summary,
-                data_files,
-                data_bytes,
-                tmp_files,
-                tmp_bytes,
-                if Path::new(OOBE_DONE).exists() { "✅ Done" } else { "⏳ Pending" },
-                state.user_name
-            )
-        }
-        "net" => {
-            let mut ifaces = Vec::new();
-            if let Ok(entries) = fs::read_dir("/sys/class/net") {
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let operstate = fs::read_to_string(entry.path().join("operstate"))
-                        .unwrap_or_else(|_| "unknown".into())
-                        .trim()
-                        .to_string();
-                    ifaces.push((name, operstate));
-                }
-            }
-            if !ifaces.is_empty() {
-                let mut out = String::from("Network Interfaces (Linux Sysfs):\n");
-                for (name, st) in ifaces {
-                    out.push_str(&format!("  • {:<8} [{}]\n", name, st));
-                }
-                out
-            } else {
-                format!(
-                    "Network: /sys/class/net unavailable on this host • netd socket: {} {}",
-                    get_socket_status("/run/onuron/net.sock"),
-                    simulated::badge()
-                )
-            }
-        }
-        "uname" => {
-            match fs::read_to_string("/proc/sys/kernel/osrelease") {
-                Ok(rel) => format!("OnuronOS 1.0.0 {}  Linux {}  Rust Userspace", std::env::consts::ARCH, rel.trim()),
-                Err(_) => format!("OnuronOS 1.0.0 {}  ({} host)  Rust Userspace {}", std::env::consts::ARCH, std::env::consts::OS, simulated::badge()),
-            }
-        }
-        "ps" => {
-            let mut procs = Vec::new();
-            if let Ok(entries) = fs::read_dir("/proc") {
-                for entry in entries.flatten() {
-                    let file_name = entry.file_name();
-                    let name_str = file_name.to_string_lossy();
-                    if let Ok(pid) = name_str.parse::<u32>() {
-                        let comm = fs::read_to_string(format!("/proc/{}/comm", pid))
-                            .unwrap_or_else(|_| "unknown".into())
-                            .trim()
-                            .to_string();
-                        procs.push((pid, comm));
-                    }
-                }
-            }
-            if !procs.is_empty() {
-                procs.sort_by_key(|(pid, _)| *pid);
-                let mut out = String::from("PID   COMMAND\n");
-                for (pid, cmd) in procs {
-                    out.push_str(&format!("{:<5} {}\n", pid, cmd));
-                }
-                out
-            } else {
-                format!(
-                    "PID   COMMAND (host /proc unavailable)\n{:<5} nilshell",
-                    std::process::id()
-                )
-            }
-        }
-        _ if trimmed.starts_with("ls ") => {
-            let target = trimmed.trim_start_matches("ls ").trim();
-            let resolved = normalize_terminal_path(&state.term_cwd, target);
-            match fs::read_dir(&resolved) {
-                Ok(entries) => {
-                    let mut out = format!("Contents of {}:\n", target);
-                    for e in entries.flatten() {
-                        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
-                        out.push_str(&format!("  {}{}\n", e.file_name().to_string_lossy(), if is_dir { "/" } else { "" }));
-                    }
-                    out
-                }
-                Err(e) => format!("ls: {}: {}", target, e),
-            }
-        }
-        _ if trimmed.starts_with("cat ") => {
-            let target = trimmed.trim_start_matches("cat ").trim();
-            let resolved = normalize_terminal_path(&state.term_cwd, target);
-            let p = Path::new(&resolved);
-            if p.exists() {
-                if p.is_file() {
-                    fs::read_to_string(p).unwrap_or_else(|e| format!("cat: {}: {}", target, e))
-                } else {
-                    format!("cat: {}: is a directory", target)
-                }
-            } else {
-                format!("cat: {}: no such file or directory", target)
-            }
-        }
-        "" => String::new(),
-        _ => {
-            let parts: Vec<&str> = trimmed.split_whitespace().collect();
-            if let Some((bin, args)) = parts.split_first() {
-                let mut c = std::process::Command::new(bin);
-                c.args(args);
-                if Path::new(&state.term_cwd).is_dir() {
-                    c.current_dir(&state.term_cwd);
-                }
-                match c.output() {
-                    Ok(out) => {
-                        let mut text = String::from_utf8_lossy(&out.stdout).to_string();
-                        let err = String::from_utf8_lossy(&out.stderr);
-                        if !err.is_empty() {
-                            if !text.is_empty() {
-                                text.push('\n');
-                            }
-                            text.push_str(&err);
-                        }
-                        if text.trim().is_empty() {
-                            format!("[Process exited with status {}]", out.status)
-                        } else {
-                            text.trim_end().to_string()
-                        }
-                    }
-                    Err(_) => format!("nilos: command not found: {}", cmd),
-                }
-            } else {
-                String::new()
-            }
-        }
-    };
 
-    if !output.is_empty() {
-        state.terminal_history.push(output);
+    let prompt = format!(
+        "{} {} $ {}",
+        state.user_name,
+        state.term.cwd.display(),
+        trimmed
+    );
+    state.terminal_history.push(prompt);
+
+    let outcome = term::run_line(&mut state.term, trimmed);
+    state.term_cwd = state.term.cwd.display().to_string();
+
+    match outcome {
+        TermOutcome::Silent => {}
+        TermOutcome::Exit => {
+            state
+                .terminal_history
+                .push("(terminal session ended; press Enter to reopen)".into());
+        }
+        TermOutcome::Clear => {
+            state.terminal_history.clear();
+            return;
+        }
+        TermOutcome::Output { text, status } => {
+            if !text.is_empty() {
+                for line in text.lines() {
+                    state.terminal_history.push(line.to_string());
+                }
+            }
+            if status != 0 {
+                state
+                    .terminal_history
+                    .push(format!("[exit status {}]", status));
+            }
+        }
     }
-    state.terminal_history.push(format!("nilos# {}", cmd));
 
-    // Keep history bounded
-    while state.terminal_history.len() > 20 {
+    while state.terminal_history.len() > 200 {
         state.terminal_history.remove(0);
     }
 }
@@ -2468,6 +2214,7 @@ fn main() {
             Screen::AppNilPkg => draw_nilpkg(&mut sink),
             Screen::AppSoftBus => draw_softbus(&mut sink),
             Screen::AppAndroid => draw_android(&mut sink),
+            Screen::AppBrowser => draw_browser(&mut sink, &state),
             Screen::AppTerminal => draw_terminal(&mut sink, &state),
             Screen::AppCalculator => draw_calculator(&mut sink, &state),
             Screen::AppNotes => draw_notes(&mut sink, &state),
@@ -2616,6 +2363,7 @@ fn main() {
                         "11" | "notes" => screen = Screen::AppNotes,
                         "12" | "music" => screen = Screen::AppMusic,
                         "13" | "camera" => screen = Screen::AppCamera,
+                        "14" | "browser" | "web" => screen = Screen::AppBrowser,
                         "n" | "notif" => screen = Screen::NotificationShade,
                         "l" | "lock" => {
                             screen = Screen::Lockscreen;
@@ -3097,12 +2845,63 @@ fn main() {
                 }
             }
 
+            // ── Browser ───────────────────────────────────────────────────────
+            Screen::AppBrowser => {
+                if cmd == "home" || cmd == "back" {
+                    screen = Screen::Home;
+                } else if cmd == "d" || cmd == "down" {
+                    state.browser.scroll_down(12);
+                } else if cmd == "u" || cmd == "up" {
+                    state.browser.scroll_up(12);
+                } else if cmd == "top" {
+                    state.browser.scroll = 0;
+                } else if !cmd.is_empty() {
+                    // A real network fetch happens here; it blocks the UI thread
+                    // until the request finishes or times out.
+                    state.browser.navigate(&cmd);
+                }
+            }
+
             // ── Android Compatibility ─────────────────────────────────────────
             Screen::AppAndroid => {
                 if cmd == "home" || cmd == "back" {
                     screen = Screen::Home;
-                } else if cmd == "start" || cmd == "status" || cmd == "stop" {
-                    sink.println("\n  [SIMULATED] Android compatibility container subsystem is currently a planned stub (see maturity.toml). Guest APK launch is not yet implemented.");
+                } else if cmd == "status" || cmd.is_empty() {
+                    match nilandroid_client::AndroidBridge::status() {
+                        Ok(st) => sink.println(&format!("\n  {}", st.status_line)),
+                        Err(e) => sink.println(&format!("\n  bridge unavailable: {}", e)),
+                    }
+                    sink.print("  Press Enter...");
+                    read_line();
+                } else if cmd == "start" {
+                    sink.println("\n  Starting Android container...");
+                    match nilandroid_client::AndroidBridge::start_container() {
+                        Ok(pid) => sink.println(&format!(
+                            "  {}Container started (init PID {}).{}",
+                            FG_GREEN, pid, R
+                        )),
+                        Err(e) => sink.println(&format!("  {}start failed: {}{}", FG_RED, e, R)),
+                    }
+                    sink.print("  Press Enter...");
+                    read_line();
+                } else if cmd == "stop" {
+                    match nilandroid_client::AndroidBridge::stop_container() {
+                        Ok(()) => sink.println(&format!("\n  {}Container stopped.{}", FG_GREEN, R)),
+                        Err(e) => sink.println(&format!("\n  {}stop failed: {}{}", FG_RED, e, R)),
+                    }
+                    sink.print("  Press Enter...");
+                    read_line();
+                } else if let Some(uri) = cmd.strip_prefix("open ") {
+                    match nilandroid_client::AndroidBridge::start_activity(
+                        "android.intent.action.VIEW",
+                        uri.trim(),
+                    ) {
+                        Ok(()) => sink.println(&format!(
+                            "\n  {}Intent delivered to container.{}",
+                            FG_GREEN, R
+                        )),
+                        Err(e) => sink.println(&format!("\n  {}intent failed: {}{}", FG_RED, e, R)),
+                    }
                     sink.print("  Press Enter...");
                     read_line();
                 }
@@ -3399,6 +3198,8 @@ mod tests {
             compose_to: String::new(),
             compose_body: String::new(),
             terminal_history: Vec::new(),
+            term: term::TermSession::new("/data".into(), "/data".into()),
+            browser: browser::BrowserState::default(),
             settings_cursor: 0,
             files_path: "/data".into(),
             pkg_cursor: 0,
@@ -3448,16 +3249,37 @@ mod tests {
 
     #[test]
     fn test_network_display_airplane_mode() {
+        // The guard is "netd reports no real link", not "/sys/class/net is
+        // absent": the shell no longer inspects sysfs itself, so a test that
+        // checked for the directory would be testing the old implementation.
         let mut state = create_test_state("OfflineUser");
         state.wifi_enabled = false;
         state.cellular_enabled = false;
         state.signal_bars = 0;
 
         let (wifi, cell) = get_network_display(&state);
-        if !Path::new("/sys/class/net").exists() {
+        if !nilnet::NetClient::is_daemon_active() {
             assert_eq!(cell, "✈️ Offline");
             assert_eq!(wifi, "✕ Wi-Fi");
         }
+    }
+
+    #[test]
+    fn status_bar_uses_the_service_boundary_for_the_battery() {
+        // The badge must come from a payload, and a simulated payload must be
+        // labelled so a placeholder is never read as a real reading.
+        let shown = get_battery_display();
+        let info = get_battery_info();
+        assert!(
+            shown.contains(&info.capacity.to_string()),
+            "badge {shown:?} does not reflect capacity {}",
+            info.capacity
+        );
+        assert_eq!(
+            shown.contains(simulated::badge()),
+            info.is_simulated,
+            "badge simulation marker disagrees with the payload flag"
+        );
     }
 
     #[test]
@@ -3500,52 +3322,86 @@ mod tests {
     }
 
     #[test]
-    fn test_terminal_command_semantics() {
+    fn test_terminal_runs_real_builtins_and_propagates_failure() {
         let mut sink = Sink::new();
         let mut state = create_test_state("Tester");
 
-        handle_terminal_cmd(&mut sink, &mut state, "calc 25 * 4");
-        assert!(state.terminal_history.iter().any(|h| h.contains("100")));
-
-        handle_terminal_cmd(&mut sink, &mut state, "python -c \"import sys\"");
+        // A builtin runs in-process and its output reaches the scrollback.
+        handle_terminal_cmd(&mut sink, &mut state, "echo real-output-marker");
         assert!(state
             .terminal_history
             .iter()
-            .any(|h| h.contains("Full Python runtime is not embedded")));
+            .any(|h| h.contains("real-output-marker")));
 
-        // Test math execution is not falsely claimed as Python output
-        handle_terminal_cmd(&mut sink, &mut state, "python -c \"2 + 2\"");
+        // A missing command reports 127 and says so instead of inventing output.
+        state.term.env.push(("PATH".into(), "/nonexistent".into()));
+        handle_terminal_cmd(&mut sink, &mut state, "no-such-binary-onuron-xyz");
         assert!(state
             .terminal_history
             .iter()
-            .any(|h| h.contains("Full Python runtime is not embedded")));
+            .any(|h| h.contains("command not found")));
+        assert!(state
+            .terminal_history
+            .iter()
+            .any(|h| h.contains("[exit status 127]")));
+    }
+
+    #[test]
+    fn test_terminal_executes_a_real_child_process() {
+        let echo = ["/bin/echo", "/usr/bin/echo"]
+            .iter()
+            .find(|p| Path::new(p).exists());
+        let Some(echo) = echo else { return };
+
+        let mut sink = Sink::new();
+        let mut state = create_test_state("Tester");
+        handle_terminal_cmd(
+            &mut sink,
+            &mut state,
+            &format!("{echo} child-process-marker"),
+        );
+        assert!(state
+            .terminal_history
+            .iter()
+            .any(|h| h.contains("child-process-marker")));
     }
 
     #[test]
     fn test_terminal_cd_path_traversal_and_validation() {
         let mut sink = Sink::new();
         let mut state = create_test_state("Tester");
-        state.term_cwd = "/data".into();
 
-        // cd .. from /data resolves to /
+        // Use a real, existing directory as $HOME so `cd ~` is testable off-device.
+        let home = term::normalize_logical(&std::env::temp_dir());
+        state.term = term::TermSession::new(home.clone(), home.clone());
+        state.term_cwd = home.display().to_string();
+
+        // cd .. resolves lexically to the parent of the temp dir.
         handle_terminal_cmd(&mut sink, &mut state, "cd ..");
-        assert_eq!(state.term_cwd, "/");
+        let parent = home.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        assert_eq!(state.term_cwd, parent.display().to_string());
 
-        // cd ../../../ clamps to / without escaping
-        handle_terminal_cmd(&mut sink, &mut state, "cd ../../..");
-        assert_eq!(state.term_cwd, "/");
+        // Repeated .. clamps at root and never escapes it.
+        handle_terminal_cmd(&mut sink, &mut state, "cd ../../../../../../..");
+        let expected_root = if cfg!(windows) {
+            parent
+                .ancestors()
+                .last()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "/".into())
+        } else {
+            "/".to_string()
+        };
+        assert_eq!(state.term_cwd, expected_root);
 
-        // Attempting to cd to nonexistent directory fails and does NOT change term_cwd
+        // cd to a nonexistent directory fails and does NOT change term_cwd.
         handle_terminal_cmd(&mut sink, &mut state, "cd /nonexistent_system_dir_xyz");
-        assert!(state
-            .terminal_history
-            .iter()
-            .any(|h| h.contains("no such file or directory")));
-        assert_eq!(state.term_cwd, "/");
+        assert!(state.terminal_history.iter().any(|h| h.contains("cd:")));
+        assert_eq!(state.term_cwd, expected_root);
 
-        // cd ~ returns to /data
+        // cd ~ returns to the session home.
         handle_terminal_cmd(&mut sink, &mut state, "cd ~");
-        assert_eq!(state.term_cwd, "/data");
+        assert_eq!(state.term_cwd, home.display().to_string());
     }
 
     #[test]
@@ -3554,10 +3410,12 @@ mod tests {
         let mut state = create_test_state("Tester");
 
         handle_terminal_cmd(&mut sink, &mut state, "cat nonexistent_missing_file.log");
+        // `cat` is a real binary; a missing file makes it fail with a nonzero
+        // status, which the terminal surfaces verbatim.
         assert!(state
             .terminal_history
             .iter()
-            .any(|h| h.contains("no such file or directory")));
+            .any(|h| h.contains("exit status") || h.contains("No such file")));
     }
 
     #[test]

@@ -20,8 +20,7 @@ pub const SIMULATED_SCREENS: &[(&str, &str)] = &[
     ("phone", "VoLTE call layer uses simulated fallback when modem hardware is absent"),
     ("settings", "system/security state (SELinux, fscrypt) is unverified when kernel/storage policy is unmounted"),
     ("softbus", "peer discovery uses local registry when mDNS/QUIC daemon is offline"),
-    ("android", "container status is placeholder text; no LXC container is started"),
-    ("terminal", "hardware commands (`modem`, `audio`, `camera`) use simulated fallback when devices are absent"),
+    ("android", "guest Android userspace is not bundled; the screen reports UNAVAILABLE until a container rootfs is installed"),
     ("music", "audio playback uses simulated output when ALSA hardware is absent"),
     ("camera", "viewfinder and frame capture use simulated fallback when live camerad/V4L2 hardware is absent"),
 ];
@@ -63,6 +62,7 @@ pub fn screen_key(screen: &crate::Screen) -> &'static str {
         AppNotes => "notes",
         AppMusic => "music",
         AppCamera => "camera",
+        AppBrowser => "browser",
         NotificationShade => "notifications",
     }
 }

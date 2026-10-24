@@ -1,6 +1,9 @@
 // runtime/nilui-gpu/src/bin/touch_compositor.rs — Interactive DRM/KMS Mobile Touch Compositor Session
 use nilui_gpu::{KmsPresenter, SwipeGesture, TouchCompositor};
 
+/// 2 = the session ran but no panel was reached.
+const EXIT_NO_PANEL: i32 = 2;
+
 fn main() {
     println!("\x1b[1;36m=========================================================\x1b[0m");
     println!("\x1b[1;36m     Onuron OS: Direct DRM/KMS Mobile Touch Compositor   \x1b[0m");
@@ -100,5 +103,15 @@ fn main() {
         stats.frame_index, stats.frame_time_ms
     );
 
-    println!("\x1b[1;32m[touch_compositor] [ SUCCESS ] Interactive touch compositor session executed cleanly.\x1b[0m");
+    if presenter.drm_device.is_hardware() {
+        println!("\x1b[1;32m[touch_compositor] [ SUCCESS ] Interactive touch compositor session executed cleanly.\x1b[0m");
+    } else {
+        let reason = presenter
+            .drm_device
+            .backend
+            .reason()
+            .unwrap_or("no display device");
+        println!("\x1b[1;33m[touch_compositor] [ NO PANEL ] Frames composed in memory; nothing was displayed ({reason}).\x1b[0m");
+        std::process::exit(EXIT_NO_PANEL);
+    }
 }

@@ -4,7 +4,9 @@
 // in the page cache when power is lost. These helpers fsync the file, then the
 // containing directory, so the rename itself is durable.
 
-use std::fs::{self, File, OpenOptions};
+#[cfg(windows)]
+use std::fs::OpenOptions;
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 

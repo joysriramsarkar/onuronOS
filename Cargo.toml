@@ -44,6 +44,8 @@ members = [
   "runtime/nilnotify",
   "runtime/nilcam",
   "runtime/nilaudio",
+  "runtime/nilpower",
+  "runtime/nilnet",
   "runtime/nilauth",
   "runtime/nillang",
   "protocol",

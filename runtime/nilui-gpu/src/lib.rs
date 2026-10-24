@@ -2,13 +2,16 @@
 pub mod atlas;
 pub mod compositor;
 pub mod drm;
+pub mod drm_uapi;
+pub mod ioctl;
 pub mod present;
 pub mod renderer;
 pub mod touch;
 pub mod vkctx;
+pub mod wayland;
 
 pub use compositor::{PixelBuffer, Rect};
-pub use drm::{DrmDevice, DrmMode, DumbBuffer};
+pub use drm::{connector_type_name, DisplayInfo, DrmBackend, DrmDevice, DrmMode, DumbBuffer};
 pub use present::{KmsPresenter, PresentationStats};
 pub use renderer::Renderer2D;
 pub use touch::{AccessibilityRole, MobileScreen, SwipeGesture, TouchCompositor, TouchTarget};

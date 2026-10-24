@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+mod evdev;
+
 // ─── Linux evdev constants ────────────────────────────────────────────────────
 pub const EV_SYN: u16 = 0x00;
 pub const EV_KEY: u16 = 0x01;
@@ -284,10 +286,13 @@ pub struct MultiTouchTracker {
     screen_height: f32,
     calibration: TouchCalibration,
     gesture_engine: GestureRecognizer,
+    /// Destination for recognised events. Shared with the IPC poll handler, so
+    /// whatever a reader thread recognises is immediately readable by clients.
+    out: Arc<Mutex<VecDeque<InputEvent>>>,
 }
 
 impl MultiTouchTracker {
-    pub fn new(width: f32, height: f32) -> Self {
+    pub fn new(width: f32, height: f32, out: Arc<Mutex<VecDeque<InputEvent>>>) -> Self {
         Self {
             slots: HashMap::new(),
             current_slot: 0,
@@ -301,7 +306,21 @@ impl MultiTouchTracker {
                 rotation: ScreenRotation::Portrait,
             },
             gesture_engine: GestureRecognizer::new(),
+            out,
         }
+    }
+
+    /// Push a recognised event onto the shared queue, dropping the oldest entry
+    /// when the queue is saturated so a stalled client cannot exhaust memory.
+    fn emit(&self, ev: InputEvent) {
+        let mut q = match self.out.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        if q.len() >= 256 {
+            q.pop_front();
+        }
+        q.push_back(ev);
     }
 
     pub fn set_calibration(&mut self, cal: TouchCalibration) {
@@ -321,7 +340,7 @@ impl MultiTouchTracker {
         let slot = self.slots.entry(self.current_slot).or_default();
         match code {
             ABS_MT_SLOT => {
-                self.current_slot = value as u32;
+                self.current_slot = value.max(0) as u32;
                 None
             }
             ABS_MT_TRACKING_ID => {
@@ -332,10 +351,13 @@ impl MultiTouchTracker {
                         slot.tracking_id = -1;
                         let up_x = slot.x;
                         let up_y = slot.y;
-                        let _gestures = self.gesture_engine.on_touch_up(up_x, up_y);
-                        return Some(InputEvent::TouchUp {
-                            id: self.current_slot,
-                        });
+                        let id = self.current_slot;
+                        let gestures = self.gesture_engine.on_touch_up(up_x, up_y);
+                        self.emit(InputEvent::TouchUp { id });
+                        for g in gestures {
+                            self.emit(g);
+                        }
+                        return Some(InputEvent::TouchUp { id });
                     }
                 } else {
                     // New touch down
@@ -362,18 +384,26 @@ impl MultiTouchTracker {
     pub fn handle_syn(&mut self) -> Option<InputEvent> {
         let (w, h) = (self.screen_width, self.screen_height);
         let cal = self.calibration.clone();
+        let id = self.current_slot;
         let slot = self.slots.get_mut(&self.current_slot)?;
         if slot.dirty && slot.active {
             slot.dirty = false;
             let (tx, ty) = cal.transform(slot.raw_x, slot.raw_y, w, h);
+            let (prev_x, prev_y) = (slot.x, slot.y);
             slot.x = tx;
             slot.y = ty;
-            self.gesture_engine.on_touch_down(slot.x, slot.y);
-            Some(InputEvent::TouchDown {
-                id: self.current_slot,
-                x: slot.x,
-                y: slot.y,
-            })
+            let is_first_report = prev_x == 0.0 && prev_y == 0.0;
+            if is_first_report {
+                self.gesture_engine.on_touch_down(tx, ty);
+                self.emit(InputEvent::TouchDown { id, x: tx, y: ty });
+                Some(InputEvent::TouchDown { id, x: tx, y: ty })
+            } else {
+                self.emit(InputEvent::TouchMove { id, x: tx, y: ty });
+                if let Some(drag) = self.gesture_engine.on_touch_move(tx, ty) {
+                    self.emit(drag);
+                }
+                Some(InputEvent::TouchMove { id, x: tx, y: ty })
+            }
         } else {
             None
         }
@@ -390,7 +420,7 @@ impl MultiTouchTracker {
         }
         .to_string();
 
-        match value {
+        let ev = match value {
             1 => Some(InputEvent::KeyDown {
                 code: code as u32,
                 name,
@@ -400,7 +430,11 @@ impl MultiTouchTracker {
                 name,
             }),
             _ => None,
+        };
+        if let Some(ref e) = ev {
+            self.emit(e.clone());
         }
+        ev
     }
 
     pub fn dimensions(&self) -> (f32, f32) {
@@ -484,28 +518,50 @@ pub fn handle_ipc_request(
 fn main() {
     println!("\x1b[1;36m[inputd]\x1b[0m Onuron OS Unified Input Subsystem Initializing...");
 
-    let tracker = Arc::new(Mutex::new(MultiTouchTracker::new(1080.0, 2340.0)));
     let event_queue: Arc<Mutex<VecDeque<InputEvent>>> = Arc::new(Mutex::new(VecDeque::new()));
+    // The tracker writes recognised gestures into the same queue the IPC poll
+    // handler drains, so a client's InputPollEvents sees real device input.
+    let tracker = Arc::new(Mutex::new(MultiTouchTracker::new(
+        1080.0,
+        2340.0,
+        Arc::clone(&event_queue),
+    )));
     let _ = (&tracker, &event_queue);
     let _ = fs::create_dir_all("/run/onuron");
 
     #[cfg(target_os = "linux")]
     {
+        // Real evdev acquisition: open every consumable /dev/input/event* node
+        // and run a poll()-driven reader thread per device. Without this the
+        // tracker above would never receive a single touch event.
         let tracker_clone = Arc::clone(&tracker);
         let queue_clone = Arc::clone(&event_queue);
         thread::spawn(move || {
-            // Scan /dev/input for event devices
-            if let Ok(entries) = fs::read_dir("/dev/input") {
-                for entry in entries.flatten() {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    if name.starts_with("event") {
-                        let path = entry.path();
-                        println!("[inputd] Found input device: {}", path.display());
-                    }
-                }
+            let devices = evdev::open_all(std::path::Path::new("/dev/input"));
+            if devices.is_empty() {
+                eprintln!(
+                    "[inputd] No consumable evdev devices under /dev/input \
+                     (touch/key input unavailable on this boot)"
+                );
+                return;
             }
-            let _ = (tracker_clone, queue_clone);
+
+            for dev in devices {
+                println!(
+                    "[inputd] evdev: {} \"{}\" ({:?}, x={:?}, y={:?}, mt_b={})",
+                    dev.path.display(),
+                    dev.name,
+                    dev.class,
+                    dev.x_range,
+                    dev.y_range,
+                    dev.multitouch_b
+                );
+                // Each device gets its own reader; the tracker is shared so
+                // multiple digitisers merge into one event stream.
+                evdev::spawn_reader(dev, Arc::clone(&tracker_clone));
+            }
         });
+        let _ = queue_clone;
     }
 
     #[cfg(unix)]
@@ -558,9 +614,15 @@ fn main() {
 mod tests {
     use super::*;
 
+    /// Test-only constructor: the tracker needs an output queue, and tests that
+    /// only exercise gesture/coordinate logic do not care where events land.
+    fn new_tracker(width: f32, height: f32) -> MultiTouchTracker {
+        MultiTouchTracker::new(width, height, Arc::new(Mutex::new(VecDeque::new())))
+    }
+
     #[test]
     fn test_touch_down_and_up() {
-        let mut tracker = MultiTouchTracker::new(720.0, 1280.0);
+        let mut tracker = new_tracker(720.0, 1280.0);
 
         tracker.handle_abs(ABS_MT_SLOT, 0);
         tracker.handle_abs(ABS_MT_TRACKING_ID, 100);
@@ -609,7 +671,7 @@ mod tests {
 
     #[test]
     fn test_hardware_keys() {
-        let mut tracker = MultiTouchTracker::new(720.0, 1280.0);
+        let mut tracker = new_tracker(720.0, 1280.0);
 
         let power_down = tracker.handle_key(KEY_POWER, 1);
         assert_eq!(
@@ -632,7 +694,7 @@ mod tests {
 
     #[test]
     fn test_input_ipc_poll_and_inject() {
-        let tracker = Arc::new(Mutex::new(MultiTouchTracker::new(720.0, 1280.0)));
+        let tracker = Arc::new(Mutex::new(new_tracker(720.0, 1280.0)));
         let queue = Arc::new(Mutex::new(VecDeque::new()));
 
         // 1. Ping
@@ -679,7 +741,7 @@ mod tests {
 
     #[test]
     fn test_touch_calibration_and_scaling() {
-        let mut tracker = MultiTouchTracker::new(1080.0, 2340.0);
+        let mut tracker = new_tracker(1080.0, 2340.0);
         // Hardware touch digitizer reports raw range 0..4095
         tracker.set_calibration(TouchCalibration {
             raw_min_x: 0.0,
@@ -708,7 +770,7 @@ mod tests {
 
     #[test]
     fn test_screen_rotation_coordinate_transform() {
-        let mut tracker = MultiTouchTracker::new(1080.0, 2340.0);
+        let mut tracker = new_tracker(1080.0, 2340.0);
         tracker.set_calibration(TouchCalibration {
             raw_min_x: 0.0,
             raw_max_x: 1080.0,

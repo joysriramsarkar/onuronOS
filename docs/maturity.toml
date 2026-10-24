@@ -57,8 +57,15 @@ simulated = false
 [[entries]]
 name = "DRM/KMS Direct Compositor (nilui-gpu)"
 tier = "functional-prototype"
-details = "Direct /dev/dri/card0 modesetting, dumb buffer allocation, 120Hz/60Hz triple buffering, 2D rasterizer, interactive touch compositor, bootsplash & presentation demo"
-evidence = ["runtime/nilui-gpu/src/", "runtime/nilui-gpu/shaders/"]
+details = "Real /dev/dri/card* ioctl path: card enumeration, GETRESOURCES/GETCONNECTOR/GETENCODER/GETCRTC discovery, preferred-mode selection, CREATE_DUMB+MAP_DUMB+ADDFB2 scanout buffers, SETCRTC, and VBLANK-synchronised page flips that block on DRM_EVENT_FLIP_COMPLETE; plus a 2D rasterizer, touch compositor, bootsplash and presentation demo. ioctl request numbers and UAPI struct sizes are asserted against the kernel headers. NOT yet validated on physical hardware: no DRM node exists in the dev container, so the panel path is unproven"
+evidence = ["runtime/nilui-gpu/src/drm.rs", "runtime/nilui-gpu/src/drm_uapi.rs", "runtime/nilui-gpu/src/ioctl.rs", "runtime/nilui-gpu/src/compositor.rs", "runtime/nilui-gpu/src/present.rs"]
+simulated = false
+
+[[entries]]
+name = "Wayland Compositor (nilui-gpu, hand-rolled protocol)"
+tier = "functional-prototype"
+details = "A Wayland server written directly against the wire protocol (no libwayland): message framing, wl_display/wl_registry/wl_compositor/wl_surface/wl_shm/wl_shm_pool/wl_buffer/wl_callback/wl_output/wl_seat/wl_touch, SCM_RIGHTS descriptor passing, memfd pools, and wl_display.error before close. Committed surfaces are composited on the CPU (scale-to-fit, source-over alpha, fullscreen/tiled layouts) into the existing DRM/KMS present path, with an eventfd wake so a presenter blocks instead of polling. Verified by 101 in-crate tests plus a cross-process test that runs the real `wayland_compositor` and `wayland_surface_producer` binaries against each other over a real socket (and that test was confirmed to fail when compositing is disabled). NOT implemented: linux-dmabuf/GPU buffer import, wl_region clipping, wl_surface damage-limited redraw, pointer/keyboard events, subsurfaces, and xdg-shell. No physical panel has run this"
+evidence = ["runtime/nilui-gpu/src/wayland/wire.rs", "runtime/nilui-gpu/src/wayland/protocol.rs", "runtime/nilui-gpu/src/wayland/shm.rs", "runtime/nilui-gpu/src/wayland/server.rs", "runtime/nilui-gpu/src/wayland/compose.rs", "runtime/nilui-gpu/src/wayland/client.rs", "runtime/nilui-gpu/src/bin/wayland_compositor.rs", "runtime/nilui-gpu/src/bin/wayland_surface_producer.rs", "runtime/nilui-gpu/tests/wayland_cross_process.rs"]
 simulated = false
 
 [[entries]]
@@ -164,15 +171,15 @@ simulated = false
 [[entries]]
 name = "Power Daemon (powerd)"
 tier = "functional-prototype"
-details = "NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes"
-evidence = ["services/powerd/"]
+details = "NilHAL sysfs & Android BatteryManager bridge, wakelock governor, screen timeout, performance modes. Battery telemetry is served over the versioned `nilprotocol` frame contract (`PowerGetBattery`/`PowerBatteryInfo`) and consumed via `runtime/nilpower`; the daemon reports a failed IPC bind as `[ FAIL ]` rather than a false OK"
+evidence = ["services/powerd/", "runtime/nilpower/", "protocol/src/lib.rs"]
 simulated = false
 
 [[entries]]
 name = "Network Daemon (netd)"
 tier = "functional-prototype"
-details = "NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC"
-evidence = ["services/netd/"]
+details = "NilHAL Linux sysfs & Android ConnectivityManager bridge, link status, DNS, and network IPC. Interface state is served over the versioned `nilprotocol` frame contract (`NetGetState`/`NetStateInfo`) and consumed via `runtime/nilnet`; the daemon reports a failed IPC bind as `[ FAIL ]` rather than a false OK"
+evidence = ["services/netd/", "runtime/nilnet/", "protocol/src/lib.rs"]
 simulated = false
 
 [[entries]]
@@ -247,19 +254,25 @@ simulated = false
 
 [[entries]]
 name = "Android Compatibility Layer"
+tier = "functional-prototype"
+details = "Real container lifecycle in nilandroidd: rootfs probe requires an executable Android init, launch performs unshare(PID|NS|IPC|UTS|NET) + pivot_root + fresh /proc,/sys,/dev with /system,/vendor,/data bind-mounted from container storage, cgroup v2 limits applied to the real init PID; state is derived from the live child process and reported as unavailable when no rootfs is installed"
+evidence = ["android/", "android-host/", "services/nilandroidd/", "runtime/nilandroid-client/"]
+simulated = false
+
+[[entries]]
+name = "Android screen (nilshell)"
 tier = "stub"
-details = "Android screen shows placeholder container state; guest container isolation verified (namespaces, cgroups, device whitelist); no LXC/Waydroid container launched from UI yet [SIMULATED]"
-evidence = ["android/", "android-host/", "services/nilandroidd/"]
+details = "The screen reports the real container state from nilandroidd, but no guest Android userspace or graphics passthrough is bundled, so no Android UI can be shown [SIMULATED]"
+evidence = ["shell/src/main.rs", "runtime/nilandroid-client/"]
 simulated = true
 ui_screens = ["android"]
 
 [[entries]]
 name = "Diagnostic Terminal (nilshell)"
-tier = "stub"
-details = "ps, services and net output is fabricated; ls/cat/mem read real kernel/filesystem data [SIMULATED]"
-evidence = ["shell/src/main.rs"]
-simulated = true
-ui_screens = ["terminal"]
+tier = "functional-prototype"
+details = "Real command execution: builtins run in-process (cd/pwd/export/unset/echo/which/clear/exit), every other command is resolved against $PATH and spawned as a child process with stdin/stdout/stderr wired, output capped at 64 KiB and commands killed after 20 s; exit status is reported verbatim"
+evidence = ["shell/src/term.rs", "shell/src/main.rs"]
+simulated = false
 
 [[entries]]
 name = "NilHAL Unified Subsystem"
@@ -283,11 +296,11 @@ evidence = ["targets/", "build/qemu-boot.sh"]
 simulated = false
 
 [[entries]]
-name = "Status Bar (simulated indicators)"
-tier = "stub"
-details = "Battery, signal and clock indicators are demo values, marked ⚠SIM on screen across the shell [SIMULATED]"
-evidence = ["shell/src/simulated.rs"]
-simulated = true
+name = "Status Bar (service-backed telemetry)"
+tier = "functional-prototype"
+details = "Battery, Wi-Fi/cellular and clock indicators are read from the owning services (`powerd` via `nilpower`, `netd` via `nilnet`), not from `/sys` directly. Each indicator falls back to a visibly-marked `[SIMULATED]` value only when its service is unreachable, and the cellular bars honour the local airplane-mode toggle when no modem hardware exists"
+evidence = ["shell/src/main.rs", "runtime/nilpower/", "runtime/nilnet/", "shell/src/simulated.rs"]
+simulated = false
 
 [[entries]]
 name = "Alap Framework (alap)"
@@ -341,8 +354,15 @@ evidence = ["apps/busdemo/", "apps/bridgedemo/", "apps/animdemo/"]
 simulated = false
 
 [[entries]]
+name = "Browser (nilshell text client)"
+tier = "functional-prototype"
+details = "Real HTTP/HTTPS fetch over ureq/rustls with a 20 s timeout and 512 KiB body cap; HTML reduced to text (script/style contents dropped, block tags become line breaks, entities decoded), title extraction, bounded scrolling; CSS, JavaScript and images are not rendered and the UI says so"
+evidence = ["shell/src/browser.rs", "shell/src/main.rs"]
+simulated = false
+
+[[entries]]
 name = "NilBrowser"
 tier = "experimental"
-details = "Web browser (nilbrowser) for desktop simulation; full browser not yet implemented on mobile [SIMULATED]"
+details = "Desktop webview shell (wry/tao) used by the simulator host; not part of the mobile native platform [SIMULATED]"
 evidence = ["nilsim/src/", "apps/nilbrowser/src/"]
 simulated = true

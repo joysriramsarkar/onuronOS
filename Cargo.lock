@@ -1504,6 +1504,7 @@ dependencies = [
 name = "inputd"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "nilprotocol",
  "nilsd",
  "serde",
@@ -1909,13 +1910,20 @@ dependencies = [
 [[package]]
 name = "nilandroid-client"
 version = "0.1.0"
+dependencies = [
+ "nilprotocol",
+ "serde_json",
+]
 
 [[package]]
 name = "nilandroidd"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "nilprotocol",
+ "nilrt",
  "nilsd",
+ "nix 0.27.1",
  "serde",
  "serde_json",
 ]
@@ -2041,6 +2049,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "nilnet"
+version = "0.1.0"
+dependencies = [
+ "nilprotocol",
+]
+
+[[package]]
 name = "nilnotify"
 version = "0.1.0"
 dependencies = [
@@ -2074,6 +2089,13 @@ dependencies = [
  "tar",
  "toml",
  "ureq",
+]
+
+[[package]]
+name = "nilpower"
+version = "0.1.0"
+dependencies = [
+ "nilprotocol",
 ]
 
 [[package]]
@@ -2111,17 +2133,21 @@ dependencies = [
 name = "nilshell"
 version = "0.1.0"
 dependencies = [
+ "nilandroid-client",
  "nilaudio",
  "nilbus-client",
  "nilcam",
+ "nilnet",
  "nilnotify",
  "nilpkg",
+ "nilpower",
  "nilprotocol",
  "nilsd",
  "rand 0.8.8",
  "serde",
  "serde_json",
  "sha2",
+ "ureq",
 ]
 
 [[package]]

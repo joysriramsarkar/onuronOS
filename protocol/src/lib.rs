@@ -585,6 +585,116 @@ pub struct ServiceStatusPayload {
     pub last_error: Option<String>,
 }
 
+// ─── Power Service payloads (0x0100) ────────────────────────────────────────
+//
+// These live in the shared contract crate so that powerd and its clients agree
+// on one definition. Before this existed, `BatteryInfo` was declared inside
+// `powerd/src/main.rs`, which is a binary crate, so no client could name the
+// type and the shell read `/sys/class/power_supply` directly instead.
+
+/// Battery telemetry as reported by `powerd`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BatteryInfoPayload {
+    pub capacity: u8,   // 0 - 100%
+    pub status: String, // "Charging", "Discharging", "Full", "Not charging"
+    pub is_charging: bool,
+    pub voltage_mv: u32, // Millivolts
+    pub temp_c: f32,     // Celsius
+    pub health: String,  // "Good", "Overheat", "Dead"
+    /// True when the values above are placeholders because no battery hardware
+    /// is present. Consumers must surface this rather than showing them as live.
+    pub is_simulated: bool,
+}
+
+impl Default for BatteryInfoPayload {
+    fn default() -> Self {
+        // The placeholder battery. `is_simulated` is true so a consumer that
+        // renders this without checking will still be labelled as simulated.
+        Self {
+            capacity: 85,
+            status: "Discharging".into(),
+            is_charging: false,
+            voltage_mv: 3820,
+            temp_c: 29.5,
+            health: "Good".into(),
+            is_simulated: true,
+        }
+    }
+}
+
+impl BatteryInfoPayload {
+    /// A reading with no hardware behind it, explicitly marked as such.
+    pub fn simulated() -> Self {
+        Self::default()
+    }
+}
+
+// ─── Network Service payloads (0x0300) ──────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConnectionType {
+    None,
+    Ethernet,
+    Wifi,
+    Cellular,
+    Loopback,
+}
+
+impl ConnectionType {
+    /// Short label for a status bar.
+    pub fn label(&self) -> &'static str {
+        match self {
+            ConnectionType::None => "Offline",
+            ConnectionType::Ethernet => "Eth",
+            ConnectionType::Wifi => "Wi-Fi",
+            ConnectionType::Cellular => "5G",
+            ConnectionType::Loopback => "Loopback",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkInterfacePayload {
+    pub name: String,
+    pub conn_type: ConnectionType,
+    pub operstate: String,       // "up", "down", "unknown"
+    pub carrier_connected: bool, // true if the physical link carrier is detected
+    pub mac_address: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkStatePayload {
+    pub is_connected: bool,
+    pub active_interface: Option<String>,
+    pub connection_type: ConnectionType,
+    pub interfaces: Vec<NetworkInterfacePayload>,
+    pub dns_servers: Vec<String>,
+    /// True when this is a placeholder because no network sysfs was readable.
+    pub is_simulated: bool,
+}
+
+impl Default for NetworkStatePayload {
+    fn default() -> Self {
+        // Never report a fabricated link or DNS configuration as live.
+        Self {
+            is_connected: false,
+            active_interface: None,
+            connection_type: ConnectionType::None,
+            interfaces: Vec::new(),
+            dns_servers: Vec::new(),
+            is_simulated: true,
+        }
+    }
+}
+
+impl NetworkStatePayload {
+    /// The interface the kernel reports as carrying traffic, if any.
+    pub fn active(&self) -> Option<&NetworkInterfacePayload> {
+        let name = self.active_interface.as_deref()?;
+        self.interfaces.iter().find(|i| i.name == name)
+    }
+}
+
 /// Query service status over a connected synchronous stream using canonical framed IPC.
 pub fn query_service_status<S: Read + Write>(
     stream: &mut S,
@@ -828,5 +938,79 @@ mod tests {
             u16::from(MessageType::ServiceStatusRequest)
         );
         assert_eq!(req_frame.request_id, 77);
+    }
+
+    #[test]
+    fn battery_payload_round_trips_over_a_frame() {
+        let info = BatteryInfoPayload {
+            capacity: 42,
+            status: "Discharging".into(),
+            is_charging: false,
+            voltage_mv: 3712,
+            temp_c: 31.5,
+            health: "Good".into(),
+            is_simulated: false,
+        };
+        let frame = Frame::with_json(MessageType::PowerBatteryInfo, 7, &info).unwrap();
+        assert_eq!(frame.message_type, u16::from(MessageType::PowerBatteryInfo));
+
+        let mut bytes = Vec::new();
+        frame.write_to(&mut bytes).unwrap();
+        let mut cursor = Cursor::new(bytes);
+        let decoded = Frame::read_from(&mut cursor).unwrap();
+        let back: BatteryInfoPayload = decoded.parse_json().unwrap();
+        assert_eq!(back, info);
+    }
+
+    #[test]
+    fn simulated_battery_is_flagged_on_the_wire() {
+        // The flag must survive serialization; otherwise a client would render a
+        // placeholder as a live reading.
+        let frame = Frame::with_json(
+            MessageType::PowerBatteryInfo,
+            1,
+            &BatteryInfoPayload::simulated(),
+        )
+        .unwrap();
+        let decoded: BatteryInfoPayload = frame.parse_json().unwrap();
+        assert!(decoded.is_simulated);
+    }
+
+    #[test]
+    fn network_state_round_trips_over_a_frame() {
+        let state = NetworkStatePayload {
+            is_connected: true,
+            active_interface: Some("wlan0".into()),
+            connection_type: ConnectionType::Wifi,
+            interfaces: vec![NetworkInterfacePayload {
+                name: "wlan0".into(),
+                conn_type: ConnectionType::Wifi,
+                operstate: "up".into(),
+                carrier_connected: true,
+                mac_address: "aa:bb:cc:dd:ee:ff".into(),
+            }],
+            dns_servers: vec!["1.1.1.1".into(), "8.8.8.8".into()],
+            is_simulated: false,
+        };
+        let frame = Frame::with_json(MessageType::NetStateInfo, 9, &state).unwrap();
+        assert_eq!(frame.message_type, u16::from(MessageType::NetStateInfo));
+
+        let mut bytes = Vec::new();
+        frame.write_to(&mut bytes).unwrap();
+        let mut cursor = Cursor::new(bytes);
+        let decoded = Frame::read_from(&mut cursor).unwrap();
+        let back: NetworkStatePayload = decoded.parse_json().unwrap();
+        assert_eq!(back, state);
+        assert_eq!(back.active().unwrap().name, "wlan0");
+    }
+
+    #[test]
+    fn connection_type_labels_are_stable() {
+        // The status bar shows these, so they are part of the UI contract.
+        assert_eq!(ConnectionType::Wifi.label(), "Wi-Fi");
+        assert_eq!(ConnectionType::Cellular.label(), "5G");
+        assert_eq!(ConnectionType::Ethernet.label(), "Eth");
+        assert_eq!(ConnectionType::None.label(), "Offline");
+        assert_eq!(ConnectionType::Loopback.label(), "Loopback");
     }
 }

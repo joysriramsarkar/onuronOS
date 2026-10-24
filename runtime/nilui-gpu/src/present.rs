@@ -103,10 +103,10 @@ impl KmsPresenter {
                 hw_buf.pixels.len()
             ));
         }
-        hw_buf.pixels.copy_from_slice(&rendered.pixels);
-
-        // Perform hardware page flip and propagate failure
-        self.drm_device.page_flip(hw_buf.fb_id)?;
+        // `present_pixels` copies row by row, so a kernel stride wider than
+        // width*4 does not shear the image, then performs the flip.
+        let pixels = rendered.pixels.clone();
+        self.drm_device.present_pixels(hw_buf, &pixels)?;
 
         self.frame_counter += 1;
 
@@ -127,13 +127,9 @@ impl KmsPresenter {
             } else {
                 0
             },
-            is_hardware: self.drm_device.is_hardware,
+            is_hardware: self.drm_device.is_hardware(),
             page_flip_success: true,
-            backend: if self.drm_device.is_hardware {
-                "drm_kms_hardware"
-            } else {
-                "virtual_software_fallback"
-            },
+            backend: self.drm_device.backend.label(),
         })
     }
 
@@ -160,13 +156,9 @@ impl KmsPresenter {
                     frame_time_ms,
                     fps,
                     dropped_frames: 1,
-                    is_hardware: self.drm_device.is_hardware,
+                    is_hardware: self.drm_device.is_hardware(),
                     page_flip_success: false,
-                    backend: if self.drm_device.is_hardware {
-                        "drm_kms_hardware"
-                    } else {
-                        "virtual_software_fallback"
-                    },
+                    backend: self.drm_device.backend.label(),
                 }
             }
         }
@@ -209,8 +201,13 @@ mod tests {
         let stats = presenter.present_frame();
         assert_eq!(stats.slot, slot);
         assert_eq!(stats.frame_index, 1);
-        assert!(stats.page_flip_success);
-        assert_eq!(stats.backend, "virtual_software_fallback");
+        // This machine has no display, so the frame is composed but cannot be
+        // presented. Claiming success here would be the bug the old
+        // implementation had.
+        assert!(!stats.is_hardware);
+        assert!(!stats.page_flip_success);
+        assert_eq!(stats.backend, "offscreen_fallback");
+        // The composed pixels still landed in the buffer.
         assert_eq!(presenter.drm_buffers[slot].get_pixel(15, 15), 0xFF00FF00);
     }
 

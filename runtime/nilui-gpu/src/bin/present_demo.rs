@@ -1,6 +1,10 @@
 // runtime/nilui-gpu/src/bin/present_demo.rs — Direct KMS 120Hz Mobile Panel Presentation
 use nilui_gpu::KmsPresenter;
 
+/// 2 = the panel could not be reached. Distinct from a panic so a caller (and
+/// the boot sequence) can tell "composed but not displayed" from "crashed".
+const EXIT_NO_PANEL: i32 = 2;
+
 fn main() {
     println!("\x1b[1;36m=========================================================\x1b[0m");
     println!("\x1b[1;36m     Onuron OS: Direct DRM/KMS 120Hz Mobile Compositor   \x1b[0m");
@@ -10,8 +14,12 @@ fn main() {
     let mut presenter = KmsPresenter::with_resolution(720, 1440, 120);
     println!(
         "[present_demo] Display Node: {} (Hardware={})",
-        presenter.drm_device.card_path, presenter.drm_device.is_hardware
+        presenter.drm_device.card_path,
+        presenter.drm_device.is_hardware()
     );
+    if let Some(reason) = presenter.drm_device.backend.reason() {
+        println!("[present_demo] No panel available: {reason}");
+    }
     println!(
         "[present_demo] Resolution: {}x{} @ {}Hz (Target: 8.33ms / frame)",
         presenter.width, presenter.height, presenter.refresh_rate_hz
@@ -55,12 +63,29 @@ fn main() {
         // Present to DRM/KMS
         let stats = presenter.present_frame();
         if frame % 15 == 0 || frame == 59 {
+            // "VBLANK synced" is only true when the kernel actually reported a
+            // flip event; on the offscreen backend nothing reached a panel.
+            let sync = if stats.page_flip_success {
+                "VBLANK synced"
+            } else {
+                "not displayed"
+            };
             println!(
-                "[present_demo] Frame {:02}: Slot {} | {:.2} ms/frame | {:.1} FPS (Hardware VBLANK synced)",
+                "[present_demo] Frame {:02}: Slot {} | {:.2} ms/frame | {:.1} FPS ({sync})",
                 stats.frame_index, stats.slot, stats.frame_time_ms, stats.fps
             );
         }
     }
 
-    println!("\x1b[1;32m[present_demo] [ SUCCESS ] 60 frames rendered tear-free via KMS triple-buffering.\x1b[0m");
+    if presenter.drm_device.is_hardware() {
+        println!("\x1b[1;32m[present_demo] [ SUCCESS ] 60 frames rendered tear-free via KMS triple-buffering.\x1b[0m");
+    } else {
+        let reason = presenter
+            .drm_device
+            .backend
+            .reason()
+            .unwrap_or("no display device");
+        println!("\x1b[1;33m[present_demo] [ NO PANEL ] 60 frames composed in memory; nothing was displayed ({reason}).\x1b[0m");
+        std::process::exit(EXIT_NO_PANEL);
+    }
 }

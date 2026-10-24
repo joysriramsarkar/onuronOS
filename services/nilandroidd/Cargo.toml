@@ -6,5 +6,10 @@ edition = "2021"
 [dependencies]
 nilsd = { path = "../../runtime/nilsd" }
 nilprotocol = { path = "../../protocol" }
+nilrt = { path = "../../runtime/nilrt" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+nix = { version = "0.27", features = ["mount", "sched", "hostname", "process"] }

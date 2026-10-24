@@ -82,13 +82,29 @@ fn open_locked(path: &Path) -> Result<File, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     fn temp_root(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("nilpkg-lock-{}-{}", std::process::id(), name))
     }
 
+    /// Serializes the tests in this module.
+    ///
+    /// `lock_is_enforced_across_processes` forks a child. Between `fork` and the
+    /// child's `exec`, that child transiently holds a copy of every descriptor
+    /// in the parent, and an `flock` lives on the open file description, so a
+    /// sibling test's lock is momentarily held by the forked child even though
+    /// its own fd is close-on-exec. Running these tests one at a time removes
+    /// that window, so the assertions test the lock rather than the scheduler.
+    static PROC_TESTS: Mutex<()> = Mutex::new(());
+
+    fn serialize() -> std::sync::MutexGuard<'static, ()> {
+        PROC_TESTS.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn second_acquire_is_refused_while_first_is_held() {
+        let _guard = serialize();
         let root = temp_root("held");
         let _ = std::fs::remove_dir_all(&root);
         let first = PackageLock::acquire(&root).unwrap();
@@ -100,8 +116,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The lock file descriptor must not survive an `exec`, otherwise a child
+    /// process spawned for an unrelated reason would inherit the lock and keep
+    /// the app root locked for as long as it lives. This is the production
+    /// guarantee that makes the lock safe to hold across `Command::spawn`.
+    #[cfg(unix)]
+    #[test]
+    fn lock_fd_is_close_on_exec() {
+        use std::os::unix::io::AsRawFd;
+        let _guard = serialize();
+        let root = temp_root("cloexec");
+        let _ = std::fs::remove_dir_all(&root);
+        let lock = PackageLock::acquire(&root).unwrap();
+        let flags = unsafe { libc::fcntl(lock._file.as_raw_fd(), libc::F_GETFD) };
+        assert!(flags >= 0, "F_GETFD failed");
+        assert!(
+            flags & libc::FD_CLOEXEC != 0,
+            "lock fd lacks FD_CLOEXEC (flags={:#x}); a forked child would inherit it",
+            flags
+        );
+        drop(lock);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn acquire_creates_a_missing_app_root() {
+        let _guard = serialize();
         let root = temp_root("create").join("nested").join("apps");
         let _ = std::fs::remove_dir_all(&root);
         let lock = PackageLock::acquire(&root).unwrap();
@@ -124,6 +164,7 @@ mod tests {
             });
         }
 
+        let _guard = serialize();
         let root = temp_root("xproc");
         let _ = std::fs::remove_dir_all(&root);
         let held = PackageLock::acquire(&root).unwrap();
