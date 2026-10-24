@@ -110,6 +110,7 @@ pub fn write_boot_count(path: &str, value: u32) -> std::io::Result<()> {
 }
 
 /// Outcome of attempting to mount persistent `/data` block device candidates.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DataMountOutcome {
     /// A candidate block device mounted cleanly as ext4/ext2.
@@ -127,6 +128,7 @@ pub enum DataMountOutcome {
 /// Pure decision helper that classifies `/data` mount attempts for present
 /// block devices so corrupt disks are loudly reported rather than silently
 /// masked as missing disks.
+#[allow(dead_code)]
 pub fn evaluate_data_mount_attempts(attempts: &[(String, Result<(), String>)]) -> DataMountOutcome {
     if attempts.is_empty() {
         return DataMountOutcome::NoDiskPresent;

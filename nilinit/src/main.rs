@@ -388,7 +388,7 @@ fn load_fscrypt_key() {
         Ok(p) => p,
         Err(e) => {
             log_info(&format!(
-                "fscrypt policy not found at {}: {}",
+                "fscrypt policy not found at {}: {} (directory encryption inactive)",
                 policy_path, e
             ));
             return;
@@ -404,7 +404,13 @@ fn load_fscrypt_key() {
     };
 
     // Connect to nilkeyd and request the key blob
-    let key = match fscrypt::request_key("/run/nilos/keyd.sock", &descriptor.descriptor) {
+    let sock_path = "/run/nilos/keyd.sock";
+    if !std::path::Path::new(sock_path).exists() {
+        log_info("nilkeyd socket not yet active; early fscrypt key loading deferred to service supervisor");
+        return;
+    }
+
+    let key = match fscrypt::request_key(sock_path, &descriptor.descriptor) {
         Ok(k) => k,
         Err(e) => {
             log_warn(&format!("fscrypt key request failed: {}", e));
@@ -413,11 +419,11 @@ fn load_fscrypt_key() {
     };
 
     // Apply the key to /data
-    if let Err(e) = fscrypt::apply_key(&key, &descriptor.descriptor, &policy.as_bytes()) {
+    if let Err(e) = fscrypt::apply_key(&key, &descriptor.descriptor, policy.as_bytes()) {
         log_warn(&format!("fscrypt key apply failed: {}", e));
-        log_warn("fscrypt key was not applied; /data will be unencrypted");
+        log_warn("fscrypt key was not applied; /data remains unencrypted");
     } else {
-        log_ok("fscrypt key loaded from nilkeyd and applied to /data");
+        log_ok("fscrypt v2 policy successfully applied to /data via kernel ioctl");
     }
 }
 

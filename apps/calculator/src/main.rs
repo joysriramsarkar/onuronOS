@@ -43,7 +43,7 @@ pub fn calculate(a: f64, b: f64, op: char) -> f64 {
 
 pub fn update(state: &mut CalcState, ev: Ev) {
     match ev {
-        Ev::Click(d) if d >= 0 && d <= 9 => {
+        Ev::Click(d) if d <= 9 => {
             if state.waiting_for_operand {
                 state.display = d.to_string();
                 state.waiting_for_operand = false;
