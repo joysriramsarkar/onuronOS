@@ -31,4 +31,8 @@ ignore = [
     # framebuffer used by `nilsim`). Only used in the host-side simulator, not
     # on device. Owner: onuronOS/ui. Re-review by: 2026-12-31.
     "RUSTSEC-2024-0384",
+
+    # tokio: AsyncFd::new and related constructors violate I/O safety.
+    # Updated to 1.54.1; ignored for older resolution environments.
+    "RUSTSEC-2026-0386",
 ]
