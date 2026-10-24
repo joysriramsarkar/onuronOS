@@ -16,7 +16,7 @@ AGENTS.md-এর "Reality / maturity rule" অনুযায়ী প্রত
 |---|---|---|---|
 | evdev টাচ/কী ইনপুট | `services/inputd/src/evdev.rs` | IMPLEMENTED | ১০ |
 | টার্মিনাল কমান্ড এক্সিকিউশন | `shell/src/term.rs` | IMPLEMENTED | ১৪ |
-| ব্রাউজার (HTTP/HTTPS) | `shell/src/browser.rs` | IMPLEMENTED | ১০ |
+| ব্রাউজার (HTTP/HTTPS) | `runtime/nilweb/src/lib.rs` | IMPLEMENTED | ১০ |
 | অ্যান্ড্রয়েড কন্টেইনার লঞ্চ | `services/nilandroidd/src/container.rs` | IMPLEMENTED | ১৫ |
 | অ্যান্ড্রয়েড ক্লায়েন্ট | `runtime/nilandroid-client/src/lib.rs` | IMPLEMENTED | — |
 | Wayland সার্ভার (হাতে লেখা প্রোটোকল) | `runtime/nilui-gpu/src/wayland/` | IMPLEMENTED | ৭৩ |
@@ -231,7 +231,16 @@ pipeline (`|`), redirection (`>`), globbing, substitution — এগুলো �
 
 ## ৫. ব্রাউজার — বাস্তব HTTP/HTTPS
 
-`shell/src/browser.rs`। হোম স্ক্রিনে `[14] 🌐 Browser`।
+ইঞ্জিন: `runtime/nilweb/src/lib.rs`। হোম স্ক্রিনে `[14] 🌐 Browser`।
+
+একই ইঞ্জিন দুটি জায়গায় ব্যবহৃত হয় — শেলের Browser স্ক্রিন এবং আলাদা
+`browser` অ্যাপ (`apps/browser/`)। দুটোই একই `nilweb` কোড চালায়, তাই
+আচরণ সবসময় এক।
+
+> **নোট (২০২৬-১০):** আগের `apps/nilbrowser` ক্রেটটি বাদ দেওয়া হয়েছে।
+> সেটি `wry`/`tao` (WebKitGTK) ব্যবহার করত — ডেস্কটপ GTK-নির্ভর, মোবাইলে
+> (DRM-only) চলে না, আর Linux/ARM-এ বিল্ডই হত না (glib-2.0 dev header লাগত)।
+> এখন ব্রাউজার = `nilweb` টেক্সট-মোড ইঞ্জিন, যা আসল HTTP/HTTPS করে।
 
 ### ৫.১ আসলে যা করে
 
@@ -841,7 +850,7 @@ unshare(...) failed: EPERM. Refusing unconfined execution in production mode.
 
 ### ১০.২ বাস্তব নেটওয়ার্ক টেস্ট
 
-`shell/src/browser.rs`-এ একটি টেস্ট আসল loopback TCP সার্ভার খুলে আসল HTTP
+`runtime/nilweb/src/lib.rs`-এ একটি টেস্ট আসল loopback TCP সার্ভার খুলে আসল HTTP
 ফেচ করে — mock নয়:
 
 ```rust

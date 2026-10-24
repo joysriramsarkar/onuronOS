@@ -35,7 +35,8 @@ const ABS_MAX: u16 = 0x3f;
 const BTN_LEFT: u16 = 0x110;
 const BTN_TOOL_FINGER: u16 = 0x145;
 
-// ioctl request encoders (asm-generic, valid for x86_64 and aarch64)
+// ioctl request encoders (asm-generic, valid for x86_64 and aarch64).
+// The request word is `libc::Ioctl`: `c_ulong` on glibc, `c_int` on musl.
 const IOC_NRBITS: u32 = 8;
 const IOC_TYPEBITS: u32 = 8;
 const IOC_SIZEBITS: u32 = 14;
@@ -45,18 +46,18 @@ const IOC_SIZESHIFT: u32 = IOC_TYPESHIFT + IOC_TYPEBITS;
 const IOC_DIRSHIFT: u32 = IOC_SIZESHIFT + IOC_SIZEBITS;
 const IOC_READ: u32 = 2;
 
-const fn ioc(dir: u32, ty: u32, nr: u32, size: u32) -> u64 {
+const fn ioc(dir: u32, ty: u32, nr: u32, size: u32) -> libc::Ioctl {
     ((dir << IOC_DIRSHIFT) | (ty << IOC_TYPESHIFT) | (nr << IOC_NRSHIFT) | (size << IOC_SIZESHIFT))
-        as u64
+        as libc::Ioctl
 }
 
 /// EVIOCGBIT(ev, len): bitmap of event types (ev == 0) or codes for `ev`.
-const fn eviocgbit(ev: u32, len: u32) -> u64 {
+const fn eviocgbit(ev: u32, len: u32) -> libc::Ioctl {
     ioc(IOC_READ, b'E' as u32, 0x20 + ev, len)
 }
 
 /// EVIOCGABS(abs): `struct input_absinfo` for one absolute axis.
-const fn eviocgabs(abs: u32) -> u64 {
+const fn eviocgabs(abs: u32) -> libc::Ioctl {
     ioc(
         IOC_READ,
         b'E' as u32,
@@ -65,7 +66,7 @@ const fn eviocgabs(abs: u32) -> u64 {
     )
 }
 
-const fn eviocgname(len: u32) -> u64 {
+const fn eviocgname(len: u32) -> libc::Ioctl {
     ioc(IOC_READ, b'E' as u32, 0x06, len)
 }
 
@@ -467,9 +468,11 @@ mod tests {
         //   EVIOCGBIT(0, 8)  == 0x80084520
         //   EVIOCGABS(0)     == 0x80184540
         //   EVIOCGNAME(256)  == 0x81004506
-        assert_eq!(eviocgbit(0, 8), 0x80084520);
-        assert_eq!(eviocgabs(0), 0x80184540);
-        assert_eq!(eviocgname(256), 0x81004506);
+        // Compare the 32-bit request word: the C type is `c_ulong` on glibc
+        // and `c_int` on musl, but the encoded value is identical.
+        assert_eq!(eviocgbit(0, 8) as u32, 0x80084520);
+        assert_eq!(eviocgabs(0) as u32, 0x80184540);
+        assert_eq!(eviocgname(256) as u32, 0x81004506);
     }
 
     #[test]

@@ -13,6 +13,8 @@
 
 use std::path::Path;
 
+use nilprotocol::{Frame, MessageType};
+
 /// Socket paths powerd may be listening on, in preference order.
 ///
 /// `/run/nilos` is the project convention; `/run/onuron` is the older path some

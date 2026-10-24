@@ -1,0 +1,8 @@
+[package]
+name = "nilweb"
+version = "0.1.0"
+edition = "2021"
+description = "OnuronOS native web engine: real HTTP/HTTPS fetch and HTML-to-text reduction"
+
+[dependencies]
+ureq = { version = "2", features = ["tls"] }
