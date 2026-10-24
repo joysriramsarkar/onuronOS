@@ -354,15 +354,15 @@ evidence = ["apps/busdemo/", "apps/bridgedemo/", "apps/animdemo/"]
 simulated = false
 
 [[entries]]
-name = "Browser (nilshell text client)"
+name = "Browser (native web engine)"
 tier = "functional-prototype"
-details = "Real HTTP/HTTPS fetch over ureq/rustls with a 20 s timeout and 512 KiB body cap; HTML reduced to text (script/style contents dropped, block tags become line breaks, entities decoded), title extraction, bounded scrolling; CSS, JavaScript and images are not rendered and the UI says so"
-evidence = ["shell/src/browser.rs", "shell/src/main.rs"]
+details = "Real HTTP/HTTPS fetch over ureq/rustls with a 20 s timeout and 512 KiB body cap; HTML reduced to text (script/style contents dropped, block tags become line breaks, entities decoded), title extraction, bounded scrolling; CSS, JavaScript and images are not rendered and the UI says so. One engine (runtime/nilweb) backs both the shell Browser screen and the standalone `browser` app"
+evidence = ["runtime/nilweb/src/lib.rs", "shell/src/main.rs", "apps/browser/src/main.rs"]
 simulated = false
 
 [[entries]]
-name = "NilBrowser"
+name = "NilBrowser (simulator host webview)"
 tier = "experimental"
-details = "Desktop webview shell (wry/tao) used by the simulator host; not part of the mobile native platform [SIMULATED]"
-evidence = ["nilsim/src/", "apps/nilbrowser/src/"]
+details = "Windows-only WebView2 (Evergreen Chromium) embed used by the desktop simulator host; not part of the mobile native platform and never built on Linux/ARM [SIMULATED]"
+evidence = ["nilsim/src/nilbrowser.rs"]
 simulated = true

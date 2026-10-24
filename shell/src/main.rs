@@ -6,7 +6,6 @@ use std::fs::{self};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
-mod browser;
 mod i18n;
 mod notes;
 mod pin;
@@ -174,7 +173,7 @@ struct AppState {
     /// Real command-execution session (cwd, exported env, exit status).
     term: term::TermSession,
     /// Real network browser state.
-    browser: browser::BrowserState,
+    browser: nilweb::BrowserState,
     #[allow(dead_code)]
     settings_cursor: usize,
     files_path: String,
@@ -297,7 +296,7 @@ impl AppState {
                 "Commands resolve against $PATH and run as child processes.".into(),
             ],
             term: term::TermSession::new("/data".into(), "/data".into()),
-            browser: browser::BrowserState::default(),
+            browser: nilweb::BrowserState::default(),
             settings_cursor: 0,
             files_path: "/data".into(),
             pkg_cursor: 0,
@@ -3199,7 +3198,7 @@ mod tests {
             compose_body: String::new(),
             terminal_history: Vec::new(),
             term: term::TermSession::new("/data".into(), "/data".into()),
-            browser: browser::BrowserState::default(),
+            browser: nilweb::BrowserState::default(),
             settings_cursor: 0,
             files_path: "/data".into(),
             pkg_cursor: 0,

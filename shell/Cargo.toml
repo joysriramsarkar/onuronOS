@@ -18,4 +18,4 @@ nilprotocol = { path = "../protocol" }
 nilandroid-client = { path = "../runtime/nilandroid-client" }
 nilpower = { path = "../runtime/nilpower" }
 nilnet = { path = "../runtime/nilnet" }
-ureq = { version = "2", features = ["tls"] }
+nilweb = { path = "../runtime/nilweb" }

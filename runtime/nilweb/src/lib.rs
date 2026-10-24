@@ -1,8 +1,11 @@
-// shell/src/browser.rs — Real network browser for OnuronOS
+// runtime/nilweb — OnuronOS native web engine.
 //
-// This is a text-mode browser, not an HTML rendering engine, and it does not
-// pretend otherwise: it performs a real HTTP/HTTPS request and displays the
-// response. What it genuinely does:
+// Shared by the shell's Browser screen and the standalone `browser` app so the
+// fetch/parse behaviour has exactly one implementation.
+//
+// This is a text-mode engine, not an HTML rendering engine, and it does not
+// pretend otherwise: it performs a real HTTP/HTTPS request and returns the
+// response reduced to text. What it genuinely does:
 //
 //   * Resolves and connects over the network with a real TLS stack (ureq/rustls).
 //   * Reports the real status code, content type and byte length.

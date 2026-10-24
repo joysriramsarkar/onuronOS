@@ -2,6 +2,7 @@
 // Using the official OnuronOS Design System (dark/light themes)
 use nilui::design::{DesignSystem, Palette};
 use nilui::{App, Element, Ev};
+use nilweb::BrowserState as Engine;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -11,6 +12,8 @@ pub struct BrowserState {
     pub loading: bool,
     pub progress: f32,
     pub status: String,
+    /// Result of the last real fetch, rendered as text lines.
+    pub lines: Vec<String>,
 }
 
 impl Default for BrowserState {
@@ -21,6 +24,40 @@ impl Default for BrowserState {
             loading: false,
             progress: 0.0,
             status: "Ready".to_string(),
+            lines: Vec::new(),
+        }
+    }
+}
+
+/// Fetch `url` through the shared native engine and fold the result into the
+/// UI state. A failure is reported as a failure; nothing is faked as loaded.
+fn load(state: &mut BrowserState, url: &str) {
+    state.url = url.to_string();
+    state.loading = true;
+    state.progress = 0.0;
+    state.title = format!("Loading {}", url);
+
+    let mut engine = Engine::default();
+    engine.navigate(url);
+
+    match engine.page {
+        Some(page) => {
+            state.title = if page.title.is_empty() {
+                page.final_url.clone()
+            } else {
+                page.title.clone()
+            };
+            state.status = format!("{} {}", page.status, page.content_type);
+            state.lines = page.lines.clone();
+            state.loading = false;
+            state.progress = 1.0;
+        }
+        None => {
+            state.status = engine.error.unwrap_or_else(|| "Failed".to_string());
+            state.title = format!("Failed: {}", url);
+            state.lines = Vec::new();
+            state.loading = false;
+            state.progress = 0.0;
         }
     }
 }
@@ -28,8 +65,7 @@ impl Default for BrowserState {
 pub fn update(state: &mut BrowserState, ev: Ev) {
     match ev {
         Ev::Ime(text) => {
-            let url = text.clone();
-            state.url = url;
+            state.url = text.clone();
             state.progress = 0.0;
             state.loading = true;
             state.title = format!("Loading {}", text);
@@ -40,30 +76,11 @@ pub fn update(state: &mut BrowserState, ev: Ev) {
             state.loading = false;
         }
         Ev::Click(2) => {
-            state.loading = true;
-            state.progress = 1.0;
-            state.title = format!("Web: {}", state.url);
-            let _ = std::process::Command::new("/usr/bin/nilbrowser")
-                .arg(&state.url)
-                .spawn()
-                .or_else(|_| {
-                    std::process::Command::new("nilbrowser")
-                        .arg(&state.url)
-                        .spawn()
-                });
+            let url = state.url.clone();
+            load(state, &url);
         }
         Ev::Click(3) => {
-            state.url = "https://maps.google.com".to_string();
-            state.title = "Maps".to_string();
-            state.loading = false;
-            let _ = std::process::Command::new("/usr/bin/nilbrowser")
-                .arg(&state.url)
-                .spawn()
-                .or_else(|_| {
-                    std::process::Command::new("nilbrowser")
-                        .arg(&state.url)
-                        .spawn()
-                });
+            load(state, "https://maps.google.com");
         }
         _ => {}
     }
@@ -101,6 +118,16 @@ pub fn view(state: &BrowserState) -> Element {
             Element::Text {
                 content: format!("📊 প্রগ্রেস: {:.0}%", state.progress * 100.0),
             },
+            Element::Text {
+                content: state.status.clone(),
+            },
+            Element::Column {
+                children: state
+                    .lines
+                    .iter()
+                    .map(|l| Element::Text { content: l.clone() })
+                    .collect(),
+            },
         ],
     }
 }
@@ -129,5 +156,27 @@ mod tests {
         update(&mut state, Ev::Click(1)); // Bookmark
         assert_eq!(state.url, "https://nilos.dev");
     }
-}
 
+    /// A failed fetch must be reported as a failure, not shown as a loaded page.
+    #[test]
+    fn failed_fetch_is_reported_honestly() {
+        let mut state = BrowserState::default();
+        load(&mut state, "http://127.0.0.1:1/");
+        assert!(state.lines.is_empty(), "no content may be invented");
+        assert!(!state.loading);
+        assert!(
+            state.title.starts_with("Failed:"),
+            "title must say it failed: {}",
+            state.title
+        );
+    }
+
+    /// `about:blank` needs no network and must render something real.
+    #[test]
+    fn about_blank_renders_without_network() {
+        let mut state = BrowserState::default();
+        load(&mut state, "about:blank");
+        assert!(!state.lines.is_empty(), "about:blank must produce lines");
+        assert_eq!(state.status, "200 text/plain");
+    }
+}
