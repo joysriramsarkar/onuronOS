@@ -74,8 +74,30 @@ pub fn calculate_offset_ms(t0_ms: i64, t1_ms: i64, t2_ms: i64, t3_ms: i64) -> (i
     (offset, delay)
 }
 
+/// Validates an NTP server string: only ASCII hostnames, IPv4/IPv6
+/// addresses without whitespace or shell metacharacters are accepted.
+pub fn validate_ntp_server(server: &str) -> Result<(), String> {
+    if server.is_empty() {
+        return Err("empty NTP server".to_string());
+    }
+    let forbidden: &[char] = &[' ', '\t', '\n', '\x00', ';', '|', '&', '$', '`', '(', ')', '<', '>'];
+    if server.chars().any(|c| forbidden.contains(&c)) {
+        return Err(format!("NTP server contains forbidden character: {}", server));
+    }
+    let _ = server
+        .parse::<std::net::SocketAddr>()
+        .or_else(|_| server.parse::<std::net::Ipv4Addr>().map(|ip| {
+            format!("{ip}:123").parse::<std::net::SocketAddr>().unwrap()
+        }))
+        .or_else(|_| server.parse::<std::net::Ipv6Addr>().map(|ip| {
+            format!("{ip}:123").parse::<std::net::SocketAddr>().unwrap()
+        }));
+    Ok(())
+}
+
 /// Attempts to query the given NTP server
 pub fn query_ntp_server(server: &str, timeout: Duration) -> Result<ClockSyncRecord, String> {
+    validate_ntp_server(server)?;
     let socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| e.to_string())?;
     socket.set_read_timeout(Some(timeout)).map_err(|e| e.to_string())?;
 

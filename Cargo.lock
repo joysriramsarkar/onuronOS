@@ -81,9 +81,11 @@ dependencies = [
 name = "authd"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.2.17",
  "nilsd",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -252,6 +254,7 @@ dependencies = [
 name = "camerad"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "nilprotocol",
  "nilsd",
  "serde",
@@ -1023,6 +1026,7 @@ version = "0.1.0"
 dependencies = [
  "nilandroid-client",
  "nilbus-client",
+ "nilshell",
  "nilui",
  "serde",
  "serde_json",

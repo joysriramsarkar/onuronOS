@@ -265,23 +265,31 @@ pub fn handle_ipc_request(frame: &Frame, governor: &Arc<Mutex<PowerGovernor>>) -
         }
         MessageType::PowerAcquireWakelock => {
             let tag = String::from_utf8_lossy(&frame.payload).trim().to_string();
-            let mut g = governor.lock().unwrap();
-            g.acquire_wakelock(&tag);
-            Frame::new(MessageType::Pong, frame.request_id, b"acquired".to_vec())
+            if tag.is_empty() || tag.len() > 128 {
+                Frame::new(MessageType::ErrorResponse, frame.request_id, b"invalid tag".to_vec())
+            } else {
+                let mut g = governor.lock().unwrap();
+                g.acquire_wakelock(&tag);
+                Frame::new(MessageType::Pong, frame.request_id, b"acquired".to_vec())
+            }
         }
         MessageType::PowerReleaseWakelock => {
             let tag = String::from_utf8_lossy(&frame.payload).trim().to_string();
-            let mut g = governor.lock().unwrap();
-            let ok = g.release_wakelock(&tag);
-            Frame::new(
-                MessageType::Pong,
-                frame.request_id,
-                if ok {
-                    b"released".to_vec()
-                } else {
-                    b"not_found".to_vec()
-                },
-            )
+            if tag.is_empty() || tag.len() > 128 {
+                Frame::new(MessageType::ErrorResponse, frame.request_id, b"invalid tag".to_vec())
+            } else {
+                let mut g = governor.lock().unwrap();
+                let ok = g.release_wakelock(&tag);
+                Frame::new(
+                    MessageType::Pong,
+                    frame.request_id,
+                    if ok {
+                        b"released".to_vec()
+                    } else {
+                        b"not_found".to_vec()
+                    },
+                )
+            }
         }
         _ => Frame::new(
             MessageType::ErrorResponse,

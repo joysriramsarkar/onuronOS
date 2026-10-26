@@ -1048,7 +1048,16 @@ impl Client {
         new_id: u32,
         output: OutputInfo,
     ) -> Result<(), ProtocolError> {
-        let known = match iface {
+        // Reject an invalid/already-bound object id: a client that can reuse a
+        // `new_id` could clobber server-side object state. Only ids ≥ 1 are
+        // legal, and an id that is already bound is a protocol violation.
+        if new_id == 0 || self.objects.contains_key(&new_id) {
+            return Err(self.err(
+                self.registry_object_id(),
+                display_error::INVALID_VALUE,
+                &format!("bind_global: invalid or already-bound new_id {new_id}"),
+            ));
+        }
             WL_COMPOSITOR => Some((ObjectKind::Compositor, VERSION_COMPOSITOR)),
             WL_SHM => Some((ObjectKind::Shm, VERSION_SHM)),
             WL_SEAT => Some((ObjectKind::Seat, VERSION_SEAT)),

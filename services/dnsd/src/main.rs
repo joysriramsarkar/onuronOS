@@ -159,6 +159,36 @@ pub fn parse_hosts_file(content: &str) -> HashMap<String, Ipv4Addr> {
     map
 }
 
+/// Validates a DNS domain name for the local resolver cache.
+///
+/// Rejects empty names, names longer than 253 chars, invalid characters,
+/// and labels that start or end with a hyphen. Only `A`/`AAAA` lookups are
+/// served, so an attacker-supplied string can never reach a network send.
+pub fn validate_dns_domain(domain: &str) -> Result<(), String> {
+    let t = domain.trim();
+    if t.is_empty() {
+        return Err("empty domain".to_string());
+    }
+    if t.len() > 253 {
+        return Err(format!("domain too long ({} chars)", t.len()));
+    }
+    // Allow alphanumerics, hyphens, and dots only.
+    if !t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-') {
+        return Err("domain contains invalid characters".to_string());
+    }
+    // Reject leading/trailing hyphens and empty labels.
+    for label in t.split('.') {
+        if label.is_empty()
+            || label.len() > 63
+            || label.bytes().next().map_or(false, |b| b == b'-')
+            || label.bytes().last().map_or(false, |b| b == b'-')
+        {
+            return Err(format!("malformed domain label: {:?}", label));
+        }
+    }
+    Ok(())
+}
+
 pub struct DnsResolverState {
     pub cache: HashMap<String, DnsCacheEntry>,
     pub hosts: HashMap<String, Ipv4Addr>,
@@ -192,8 +222,12 @@ impl DnsService {
     }
 
     pub fn resolve(&self, domain: &str, current_ts: u64) -> Option<Ipv4Addr> {
-        let norm_domain = domain.trim().trim_end_matches('.').to_lowercase();
-        let mut st = self.state.lock().unwrap();
+            if let Err(e) = validate_dns_domain(domain) {
+                println!("[dnsd] invalid domain rejected: {}", e);
+                return None;
+            }
+            let norm_domain = domain.trim().trim_end_matches('.').to_lowercase();
+            let mut st = self.state.lock().unwrap();
 
         // 1. Check local hosts table
         if let Some(&ip) = st.hosts.get(&norm_domain) {
@@ -215,6 +249,13 @@ impl DnsService {
     }
 
     pub fn insert_cache(&self, domain: &str, ip: Ipv4Addr, ttl_secs: u32, current_ts: u64) {
+        if let Err(e) = validate_dns_domain(domain) {
+            println!("[dnsd] invalid domain rejected: {}", e);
+            return;
+        }
+        // Bound TTL to a sane window so an attacker cannot force a 24h+
+        // entry that never expires and grows the cache without limit.
+        let ttl_secs = ttl_secs.clamp(1, 86_400);
         let norm_domain = domain.trim().trim_end_matches('.').to_lowercase();
         let expires_at_ts = current_ts + ttl_secs as u64;
         let mut st = self.state.lock().unwrap();

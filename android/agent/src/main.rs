@@ -83,7 +83,22 @@ impl AgentResponse {
     }
 }
 
-// ── Intent dispatching ────────────────────────────────────────────────────────
+/// Validate an Android package/activity/intent name: only alphanumerics, dots,
+/// underscores and (for activity) leading slash. Rejects anything that could be
+/// interpreted as a flag or shell metacharacter.
+#[cfg(unix)]
+fn valid_android_name(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 256
+        && s.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '/' || c == '-')
+        && !s.starts_with('-')
+}
+#[cfg(unix)]
+fn valid_extra_key(k: &str) -> bool {
+    !k.is_empty()
+        && k.len() <= 128
+        && k.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_')
+}
 
 /// Launch an Activity via `am start`.
 #[cfg(unix)]
@@ -92,6 +107,12 @@ async fn start_activity(
     activity: &str,
     extras: &serde_json::Value,
 ) -> AgentResponse {
+    if !valid_android_name(package) {
+        return AgentResponse::err("invalid package name".to_string());
+    }
+    if !activity.is_empty() && !valid_android_name(activity) {
+        return AgentResponse::err("invalid activity name".to_string());
+    }
     // Build `am start -n pkg/activity` invocation
     let component = if activity.is_empty() {
         package.to_string()
@@ -102,11 +123,18 @@ async fn start_activity(
     let mut cmd = tokio::process::Command::new("am");
     cmd.args(["start", "-n", &component]);
 
-    // Flatten extras as --es / --ez / --ei flags
+    // Flatten extras as --es / --ez / --ei flags. Keys must be valid and
+    // values must not look like flags (no leading '-').
     if let Some(obj) = extras.as_object() {
         for (k, v) in obj {
+            if !valid_extra_key(k) {
+                continue;
+            }
             match v {
                 serde_json::Value::String(s) => {
+                    if s.starts_with('-') {
+                        continue;
+                    }
                     cmd.args(["--es", k, s]);
                 }
                 serde_json::Value::Bool(b) => {
@@ -142,12 +170,21 @@ async fn start_activity(
 /// Send a broadcast intent via `am broadcast`.
 #[cfg(unix)]
 async fn send_broadcast(intent: &str, extras: &serde_json::Value) -> AgentResponse {
+    if !valid_android_name(intent) {
+        return AgentResponse::err("invalid intent action".to_string());
+    }
     let mut cmd = tokio::process::Command::new("am");
     cmd.args(["broadcast", "-a", intent]);
 
     if let Some(obj) = extras.as_object() {
         for (k, v) in obj {
+            if !valid_extra_key(k) {
+                continue;
+            }
             if let serde_json::Value::String(s) = v {
+                if s.starts_with('-') {
+                    continue;
+                }
                 cmd.args(["--es", k, s]);
             }
         }
@@ -199,6 +236,9 @@ async fn get_installed() -> AgentResponse {
 /// Force-stop a package via `am force-stop`.
 #[cfg(unix)]
 async fn stop_app(package: &str) -> AgentResponse {
+    if !valid_android_name(package) {
+        return AgentResponse::err("invalid package name".to_string());
+    }
     match tokio::process::Command::new("am")
         .args(["force-stop", package])
         .output()

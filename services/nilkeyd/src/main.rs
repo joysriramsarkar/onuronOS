@@ -528,19 +528,19 @@ fn run_daemon() -> i32 {
                         let cmd = String::from_utf8_lossy(&buf[..n]);
                         let cmd_trimmed = cmd.trim();
                         if cmd_trimmed.starts_with("GET_KEY") {
-                            println!("[nilkeyd] Key Request: GET_KEY [redacted]");
+                            // GET_KEY MUST NOT emit the unwrapped master key: it
+                            // is a high-value secret that is already wrapped in
+                            // the key record. Only the device-secret fingerprint
+                            // is safe to expose.
                             let record = default_record_path();
-                            let master = default_master_key_path();
-                            if is_unlocked(&record, &master) {
-                                if let Ok(master_bytes) = load_master_from_file(&master) {
-                                    let resp = format!("KEY {}\n", hex_encode(&master_bytes));
-                                    let _ = s.write_all(resp.as_bytes());
-                                } else {
-                                    let _ = s.write_all(b"ERROR UNREADABLE_MASTER_KEY\n");
-                                }
+                            let fp = if is_unlocked(&record, &default_master_key_path()) {
+                                read_record(&record)
+                                    .ok()
+                                    .map(|r| r.device_secret_fingerprint)
                             } else {
-                                let _ = s.write_all(b"ERROR KEY_LOCKED\n");
-                            }
+                                None
+                            };
+                            let _ = writeln!(s, "KEY_FP {}", fp.unwrap_or_else(|| "NONE".to_string()));
                         } else {
                             println!("[nilkeyd] Status Request: {}", cmd_trimmed);
                             if is_unlocked(&default_record_path(), &default_master_key_path()) {

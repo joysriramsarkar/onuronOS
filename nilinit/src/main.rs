@@ -344,11 +344,13 @@ fn load_selinux() {
     let policy = match fs::read(policy_path) {
         Ok(p) => p,
         Err(e) => {
-            log_warn(&format!(
-                "SELinux policy file not found at {}: {}",
+            kmsg(&format!(
+                "\\x1b[1;31m[ FATAL ]\\x1b[0m SELinux policy file not found at {}: {} (refusing unenforced boot)",
                 policy_path, e
             ));
-            return;
+            loop {
+                thread::sleep(Duration::from_secs(60));
+            }
         }
     };
 
@@ -372,7 +374,10 @@ fn load_selinux() {
                     }
                 }
                 if !verified_enforcing {
-                    log_warn("SELinux policy loaded, but enforce=1 verification failed");
+                    kmsg("\\x1b[1;31m[ FATAL ]\\x1b[0m SELinux policy loaded but enforcing mode could not be verified; refusing to boot unenforced");
+                    loop {
+                        thread::sleep(Duration::from_secs(60));
+                    }
                 }
             }
             Err(e) => {
@@ -601,6 +606,21 @@ fn check_persistence_test(supervisor: &mut Supervisor) {
 }
 
 fn main() {
+    // Lock down the process umask before anything is created: all daemon IPC
+    // sockets are born world-writable by default, which lets an unprivileged
+    // local user talk to (and sometimes read from) any service. 077 keeps
+    // sockets readable/writable only by the owning user.
+    #[cfg(target_os = "linux")]
+    {
+        use libc::c_uint;
+        unsafe {
+            extern "C" {
+                fn umask(mask: c_uint) -> c_uint;
+            }
+            let _ = umask(0o077);
+        }
+    }
+
     mount_early_fs();
 
     kmsg("\x1b[1;36m=========================================================\x1b[0m");
@@ -816,14 +836,40 @@ fn main() {
             }
         }
 
-        // Check for pending shutdown / reboot requests
+        // Check for pending shutdown / reboot requests. Only a trusted writer
+        // (root / the shell daemon's uid) may trigger a power action; the file
+        // must be owned by uid 0. This closes the "any local uid can reboot"
+        // hole: an unprivileged user can no longer drop a file here and force
+        // a reboot/poweroff.
         let power_req = std::path::Path::new("/run/onuron/power_action");
         if power_req.exists() {
-            if let Ok(action) = fs::read_to_string(power_req) {
-                let action = action.trim();
-                let _ = fs::remove_file(power_req);
-                handle_system_shutdown(action, &mut supervisor);
-                break;
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::fs::MetadataExt;
+                let trusted = std::fs::metadata(power_req)
+                    .map(|m| m.uid() == 0)
+                    .unwrap_or(false);
+                if !trusted {
+                    log_warn("Ignoring power_action: file not owned by root (untrusted writer)");
+                    let _ = fs::remove_file(power_req);
+                    // skip processing this cycle
+                } else {
+                    if let Ok(action) = fs::read_to_string(power_req) {
+                        let action = action.trim();
+                        let _ = fs::remove_file(power_req);
+                        handle_system_shutdown(action, &mut supervisor);
+                        break;
+                    }
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                if let Ok(action) = fs::read_to_string(power_req) {
+                    let action = action.trim();
+                    let _ = fs::remove_file(power_req);
+                    handle_system_shutdown(action, &mut supervisor);
+                    break;
+                }
             }
         }
 

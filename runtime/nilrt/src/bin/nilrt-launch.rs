@@ -136,8 +136,10 @@ impl Drop for RegistryLock {
 /// This ensures per-app process isolation, filesystem DAC separation, and ptrace boundaries.
 /// Checks against persisted/active UIDs in a registry with cross-process locking to prevent hash collisions.
 pub fn allocate_app_uid_with_registry(app_id: &str, registry_path: Option<&Path>) -> u32 {
-    // Only permit developer UID override in test/debug mode to prevent privilege boundary bypass in production
-    if cfg!(debug_assertions) || env::var("NIL_TEST_MODE").map(|v| v == "1").unwrap_or(false) {
+    // Developer UID override is permitted only in debug builds; never via a
+    // runtime environment variable in production (that would allow uid 0).
+    #[cfg(debug_assertions)]
+    {
         if let Ok(override_uid) = env::var("NIL_APP_UID") {
             if let Ok(uid) = override_uid.parse::<u32>() {
                 return uid;
@@ -264,14 +266,18 @@ fn main() {
     let mut broker = PermissionBroker::new(&db_path.to_string_lossy());
     let granted = granted_permissions(&mut broker, app_id, &requested);
 
-    // Enforce by default once an app is installed (has a manifest); allow an
-    // explicit opt-out for bring-up with `NIL_PERMISSION_ENFORCE=0`.
+    // Enforce by default once an app is installed (has a manifest). In
+    // production the NIL_PERMISSION_ENFORCE opt-out is ignored so an app cannot
+    // disable its own sandbox.
     let manifest_present = app_dir.join("manifest.json").is_file();
+    #[cfg(debug_assertions)]
     let strict = match env::var("NIL_PERMISSION_ENFORCE").as_deref() {
         Ok("0") => false,
         Ok("1") => true,
         _ => manifest_present,
     };
+    #[cfg(not(debug_assertions))]
+    let strict = manifest_present;
 
     println!("[nilrt-launch] Launching application: {}", app_id);
     println!(

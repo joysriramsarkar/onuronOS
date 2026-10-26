@@ -188,7 +188,6 @@ impl HalDevice {
         let paths = [
             format!("/vendor/lib/nilhal/libnilhal_{}.so", name),
             format!("/usr/lib/nilhal/libnilhal_{}.so", name),
-            format!("./libnilhal_{}.so", name),
         ];
 
         for p in &paths {

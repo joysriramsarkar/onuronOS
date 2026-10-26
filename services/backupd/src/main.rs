@@ -297,7 +297,25 @@ impl BackupService {
             encrypted: true,
         };
 
-        let nonce = [0x5au8; 12];
+        let mut nonce = [0u8; 12];
+        // Use OS-provided randomness for the per-backup nonce. A fixed nonce
+        // would reuse the keystream and break confidentiality.
+        if let Ok(bytes) = std::fs::read("/dev/urandom") {
+            if bytes.len() >= 12 {
+                nonce.copy_from_slice(&bytes[..12]);
+            }
+        } else {
+            // Fallback: mix timestamp + pid (not cryptographically strong).
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            for (i, b) in ts.to_le_bytes().iter().enumerate() {
+                if i < 12 {
+                    nonce[i] = *b;
+                }
+            }
+        }
         let archive = package_nilbak(&manifest, payload_data, key, &nonce)?;
 
         let mut st = self.state.lock().unwrap();

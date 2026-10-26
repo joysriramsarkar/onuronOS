@@ -122,6 +122,15 @@ impl ContainerProfile {
         if !self.namespaces.ipc_namespace {
             return Err("IPC namespace must be enabled to prevent host SysV/POSIX IPC leak".into());
         }
+        if !self.namespaces.net_namespace {
+            return Err("Network namespace must be enabled to isolate Android from host interfaces".into());
+        }
+        if !self.namespaces.uts_namespace {
+            return Err("UTS namespace must be enabled to hide host hostname".into());
+        }
+        if !self.namespaces.user_namespace {
+            return Err("User namespace must be enabled to scope container root".into());
+        }
         if self.devices.allow_raw_evdev {
             return Err(
                 "Direct evdev input access is forbidden; must route through inputd/bridge".into(),

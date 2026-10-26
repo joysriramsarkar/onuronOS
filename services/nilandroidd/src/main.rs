@@ -273,10 +273,14 @@ fn forward_to_agent(request: &str) -> Result<String, String> {
         ];
         for path in candidates {
             if let Ok(mut stream) = UnixStream::connect(path) {
+                use std::time::Duration;
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
                 let line = format!("{request}\n");
                 stream
                     .write_all(line.as_bytes())
                     .map_err(|e| e.to_string())?;
+                let _ = stream.shutdown(std::net::Shutdown::Write);
                 let mut resp = String::new();
                 stream
                     .read_to_string(&mut resp)
