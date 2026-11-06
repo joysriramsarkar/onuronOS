@@ -55,7 +55,9 @@ pub fn update(state: &mut PhoneState, ev: Ev) {
                 #[cfg(unix)]
                 {
                     use std::io::Write;
-                    if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/nilos/telephony.sock") {
+                    if let Ok(mut s) =
+                        std::os::unix::net::UnixStream::connect("/run/nilos/telephony.sock")
+                    {
                         let _ = s.write_all(format!("ATD{};\r\n", state.entered).as_bytes());
                     }
                 }
@@ -199,4 +201,3 @@ mod tests {
         assert_eq!(state.contact, "999");
     }
 }
-

@@ -17,6 +17,13 @@ else
   esac
 fi
 
+# Validate the resolved device name is a plain identifier (no path traversal).
+case "$DEVICE" in
+  ""|*/*|*..*|*"$"*|*" "*)
+    echo "Invalid device name: $DEVICE" >&2
+    exit 1
+    ;;
+esac
 OUT="$TOP/out/$DEVICE"
 SYS="$OUT/rootfs"
 

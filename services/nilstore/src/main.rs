@@ -24,6 +24,9 @@ impl ChunkStore {
     }
 
     pub fn chunk_path(&self, hash: &str) -> PathBuf {
+        if !Self::is_valid_chunk_hash(hash) {
+            return self.base_dir.join(".invalid");
+        }
         if hash.len() >= 2 {
             self.base_dir.join(&hash[..2]).join(hash)
         } else {
@@ -40,9 +43,12 @@ impl ChunkStore {
     }
 
     pub fn store_chunk(&self, hash: &str, data: &[u8]) -> Result<(), String> {
+        if !Self::is_valid_chunk_hash(hash) {
+            return Err("invalid chunk hash".to_string());
+        }
         let path = self.chunk_path(hash);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?
         }
         fs::write(path, data).map_err(|e| e.to_string())
     }
@@ -59,6 +65,17 @@ impl ChunkStore {
             }
         }
         count
+    }
+
+    /// Content-addressed chunk hashes must be hex digests. Reject any
+    /// component that could escape `base_dir` (path traversal): no `..`,
+    /// no `/`, no `\`, and only ASCII hex characters.
+    fn is_valid_chunk_hash(hash: &str) -> bool {
+        !hash.is_empty()
+            && !hash.contains("..")
+            && !hash.contains('/')
+            && !hash.contains('\\')
+            && hash.bytes().all(|b| b.is_ascii_hexdigit())
     }
 }
 

@@ -8,10 +8,7 @@ const CHUNK_SIZE: usize = 4096;
 pub fn chunk_hash(data: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(data);
-    h.finalize()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect()
+    h.finalize().iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 pub fn index_directory(store_dir: &str) -> Result<usize, String> {

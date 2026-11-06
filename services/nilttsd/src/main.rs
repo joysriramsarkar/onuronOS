@@ -151,8 +151,8 @@ pub fn bengali_text_to_phonemes(text: &str) -> Vec<String> {
         // If current char is a consonant and next is NOT a matra and NOT virama, insert inherent 'O'
         if is_bengali_consonant(ch) {
             match next_ch {
-                Some('া') | Some('ি') | Some('ী') | Some('ু') | Some('ূ') | Some('ৃ')
-                | Some('ে') | Some('ৈ') | Some('ো') | Some('ৌ') | Some('্') => {
+                Some('া') | Some('ি') | Some('ী') | Some('ু') | Some('ূ') | Some('ৃ') | Some('ে')
+                | Some('ৈ') | Some('ো') | Some('ৌ') | Some('্') => {
                     // Handled by next matra or virama
                 }
                 _ => {
@@ -170,13 +170,41 @@ pub fn bengali_text_to_phonemes(text: &str) -> Vec<String> {
 fn is_bengali_consonant(ch: char) -> bool {
     matches!(
         ch,
-        'ক' | 'খ' | 'গ' | 'ঘ' | 'ঙ'
-            | 'চ' | 'ছ' | 'জ' | 'ঝ' | 'ঞ'
-            | 'ট' | 'ঠ' | 'ড' | 'ঢ' | 'ণ'
-            | 'ত' | 'থ' | 'দ' | 'ধ' | 'ন'
-            | 'প' | 'ফ' | 'ব' | 'ভ' | 'ম'
-            | 'য' | 'র' | 'ল' | 'শ' | 'ষ'
-            | 'স' | 'হ' | 'ড়' | 'ঢ়' | 'য়' | 'ৎ'
+        'ক' | 'খ'
+            | 'গ'
+            | 'ঘ'
+            | 'ঙ'
+            | 'চ'
+            | 'ছ'
+            | 'জ'
+            | 'ঝ'
+            | 'ঞ'
+            | 'ট'
+            | 'ঠ'
+            | 'ড'
+            | 'ঢ'
+            | 'ণ'
+            | 'ত'
+            | 'থ'
+            | 'দ'
+            | 'ধ'
+            | 'ন'
+            | 'প'
+            | 'ফ'
+            | 'ব'
+            | 'ভ'
+            | 'ম'
+            | 'য'
+            | 'র'
+            | 'ল'
+            | 'শ'
+            | 'ষ'
+            | 'স'
+            | 'হ'
+            | 'ড়'
+            | 'ঢ়'
+            | 'য়'
+            | 'ৎ'
     )
 }
 
@@ -316,7 +344,11 @@ pub fn phoneme_to_segment(symbol: &str) -> PhonemeSegment {
 }
 
 /// Generates 16kHz 16-bit signed PCM audio samples for a sequence of phonemes
-pub fn synthesize_phonemes_to_pcm(phonemes: &[String], pitch_mult: f32, speed_mult: f32) -> Vec<i16> {
+pub fn synthesize_phonemes_to_pcm(
+    phonemes: &[String],
+    pitch_mult: f32,
+    speed_mult: f32,
+) -> Vec<i16> {
     let mut samples = Vec::new();
     let speed = if speed_mult > 0.1 { speed_mult } else { 1.0 };
     let f0 = 130.0 * (if pitch_mult > 0.2 { pitch_mult } else { 1.0 });
@@ -385,8 +417,8 @@ pub fn save_pcm_to_wav(pcm_samples: &[i16], out_path: &Path) -> std::io::Result<
     // fmt subchunk
     file.write_all(b"fmt ")?;
     file.write_all(&16u32.to_le_bytes())?; // Subchunk1Size (16 for PCM)
-    file.write_all(&1u16.to_le_bytes())?;  // AudioFormat (1 = PCM)
-    file.write_all(&1u16.to_le_bytes())?;  // NumChannels (1 = Mono)
+    file.write_all(&1u16.to_le_bytes())?; // AudioFormat (1 = PCM)
+    file.write_all(&1u16.to_le_bytes())?; // NumChannels (1 = Mono)
     file.write_all(&SAMPLE_RATE.to_le_bytes())?;
     file.write_all(&byte_rate.to_le_bytes())?;
     file.write_all(&block_align.to_le_bytes())?;
@@ -504,7 +536,13 @@ mod tests {
 
     #[test]
     fn test_synthesize_pcm_and_wav_generation() {
-        let phonemes = vec!["b".to_string(), "A".to_string(), "ng".to_string(), "l".to_string(), "A".to_string()];
+        let phonemes = vec![
+            "b".to_string(),
+            "A".to_string(),
+            "ng".to_string(),
+            "l".to_string(),
+            "A".to_string(),
+        ];
         let pcm = synthesize_phonemes_to_pcm(&phonemes, 1.0, 1.0);
         assert!(!pcm.is_empty());
         assert!(pcm.iter().any(|&s| s != 0));

@@ -98,11 +98,29 @@ pub fn format_node_announcement(node: &AccessibilityNode, lang: &str) -> String 
     let is_bn = lang != "en";
 
     let role_desc = match node.role.as_str() {
-        "button" => if is_bn { "বোতাম" } else { "button" },
+        "button" => {
+            if is_bn {
+                "বোতাম"
+            } else {
+                "button"
+            }
+        }
         "checkbox" => {
             let state = match node.checked {
-                Some(true) => if is_bn { "টিক দেওয়া" } else { "checked" },
-                Some(false) => if is_bn { "টিক ছাড়া" } else { "unchecked" },
+                Some(true) => {
+                    if is_bn {
+                        "টিক দেওয়া"
+                    } else {
+                        "checked"
+                    }
+                }
+                Some(false) => {
+                    if is_bn {
+                        "টিক ছাড়া"
+                    } else {
+                        "unchecked"
+                    }
+                }
                 None => "",
             };
             return if is_bn {
@@ -119,8 +137,20 @@ pub fn format_node_announcement(node: &AccessibilityNode, lang: &str) -> String 
                 format!("{} slider, value {}", clean_label, val)
             };
         }
-        "heading" => if is_bn { "শিরোনাম" } else { "heading" },
-        "input" => if is_bn { "ইনপুট ক্ষেত্র" } else { "edit text" },
+        "heading" => {
+            if is_bn {
+                "শিরোনাম"
+            } else {
+                "heading"
+            }
+        }
+        "input" => {
+            if is_bn {
+                "ইনপুট ক্ষেত্র"
+            } else {
+                "edit text"
+            }
+        }
         _ => "",
     };
 

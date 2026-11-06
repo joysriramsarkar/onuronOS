@@ -374,7 +374,10 @@ pub unsafe extern "C" fn Java_org_onuron_mobile_NativeBridge_nativePushCameraFra
     buffer: *const u8,
     len: i32,
 ) {
-    if !buffer.is_null() && len > 0 {
+    const MAX_FRAME_BYTES: i32 = 16 * 1024 * 1024;
+    if !buffer.is_null() && len > 0 && len <= MAX_FRAME_BYTES {
+        // SAFETY: caller (JNI) guarantees `buffer` points to at least `len`
+        // bytes for the duration of this call.
         let slice = std::slice::from_raw_parts(buffer, len as usize);
         push_camera_frame(slice.to_vec());
     }

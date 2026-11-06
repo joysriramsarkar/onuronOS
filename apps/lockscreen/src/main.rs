@@ -7,18 +7,26 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LockscreenState {
     pub entered_pin: String,
-    pub expected_pin: String,
+    #[serde(skip)]
+    pub pin_record: String,
     pub unlocked: bool,
     pub failed_attempts: u32,
     pub drag_offset_y: i32,
     pub status: String,
 }
 
+const PIN_FILE: &str = "/data/nilos/pin_hash";
+const MAX_FAILED_ATTEMPTS: u32 = 5;
+
 impl Default for LockscreenState {
     fn default() -> Self {
+        // Load the stored PIN record from disk (never from a hardcoded value).
+        // If the file is missing/unreadable, verification always fails — there
+        // is no default PIN.
+        let pin_record = std::fs::read_to_string(PIN_FILE).unwrap_or_default();
         Self {
             entered_pin: String::new(),
-            expected_pin: "1234".into(),
+            pin_record,
             unlocked: false,
             failed_attempts: 0,
             drag_offset_y: 0,
@@ -40,7 +48,20 @@ pub fn update(state: &mut LockscreenState, ev: Ev) {
             state.entered_pin.pop();
         }
         Ev::Click(11) => {
-            if state.entered_pin == state.expected_pin {
+            // Lockout after too many failed attempts.
+            if state.failed_attempts >= MAX_FAILED_ATTEMPTS {
+                state.status = "Locked out".to_string();
+                state.entered_pin.clear();
+                return;
+            }
+            // Verify against the stored, salted, stretched PIN record using
+            // constant-time comparison (shell::pin). No plaintext compare.
+            let ok = match nilshell::pin::check_pin(&state.pin_record, &state.entered_pin) {
+                nilshell::pin::CheckResult::Verified
+                | nilshell::pin::CheckResult::VerifiedNeedsMigration => true,
+                nilshell::pin::CheckResult::Rejected => false,
+            };
+            if ok {
                 state.unlocked = true;
                 state.failed_attempts = 0;
                 state.entered_pin.clear();
@@ -130,7 +151,12 @@ fn main() {
         on_snapshot: Some(|s| serde_json::to_vec(s).unwrap_or_default()),
         on_restore: Some(|s, bytes| {
             if let Ok(restored) = serde_json::from_slice::<LockscreenState>(bytes) {
+                let record = s.pin_record.clone();
                 *s = restored;
+                s.pin_record = record;
+                if s.pin_record.is_empty() {
+                    s.pin_record = std::fs::read_to_string(PIN_FILE).unwrap_or_default();
+                }
             }
         }),
     };
@@ -143,7 +169,9 @@ mod tests {
 
     #[test]
     fn test_pin_unlock_and_rejection() {
+        let record = nilshell::pin::create_record("1234").unwrap();
         let mut st = LockscreenState::default();
+        st.pin_record = record;
         update(&mut st, Ev::Click(9));
         update(&mut st, Ev::Click(9));
         update(&mut st, Ev::Click(11));

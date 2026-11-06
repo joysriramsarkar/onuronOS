@@ -204,6 +204,8 @@ impl PowerHal for AndroidPower {
             voltage_mv: 4050,
             temp_c: 31.2,
             health: "Good".into(),
+            // Hardcoded values, not read from the Android bridge.
+            is_simulated: true,
         }
     }
 

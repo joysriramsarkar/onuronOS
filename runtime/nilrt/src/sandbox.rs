@@ -356,10 +356,6 @@ fn run_in_sandbox(config: &SandboxConfig) -> std::io::Result<()> {
             config.permissions.clone(),
         );
         apply_permission_restrictions(&policy)?;
-        // Apply seccomp last: it blocks the privileged syscalls (mount,
-        // setuid, chroot, …) this function still needs.
-        crate::seccomp::apply_app_seccomp()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
     }
 
     drop_privileges(config.gid, config.uid)?;
@@ -374,6 +370,14 @@ fn run_in_sandbox(config: &SandboxConfig) -> std::io::Result<()> {
             }
             eprintln!("[nilrt:sandbox] Warning: could not set SELinux context {ctx}: {e}");
         }
+    }
+
+    // Seccomp is installed LAST: it blocks the privileged syscalls (mount,
+    // setuid, chroot, …) that the setup above still needs. Dropping
+    // privileges and setting the SELinux context must happen first.
+    if config.strict_permissions {
+        crate::seccomp::apply_app_seccomp()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::PermissionDenied, e))?;
     }
     Ok(())
 }

@@ -1,11 +1,11 @@
 // apps/files/src/main.rs — OnuronOS File Manager
 // Using the official OnuronOS Design System (dark/light themes)
 // Backed by real Linux virtual & persistent filesystem boundaries.
-use std::fs;
-use std::path::Path;
 use nilui::design::{DesignSystem, Palette};
 use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FileItem {
@@ -161,7 +161,11 @@ pub fn view(state: &FilesState) -> Element {
         state
             .items
             .iter()
-            .filter(|it| it.name.to_lowercase().contains(&state.search.to_lowercase()))
+            .filter(|it| {
+                it.name
+                    .to_lowercase()
+                    .contains(&state.search.to_lowercase())
+            })
             .collect()
     };
 

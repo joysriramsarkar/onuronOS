@@ -1,3 +1,9 @@
+> # ⚠ CORRECTION / সংশোধনী — READ FIRST (2026-11-06)
+>
+> **This document is aspirational/historical and is NOT the canonical status of OnuronOS.** Claims in the body below — including "Production", "production-ready", "Zero-Stub"/"no stubs", and the removal of all simulated/fake data — are **aspirational goals, not achieved facts, and are contradicted by this banner**. Stubs, simulated backends, placeholders and unimplemented paths exist in the codebase (e.g. labelled `[SIMULATED]` backends, Fake/QEMU HAL, and HAL methods that return `Err` because no device/backend is implemented).
+>
+> **Canonical status is `docs/maturity.toml`** (rendered into `README.md` by `build/gen-maturity.py`). Current honest classification: **OnuronOS is a FUNCTIONAL PROTOTYPE**. **No hardware has been validated** — no physical device/panel/modem/battery has been proven; QEMU/dev-host results are not hardware evidence. Do not use this document to claim production readiness, production status, or hardware support.
+
 # অনুরণ ওএস (OnuronOS) — সর্বজনীন আলটিমেট মাস্টার রিপোর্ট ও প্রোডাকশন ব্লুপ্রিন্ট
 > **বুট থেকে অ্যাপ, ব্রাউজার, টার্মিনাল ও অ্যান্ড্রয়েড ব্রিজ: প্রোটোটাইপ থেকে সম্পূর্ণ মোবাইল অপারেটিং সিস্টেমে উত্তরণের পূর্ণাঙ্গ প্রযুক্তিগত মহাদলিল**  
 > *নথি সংস্করণ: ৬.০ (চূড়ান্ত প্রোডাকশন সংস্করণ) · তারিখ: অক্টোবর ২০২৬ · লাইসেন্স: AGPLv3*  

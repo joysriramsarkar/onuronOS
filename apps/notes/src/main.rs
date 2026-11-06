@@ -1,11 +1,11 @@
 // apps/notes/src/main.rs — OnuronOS NilLang Notes
 // Using the official OnuronOS Design System (dark/light themes)
 // Backed by persistent disk storage at /data/notes/notes.json
-use std::fs;
-use std::path::Path;
 use nilui::design::{DesignSystem, Palette};
 use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Note {

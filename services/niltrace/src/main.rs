@@ -83,8 +83,17 @@ pub fn clear_trace_buffer(trace_dir: &Path) -> std::io::Result<()> {
 }
 
 /// Enables a specific event subsystem (e.g. "sched", "irq", "power")
-pub fn enable_trace_event(trace_dir: &Path, category: &str, event: &str, enable: bool) -> std::io::Result<()> {
-    let event_path = trace_dir.join("events").join(category).join(event).join("enable");
+pub fn enable_trace_event(
+    trace_dir: &Path,
+    category: &str,
+    event: &str,
+    enable: bool,
+) -> std::io::Result<()> {
+    let event_path = trace_dir
+        .join("events")
+        .join(category)
+        .join(event)
+        .join("enable");
     if event_path.exists() {
         let val = if enable { "1\n" } else { "0\n" };
         fs::write(event_path, val)?;
@@ -149,7 +158,11 @@ pub fn parse_ftrace_line(line: &str) -> Option<ChromeTraceEvent> {
     let ts_us = ts_sec * 1_000_000.0;
 
     // Check if this is a tracing_mark_write (atrace/userspace marker)
-    if payload.starts_with("tracing_mark_write:") || payload.starts_with("B|") || payload.starts_with("E|") || payload.starts_with("C|") {
+    if payload.starts_with("tracing_mark_write:")
+        || payload.starts_with("B|")
+        || payload.starts_with("E|")
+        || payload.starts_with("C|")
+    {
         let marker_content = if let Some(stripped) = payload.strip_prefix("tracing_mark_write:") {
             stripped.trim()
         } else {
@@ -176,7 +189,11 @@ pub fn parse_ftrace_line(line: &str) -> Option<ChromeTraceEvent> {
         }
         en.to_string()
     } else {
-        payload.split_whitespace().next().unwrap_or("kernel_event").to_string()
+        payload
+            .split_whitespace()
+            .next()
+            .unwrap_or("kernel_event")
+            .to_string()
     };
 
     let cat = if event_name.starts_with("sched") {
@@ -213,7 +230,10 @@ pub fn parse_atrace_marker(marker: &str, ts_us: f64, default_pid: u32) -> Option
 
     match tokens[0] {
         "B" => {
-            let pid = tokens.get(1).and_then(|p| p.parse().ok()).unwrap_or(default_pid);
+            let pid = tokens
+                .get(1)
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(default_pid);
             let name = tokens.get(2).unwrap_or(&"slice").to_string();
             Some(ChromeTraceEvent {
                 name,
@@ -227,7 +247,10 @@ pub fn parse_atrace_marker(marker: &str, ts_us: f64, default_pid: u32) -> Option
             })
         }
         "E" => {
-            let pid = tokens.get(1).and_then(|p| p.parse().ok()).unwrap_or(default_pid);
+            let pid = tokens
+                .get(1)
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(default_pid);
             Some(ChromeTraceEvent {
                 name: "".to_string(),
                 cat: "userspace".to_string(),
@@ -240,7 +263,10 @@ pub fn parse_atrace_marker(marker: &str, ts_us: f64, default_pid: u32) -> Option
             })
         }
         "C" => {
-            let pid = tokens.get(1).and_then(|p| p.parse().ok()).unwrap_or(default_pid);
+            let pid = tokens
+                .get(1)
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(default_pid);
             let counter_name = tokens.get(2).unwrap_or(&"counter").to_string();
             let val = tokens.get(3).unwrap_or(&"0").to_string();
             let mut args = HashMap::new();
@@ -269,7 +295,9 @@ pub fn convert_ftrace_buffer_to_chrome_json(raw_trace: &str) -> String {
         }
     }
 
-    let doc = ChromeTraceDocument { trace_events: events };
+    let doc = ChromeTraceDocument {
+        trace_events: events,
+    };
     serde_json::to_string_pretty(&doc).unwrap_or_else(|_| "{\"traceEvents\":[]}".to_string())
 }
 

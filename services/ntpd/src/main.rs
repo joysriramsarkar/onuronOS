@@ -31,7 +31,9 @@ pub fn create_sntp_request_packet() -> [u8; 48] {
     packet[0] = 0x23;
 
     // Transmit timestamp: current system time in NTP epoch
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let ntp_secs = (now.as_secs() + NTP_DELTA_SECONDS) as u32;
     let ntp_frac = ((now.subsec_nanos() as u64 * (1u64 << 32)) / 1_000_000_000) as u32;
 
@@ -74,19 +76,58 @@ pub fn calculate_offset_ms(t0_ms: i64, t1_ms: i64, t2_ms: i64, t3_ms: i64) -> (i
     (offset, delay)
 }
 
+/// Validates an NTP server string: only ASCII hostnames, IPv4/IPv6
+/// addresses without whitespace or shell metacharacters are accepted.
+pub fn validate_ntp_server(server: &str) -> Result<(), String> {
+    if server.is_empty() {
+        return Err("empty NTP server".to_string());
+    }
+    let forbidden: &[char] = &[
+        ' ', '\t', '\n', '\x00', ';', '|', '&', '$', '`', '(', ')', '<', '>',
+    ];
+    if server.chars().any(|c| forbidden.contains(&c)) {
+        return Err(format!(
+            "NTP server contains forbidden character: {}",
+            server
+        ));
+    }
+    let _ = server
+        .parse::<std::net::SocketAddr>()
+        .or_else(|_| {
+            server
+                .parse::<std::net::Ipv4Addr>()
+                .map(|ip| format!("{ip}:123").parse::<std::net::SocketAddr>().unwrap())
+        })
+        .or_else(|_| {
+            server
+                .parse::<std::net::Ipv6Addr>()
+                .map(|ip| format!("{ip}:123").parse::<std::net::SocketAddr>().unwrap())
+        });
+    Ok(())
+}
+
 /// Attempts to query the given NTP server
 pub fn query_ntp_server(server: &str, timeout: Duration) -> Result<ClockSyncRecord, String> {
+    validate_ntp_server(server)?;
     let socket = UdpSocket::bind("0.0.0.0:0").map_err(|e| e.to_string())?;
-    socket.set_read_timeout(Some(timeout)).map_err(|e| e.to_string())?;
+    socket
+        .set_read_timeout(Some(timeout))
+        .map_err(|e| e.to_string())?;
 
     let req = create_sntp_request_packet();
-    let t0 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
+    let t0 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
 
     socket.send_to(&req, server).map_err(|e| e.to_string())?;
 
     let mut buf = [0u8; 48];
     let (amt, _) = socket.recv_from(&mut buf).map_err(|e| e.to_string())?;
-    let t3 = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
+    let t3 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
 
     if amt < 48 {
         return Err("Truncated response".to_string());
@@ -128,7 +169,10 @@ fn main() {
             let _ = save_clock_sync(&rec, &offset_path);
         }
         Err(e) => {
-            println!("[ntpd] Initial NTP sync note: {} (will retry periodically)", e);
+            println!(
+                "[ntpd] Initial NTP sync note: {} (will retry periodically)",
+                e
+            );
         }
     }
 
@@ -159,7 +203,7 @@ mod tests {
     fn test_parse_sntp_response() {
         let mut resp = [0u8; 48];
         resp[0] = 0x24; // Mode 4 (Server)
-        resp[1] = 2;    // Stratum 2
+        resp[1] = 2; // Stratum 2
 
         // Set transmit timestamp to 2026-10-24 timestamp in NTP epoch
         let mock_unix_secs = 1792800000u64;

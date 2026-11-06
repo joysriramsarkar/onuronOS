@@ -3,6 +3,9 @@
 use nilui::design::{DesignSystem, Palette};
 use nilui::{App, Element, Ev};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::fs;
+use std::path::Path;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum OobeStep {
@@ -23,12 +26,27 @@ pub struct OobeState {
 
 impl Default for OobeState {
     fn default() -> Self {
-        Self {
+        // Restore previously configured profile (name/locale) from disk so it is
+        // not discarded on resume; the PIN is deliberately NOT restored here —
+        // OOBE re-establishes a fresh PIN for a fresh device.
+        let mut st = Self {
             step: OobeStep::Welcome,
             locale: "bn-BD".into(),
             user_name: "Onuron User".into(),
             pin: String::new(),
+        };
+        let p = Path::new("/data/system/user.json");
+        if let Ok(content) = fs::read_to_string(p) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(un) = json.get("user_name").and_then(|v| v.as_str()) {
+                    st.user_name = un.to_string();
+                }
+                if let Some(loc) = json.get("locale").and_then(|v| v.as_str()) {
+                    st.locale = loc.to_string();
+                }
+            }
         }
+        st
     }
 }
 

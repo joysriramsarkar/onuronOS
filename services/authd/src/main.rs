@@ -2,7 +2,9 @@
 // Manages biometric fingerprint template enrollment, matching, hardware devfs interfacing,
 // and security lockout policies for OnuronOS lockscreen and authentication prompts.
 
+use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -21,7 +23,13 @@ pub struct FingerprintTemplate {
     pub name: String,
     pub user_id: u32,
     pub enrolled_at: u64,
+    // Kept in memory only (`#[serde(skip)]`): raw biometric material is never
+    // persisted to disk — only the salted SHA-256 hash (salt + feature_hash)
+    // is stored so a stolen database reveals no usable fingerprints.
+    #[serde(skip)]
     pub feature_vector: Vec<u8>,
+    pub salt: [u8; 16],
+    pub feature_hash: [u8; 32],
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -120,19 +128,36 @@ impl AuthdService {
             .unwrap_or_default()
             .as_secs();
 
+        // Per-template random salt; raw vector is never persisted.
+        let mut salt = [0u8; 16];
+        if getrandom(&mut salt).is_err() {
+            return Err("CSPRNG unavailable".to_string());
+        }
+        let mut input = Vec::with_capacity(feature_vector.len() + salt.len());
+        input.extend(&feature_vector);
+        input.extend(&salt);
+        let mut hasher = Sha256::new();
+        hasher.update(&input);
+        let feature_hash = hasher.finalize().into();
+
         let tmpl = FingerprintTemplate {
             id,
             name: name.to_string(),
             user_id,
             enrolled_at: timestamp,
             feature_vector,
+            salt,
+            feature_hash,
         };
 
         st.templates.push(tmpl.clone());
         drop(st);
         let _ = self.save_templates();
 
-        println!("[authd] Enrolled fingerprint '{}' (ID {}) for user {}", name, id, user_id);
+        println!(
+            "[authd] Enrolled fingerprint '{}' (ID {}) for user {}",
+            name, id, user_id
+        );
         Ok(tmpl)
     }
 
@@ -162,11 +187,22 @@ impl AuthdService {
         let mut matched_id = None;
 
         for tmpl in st.templates.iter().filter(|t| t.user_id == user_id) {
-            let score = compute_similarity_score(&tmpl.feature_vector, probe_vector);
-            if score > best_score {
-                best_score = score;
-                if score >= MATCH_THRESHOLD {
-                    matched_id = Some(tmpl.id);
+            // Compare a salted-hash of the probe against the stored hash.
+            let mut probe_input = Vec::with_capacity(probe_vector.len() + 16);
+            probe_input.extend(probe_vector);
+            probe_input.extend(&tmpl.salt);
+            let mut probe_hasher = Sha256::new();
+            probe_hasher.update(&probe_input);
+            let probe_hash = probe_hasher.finalize();
+
+            if probe_hash[..] == tmpl.feature_hash[..] {
+                // Hash matched: score against the (in-memory) enrolled vector.
+                let score = compute_similarity_score(&tmpl.feature_vector, probe_vector);
+                if score > best_score {
+                    best_score = score;
+                    if score >= MATCH_THRESHOLD {
+                        matched_id = Some(tmpl.id);
+                    }
                 }
             }
         }
@@ -304,7 +340,8 @@ mod tests {
         let svc = AuthdService::new(tmp.clone());
 
         let tmpl_data = vec![0x01, 0x02, 0x03, 0x04];
-        svc.enroll_fingerprint(1000, "Index", tmpl_data).expect("Enroll");
+        svc.enroll_fingerprint(1000, "Index", tmpl_data)
+            .expect("Enroll");
 
         let bad_probe = vec![0xfe, 0xfd, 0xfc, 0xfb];
 

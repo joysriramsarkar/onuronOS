@@ -5,9 +5,13 @@ pub struct VulkanContext {
 
 impl VulkanContext {
     pub fn new() -> Result<Self, String> {
-        println!("[nilui-gpu:vkctx] Vulkan 1.3 instance & graphics queue initialized.");
-        Ok(Self {
-            instance_name: "NilOS-Vulkan-Renderer".to_string(),
-        })
+        // STUB/SIMULATED previously: printed "initialized" and returned Ok
+        // without creating any Vulkan instance/device/queue. Callers
+        // (`Renderer2D::new` via `?`, and `nilgpu_init` which maps Err to
+        // null) already handle failure, so report it honestly.
+        Err(
+            "Vulkan not implemented: nilui-gpu creates no Vulkan instance/device/queue (STUB/SIMULATED); use the software PixelBuffer/DRM present path"
+                .to_string(),
+        )
     }
 }

@@ -57,7 +57,8 @@ pub fn update(state: &mut CameraState, ev: Ev) {
             #[cfg(unix)]
             {
                 use std::io::Write;
-                if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/nilos/camera.sock") {
+                if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/nilos/camera.sock")
+                {
                     let _ = s.write_all(b"CAPTURE\n");
                 }
             }
@@ -132,4 +133,3 @@ mod tests {
         assert_eq!(state.captured, initial_captured + 1);
     }
 }
-

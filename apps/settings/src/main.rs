@@ -1,10 +1,10 @@
 // apps/settings/src/main.rs — System Settings & Device Control App
 // Uses the official OnuronOS Design System (dark/light themes)
 // Backed by real Linux sysfs, rfkill, and Onuron service IPC boundaries.
-use std::fs;
-use std::path::Path;
 use nilui::design::{DesignSystem, Palette};
 use nilui::{App, Element, Ev};
+use std::fs;
+use std::path::Path;
 
 #[derive(Clone, Debug)]
 pub struct SettingsState {
@@ -83,7 +83,9 @@ pub fn read_sysfs_brightness() -> u8 {
             for entry in entries.flatten() {
                 let max_path = entry.path().join("max_brightness");
                 let cur_path = entry.path().join("brightness");
-                if let (Ok(cur), Ok(max)) = (fs::read_to_string(cur_path), fs::read_to_string(max_path)) {
+                if let (Ok(cur), Ok(max)) =
+                    (fs::read_to_string(cur_path), fs::read_to_string(max_path))
+                {
                     if let (Ok(c), Ok(m)) = (cur.trim().parse::<u32>(), max.trim().parse::<u32>()) {
                         if m > 0 {
                             return ((c * 100) / m).min(100) as u8;
@@ -460,7 +462,8 @@ pub fn view(state: &SettingsState) -> Element {
                     content: "• Userspace: 100% Memory-Safe Native Rust".into(),
                 },
                 Element::Text {
-                    content: "• Reference Boot: Fastboot / U-Boot / Android Boot Image v0-v4".into(),
+                    content: "• Reference Boot: Fastboot / U-Boot / Android Boot Image v0-v4"
+                        .into(),
                 },
                 Element::Text {
                     content: "• Package Format: Signed .nilax (Ed25519 atomic install)".into(),

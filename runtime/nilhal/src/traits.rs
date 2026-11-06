@@ -155,6 +155,11 @@ pub struct HalBatteryInfo {
     pub voltage_mv: u32,
     pub temp_c: f32,
     pub health: String,
+    /// True when values are placeholders because no battery hardware was
+    /// read (mirrors `BatteryInfoPayload::is_simulated` in nilprotocol).
+    /// Consumers must not present flagged values as live telemetry.
+    #[serde(default)]
+    pub is_simulated: bool,
 }
 
 pub trait PowerHal: Send + Sync {

@@ -431,29 +431,11 @@ fn spawn_container(
         }
     }
 
-    // The container must not share the host's PID, mount, IPC, UTS or network
-    // namespace. CLONE_NEWNET is included because Android apps must not reach
-    // the host's interfaces directly; traffic is proxied deliberately.
-    let flags = CloneFlags::CLONE_NEWPID
-        | CloneFlags::CLONE_NEWNS
-        | CloneFlags::CLONE_NEWIPC
-        | CloneFlags::CLONE_NEWUTS
-        | CloneFlags::CLONE_NEWNET;
-    unshare(flags).map_err(|e| {
-        format!("unshare({flags:?}) failed: {e}. Android containers need CAP_SYS_ADMIN.")
-    })?;
-
-    // Make the mount tree private so container mounts cannot propagate out and
-    // host mounts cannot leak in.
-    nix::mount::mount(
-        None::<&str>,
-        "/",
-        None::<&str>,
-        nix::mount::MsFlags::MS_REC | nix::mount::MsFlags::MS_PRIVATE,
-        None::<&str>,
-    )
-    .map_err(|e| format!("mount --make-rprivate failed: {e}"))?;
-
+    // Namespace isolation happens in the forked child (pre_exec), NOT in this
+    // daemon: unsharing here would move the daemon itself into the container's
+    // namespaces, making container root == host root. The child unshares
+    // PID/mount/IPC/UTS/NET/USER namespaces and writes its own uid/gid map so
+    // the container's root is scoped to that user namespace.
     let rootfs = layout.rootfs.clone();
     let plan = plan_container_mounts(layout);
     let old_root = rootfs.join(".onuron-old-root");
@@ -475,11 +457,31 @@ fn spawn_container(
     let plan_for_child = plan.clone();
     let hostname_for_child = hostname.clone();
 
-    // SAFETY: pre_exec runs in the forked child. It performs only syscalls
-    // (mkdir, mount, pivot_root, chdir, sethostname) plus small string
-    // allocations for error messages; the launcher is single-threaded here.
     unsafe {
         cmd.pre_exec(move || {
+            use nix::sched::{unshare, CloneFlags};
+            // Isolate in the CHILD, not the daemon. NEWUSER scopes the container's
+            // root so it cannot touch the host.
+            let flags = CloneFlags::CLONE_NEWUSER
+                | CloneFlags::CLONE_NEWPID
+                | CloneFlags::CLONE_NEWNS
+                | CloneFlags::CLONE_NEWIPC
+                | CloneFlags::CLONE_NEWUTS
+                | CloneFlags::CLONE_NEWNET;
+            unshare(flags)
+                .map_err(|e| std::io::Error::other(format!("unshare({flags:?}) failed: {e}")))?;
+            // Identity mapping keeps uid 0 usable inside but scoped to this ns.
+            let _ = std::fs::write("/proc/self/setgroups", "deny");
+            let _ = std::fs::write("/proc/self/uid_map", "0 0 1\n");
+            let _ = std::fs::write("/proc/self/gid_map", "0 0 1\n");
+            nix::mount::mount(
+                None::<&str>,
+                "/",
+                None::<&str>,
+                nix::mount::MsFlags::MS_REC | nix::mount::MsFlags::MS_PRIVATE,
+                None::<&str>,
+            )
+            .map_err(|e| std::io::Error::other(format!("make-rprivate: {e}")))?;
             enter_container_root(&rootfs_for_child, &old_root_for_child)
                 .map_err(|e| std::io::Error::other(format!("container root setup: {e}")))?;
             apply_container_mounts(&plan_for_child)
@@ -519,7 +521,9 @@ fn enter_container_root(rootfs: &Path, old_root: &Path) -> Result<(), String> {
     pivot_root(rootfs, old_root).map_err(|e| format!("pivot_root: {e}"))?;
 
     // Detach the old root: nothing under it is reachable afterwards.
-    let _ = nix::mount::umount2(old_root, nix::mount::MntFlags::MNT_DETACH);
+    if let Err(e) = nix::mount::umount2(old_root, nix::mount::MntFlags::MNT_DETACH) {
+        eprintln!("[nilandroidd] warning: old-root detach failed: {e}");
+    }
 
     // chdir("/") is mandatory: a retained CWD under the old root would let the
     // process walk back out of the container with relative `..`.
@@ -561,7 +565,30 @@ fn apply_container_mounts(plan: &[ContainerMount]) -> Result<(), String> {
             flags,
             None::<&str>,
         ) {
-            Ok(()) => {}
+            Ok(()) => {
+                // The kernel ignores MS_RDONLY on the initial bind mount, so a
+                // second remount is required to actually make bind-mounted
+                // /system and /vendor read-only.
+                if bind && m.read_only {
+                    let remount_flags = MsFlags::MS_REMOUNT
+                        | MsFlags::MS_BIND
+                        | MsFlags::MS_RDONLY
+                        | MsFlags::MS_NOSUID
+                        | MsFlags::MS_NODEV;
+                    if let Err(e) = mount(
+                        Some(m.source.as_str()),
+                        m.target.as_str(),
+                        None::<&str>,
+                        remount_flags,
+                        None::<&str>,
+                    ) {
+                        eprintln!(
+                            "[nilandroidd] warning: read-only remount of {} failed: {e}",
+                            m.target
+                        );
+                    }
+                }
+            }
             Err(e) if !m.fatal => {
                 eprintln!(
                     "[nilandroidd] optional mount {} on {} failed: {e}",

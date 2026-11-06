@@ -277,7 +277,7 @@ simulated = false
 [[entries]]
 name = "NilHAL Unified Subsystem"
 tier = "functional-prototype"
-details = "Rust trait abstraction with mock in-memory FakeHAL for automated CI, plus scaffold backends for Linux sysfs, evdev, and Android host"
+details = "Rust trait abstraction with explicitly simulated Fake/QEMU backends for CI, plus Linux sysfs/evdev and Android-host scaffold backends. Linux backend does not fabricate success: present_frame, wifi scan/connect, cellular toggle, camera capture/preview, ALSA play/record/route/volume-set, Bluetooth power/discovery/pair, telephony hangup/answer, and power timeout/performance/wakelock writes return Err (BackendUnavailable/DeviceNotFound/UnsupportedOperation/IoError) when no device/backend exists. Remaining simulated/placeholder surface, precisely: (1) HalBatteryInfo values are placeholders with is_simulated=true when no /sys/class/power_supply capacity was read (Linux), and hardcoded is_simulated=true in QEMU/Fake/Android power; (2) infallible trait getters with no error/flag channel return placeholders — Linux get_brightness=80, get_master_volume=80, sensor getters return zeros/None; (3) LinuxDisplay dimensions/refresh are fixed 1080x2400@60, not probed; (4) VulkanContext (nilui-gpu vkctx) is STUB: new() returns Err, no Vulkan instance/device exists; (5) QEMU/Fake backends are simulated by design and labelled [SIMULATED] where user-facing. No hardware validated"
 evidence = ["runtime/nilhal/", "hal/"]
 simulated = false
 

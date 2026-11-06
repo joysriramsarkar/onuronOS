@@ -34,8 +34,11 @@ impl DisplayHal for LinuxDisplay {
         self.refresh_rate
     }
     fn present_frame(&mut self, _buffer: &[u32]) -> Result<(), HalError> {
-        // Writes to /dev/fb0 or DRM KMS framebuffer
-        Ok(())
+        // STUB/SIMULATED previously: returned Ok without touching any
+        // framebuffer. Real presentation lives in nilui-gpu's DRM/KMS path.
+        Err(HalError::BackendUnavailable(
+            "LinuxDisplay::present_frame not implemented: no framebuffer/DRM present performed (use nilui-gpu DrmDevice/KmsPresenter)".into(),
+        ))
     }
     fn set_brightness(&mut self, percent: u8) -> Result<(), HalError> {
         let backlight_dir = Path::new("/sys/class/backlight");
@@ -47,14 +50,17 @@ impl DisplayHal for LinuxDisplay {
                     if let Ok(max_str) = fs::read_to_string(&max_path) {
                         if let Ok(max_val) = max_str.trim().parse::<u32>() {
                             let target = (max_val * (percent as u32)) / 100;
-                            let _ = fs::write(cur_path, target.to_string());
-                            return Ok(());
+                            return fs::write(&cur_path, target.to_string()).map_err(|e| {
+                                HalError::IoError(format!("writing {}: {e}", cur_path.display()))
+                            });
                         }
                     }
                 }
             }
         }
-        Ok(())
+        Err(HalError::DeviceNotFound(
+            "no backlight device found in /sys/class/backlight".into(),
+        ))
     }
     fn get_brightness(&self) -> u8 {
         let backlight_dir = Path::new("/sys/class/backlight");
@@ -186,7 +192,9 @@ impl NetworkHal for LinuxNetwork {
         }
     }
     fn scan_wifi(&mut self) -> Result<Vec<WifiApInfo>, HalError> {
-        Ok(Vec::new())
+        Err(HalError::UnsupportedOperation(
+            "LinuxNetwork::scan_wifi not implemented: no nl80211/wpa_supplicant backend".into(),
+        ))
     }
     fn connect_wifi(&mut self, _ssid: &str, _psk: &str) -> Result<(), HalError> {
         let has_wifi = if let Ok(entries) = fs::read_dir("/sys/class/net") {
@@ -202,10 +210,14 @@ impl NetworkHal for LinuxNetwork {
                 "No wireless network interface found in /sys/class/net".into(),
             ));
         }
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxNetwork::connect_wifi not implemented: interface present but no association/DHCP backend performed the connection".into(),
+        ))
     }
     fn set_cellular_enabled(&mut self, _enabled: bool) -> Result<(), HalError> {
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxNetwork::set_cellular_enabled not implemented: no modem backend".into(),
+        ))
     }
 }
 
@@ -219,6 +231,7 @@ impl PowerHal for LinuxPower {
         let mut status = "Full".to_string();
         let mut temp = 25.0f32;
         let mut volt = 4000u32;
+        let mut found_battery = false;
 
         if psupply.exists() {
             if let Ok(entries) = fs::read_dir(psupply) {
@@ -227,6 +240,7 @@ impl PowerHal for LinuxPower {
                     if let Ok(c) = fs::read_to_string(path.join("capacity")) {
                         if let Ok(parsed) = c.trim().parse::<u8>() {
                             cap = parsed;
+                            found_battery = true;
                         }
                     }
                     if let Ok(s) = fs::read_to_string(path.join("status")) {
@@ -247,28 +261,43 @@ impl PowerHal for LinuxPower {
             }
         }
 
+        if !found_battery {
+            // Placeholder values below are NOT a reading. Flag them exactly
+            // like BatteryInfoPayload::simulated() so no caller can present
+            // 100%/"Full" as live telemetry.
+            status = "Unknown [SIMULATED]".into();
+        }
         HalBatteryInfo {
             capacity: cap,
             is_charging: charging,
             status,
             voltage_mv: volt,
             temp_c: temp,
-            health: "Good".into(),
+            health: if found_battery {
+                "Good".into()
+            } else {
+                "Unknown [SIMULATED]".into()
+            },
+            is_simulated: !found_battery,
         }
     }
     fn set_screen_timeout(&mut self, _seconds: u32) -> Result<(), HalError> {
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxPower::set_screen_timeout not implemented".into(),
+        ))
     }
     fn set_performance_mode(&mut self, _mode: PerformanceMode) -> Result<(), HalError> {
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxPower::set_performance_mode not implemented: no cpufreq backend".into(),
+        ))
     }
     fn acquire_wakelock(&mut self, tag: &str) -> Result<(), HalError> {
-        let _ = fs::write("/sys/power/wake_lock", tag);
-        Ok(())
+        fs::write("/sys/power/wake_lock", tag)
+            .map_err(|e| HalError::IoError(format!("writing /sys/power/wake_lock: {e}")))
     }
     fn release_wakelock(&mut self, tag: &str) -> Result<(), HalError> {
-        let _ = fs::write("/sys/power/wake_unlock", tag);
-        Ok(())
+        fs::write("/sys/power/wake_unlock", tag)
+            .map_err(|e| HalError::IoError(format!("writing /sys/power/wake_unlock: {e}")))
     }
 }
 
@@ -288,10 +317,14 @@ impl TelephonyHal for LinuxTelephony {
         Ok(format!("linux_call_{}", number))
     }
     fn hangup(&mut self, _call_id: &str) -> Result<(), HalError> {
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxTelephony::hangup not implemented: no modem call-control backend".into(),
+        ))
     }
     fn answer(&mut self, _call_id: &str) -> Result<(), HalError> {
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxTelephony::answer not implemented: no modem call-control backend".into(),
+        ))
     }
     fn send_sms(&mut self, _recipient: &str, _message: &str) -> Result<(), HalError> {
         let has_modem = Path::new("/dev/cdc-wdm0").exists()
@@ -345,7 +378,10 @@ impl CameraHal for LinuxCamera {
                 "No Linux V4L2 camera capture device (/dev/video0) available".into(),
             ));
         }
-        Ok(vec![0xFF, 0xD8, 0xFF, 0xE0])
+        // Previously returned a 4-byte fake JPEG header. No frame is read.
+        Err(HalError::UnsupportedOperation(
+            "LinuxCamera::capture_frame not implemented: /dev/video0 present but no V4L2 frame read".into(),
+        ))
     }
     fn start_preview(&mut self) -> Result<(), HalError> {
         if !Path::new("/dev/video0").exists() {
@@ -353,7 +389,9 @@ impl CameraHal for LinuxCamera {
                 "Linux V4L2 camera preview device not available".into(),
             ));
         }
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxCamera::start_preview not implemented: no V4L2 streaming started".into(),
+        ))
     }
     fn stop_preview(&mut self) -> Result<(), HalError> {
         Ok(())
@@ -385,9 +423,13 @@ pub struct LinuxAudio;
 
 impl AudioHal for LinuxAudio {
     fn set_master_volume(&mut self, _percent: u8) -> Result<(), HalError> {
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxAudio::set_master_volume not implemented: no ALSA mixer backend".into(),
+        ))
     }
     fn get_master_volume(&self) -> u8 {
+        // Infallible trait getter with no error/flag channel; 80 is a
+        // placeholder, documented as simulated in docs/maturity.toml.
         80
     }
     fn play_stream(&mut self, _pcm_samples: &[i16]) -> Result<(), HalError> {
@@ -396,19 +438,25 @@ impl AudioHal for LinuxAudio {
                 "ALSA sound card (/proc/asound or /dev/snd) not available".into(),
             ));
         }
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxAudio::play_stream not implemented: no PCM written to ALSA".into(),
+        ))
     }
-    fn record_stream(&mut self, buffer: &mut [i16]) -> Result<usize, HalError> {
+    fn record_stream(&mut self, _buffer: &mut [i16]) -> Result<usize, HalError> {
         if !Path::new("/proc/asound").exists() && !Path::new("/dev/snd").exists() {
             return Err(HalError::BackendUnavailable(
                 "ALSA recording capture device not available".into(),
             ));
         }
-        buffer.fill(0);
-        Ok(buffer.len())
+        // Previously filled the buffer with silence and reported success.
+        Err(HalError::UnsupportedOperation(
+            "LinuxAudio::record_stream not implemented: no PCM read from ALSA (silence is not a recording)".into(),
+        ))
     }
     fn route_output(&mut self, _route: AudioRoute) -> Result<(), HalError> {
-        Ok(())
+        Err(HalError::UnsupportedOperation(
+            "LinuxAudio::route_output not implemented: no ALSA routing backend".into(),
+        ))
     }
 }
 
@@ -416,16 +464,37 @@ pub struct LinuxBluetooth;
 
 impl BluetoothHal for LinuxBluetooth {
     fn set_powered(&mut self, _powered: bool) -> Result<(), HalError> {
-        Ok(())
+        if !Path::new("/sys/class/bluetooth").exists() {
+            return Err(HalError::BackendUnavailable(
+                "no Bluetooth adapter found in /sys/class/bluetooth".into(),
+            ));
+        }
+        Err(HalError::UnsupportedOperation(
+            "LinuxBluetooth::set_powered not implemented: no rfkill/BlueZ backend".into(),
+        ))
     }
     fn start_discovery(&mut self) -> Result<(), HalError> {
-        Ok(())
+        if !Path::new("/sys/class/bluetooth").exists() {
+            return Err(HalError::BackendUnavailable(
+                "no Bluetooth adapter found in /sys/class/bluetooth".into(),
+            ));
+        }
+        Err(HalError::UnsupportedOperation(
+            "LinuxBluetooth::start_discovery not implemented: no BlueZ backend".into(),
+        ))
     }
     fn get_paired_devices(&self) -> Vec<BluetoothDeviceEntry> {
         Vec::new()
     }
     fn pair(&mut self, _address: &str) -> Result<(), HalError> {
-        Ok(())
+        if !Path::new("/sys/class/bluetooth").exists() {
+            return Err(HalError::BackendUnavailable(
+                "no Bluetooth adapter found in /sys/class/bluetooth".into(),
+            ));
+        }
+        Err(HalError::UnsupportedOperation(
+            "LinuxBluetooth::pair not implemented: no BlueZ backend".into(),
+        ))
     }
 }
 
@@ -480,6 +549,39 @@ mod linux_backend_tests {
             assert!(audio.play_stream(&[1, 2, 3]).is_err());
             let mut buf = [0i16; 64];
             assert!(audio.record_stream(&mut buf).is_err());
+        }
+    }
+
+    #[test]
+    fn test_linux_hal_no_fabricated_success() {
+        let mut display = LinuxDisplay::new();
+        assert!(display.present_frame(&[0xFFFF_FFFF]).is_err());
+        let mut net = LinuxNetwork;
+        assert!(net.scan_wifi().is_err());
+        assert!(net.connect_wifi("ssid", "psk").is_err());
+        assert!(net.set_cellular_enabled(true).is_err());
+        let mut power = LinuxPower;
+        assert!(power.set_screen_timeout(30).is_err());
+        assert!(power
+            .set_performance_mode(PerformanceMode::Balanced)
+            .is_err());
+        let mut bt = LinuxBluetooth;
+        assert!(bt.set_powered(true).is_err());
+        assert!(bt.start_discovery().is_err());
+        assert!(bt.pair("AA:BB:CC:DD:EE:FF").is_err());
+        let mut tel = LinuxTelephony;
+        assert!(tel.hangup("x").is_err());
+        assert!(tel.answer("x").is_err());
+    }
+
+    #[test]
+    fn test_linux_battery_placeholder_is_flagged_simulated() {
+        let info = LinuxPower.get_battery_info();
+        if info.is_simulated {
+            assert!(info.status.contains("[SIMULATED]"), "got: {}", info.status);
+            assert!(info.health.contains("[SIMULATED]"), "got: {}", info.health);
+        } else {
+            assert!(!info.status.contains("[SIMULATED]"));
         }
     }
 
