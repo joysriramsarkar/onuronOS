@@ -121,6 +121,7 @@ impl QemuPower {
                 voltage_mv: 4120,
                 temp_c: 28.5,
                 health: "Good".into(),
+                is_simulated: true,
             },
             perf_mode: PerformanceMode::Balanced,
         }

@@ -124,8 +124,12 @@ pub fn update(state: &mut MessagesState, ev: Ev) {
                 #[cfg(unix)]
                 {
                     use std::io::Write;
-                    if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/nilos/telephony.sock") {
-                        let _ = s.write_all(format!("AT+CMGS=\"{}\"\r\n{}\x1A", contact, text).as_bytes());
+                    if let Ok(mut s) =
+                        std::os::unix::net::UnixStream::connect("/run/nilos/telephony.sock")
+                    {
+                        let _ = s.write_all(
+                            format!("AT+CMGS=\"{}\"\r\n{}\x1A", contact, text).as_bytes(),
+                        );
                     }
                 }
             }
@@ -224,4 +228,3 @@ mod tests {
         assert!(state.draft.is_empty());
     }
 }
-

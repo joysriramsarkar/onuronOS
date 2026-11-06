@@ -540,7 +540,8 @@ fn run_daemon() -> i32 {
                             } else {
                                 None
                             };
-                            let _ = writeln!(s, "KEY_FP {}", fp.unwrap_or_else(|| "NONE".to_string()));
+                            let _ =
+                                writeln!(s, "KEY_FP {}", fp.unwrap_or_else(|| "NONE".to_string()));
                         } else {
                             println!("[nilkeyd] Status Request: {}", cmd_trimmed);
                             if is_unlocked(&default_record_path(), &default_master_key_path()) {

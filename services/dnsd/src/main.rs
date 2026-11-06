@@ -173,7 +173,10 @@ pub fn validate_dns_domain(domain: &str) -> Result<(), String> {
         return Err(format!("domain too long ({} chars)", t.len()));
     }
     // Allow alphanumerics, hyphens, and dots only.
-    if !t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-') {
+    if !t
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+    {
         return Err("domain contains invalid characters".to_string());
     }
     // Reject leading/trailing hyphens and empty labels.
@@ -222,12 +225,12 @@ impl DnsService {
     }
 
     pub fn resolve(&self, domain: &str, current_ts: u64) -> Option<Ipv4Addr> {
-            if let Err(e) = validate_dns_domain(domain) {
-                println!("[dnsd] invalid domain rejected: {}", e);
-                return None;
-            }
-            let norm_domain = domain.trim().trim_end_matches('.').to_lowercase();
-            let mut st = self.state.lock().unwrap();
+        if let Err(e) = validate_dns_domain(domain) {
+            println!("[dnsd] invalid domain rejected: {}", e);
+            return None;
+        }
+        let norm_domain = domain.trim().trim_end_matches('.').to_lowercase();
+        let mut st = self.state.lock().unwrap();
 
         // 1. Check local hosts table
         if let Some(&ip) = st.hosts.get(&norm_domain) {
@@ -259,13 +262,8 @@ impl DnsService {
         let norm_domain = domain.trim().trim_end_matches('.').to_lowercase();
         let expires_at_ts = current_ts + ttl_secs as u64;
         let mut st = self.state.lock().unwrap();
-        st.cache.insert(
-            norm_domain,
-            DnsCacheEntry {
-                ip,
-                expires_at_ts,
-            },
-        );
+        st.cache
+            .insert(norm_domain, DnsCacheEntry { ip, expires_at_ts });
     }
 
     pub fn get_stats(&self) -> DnsResolverStats {
@@ -356,14 +354,20 @@ mod tests {
         let map = parse_hosts_file(raw);
         assert_eq!(map.get("localhost"), Some(&Ipv4Addr::new(127, 0, 0, 1)));
         assert_eq!(map.get("myhost.local"), Some(&Ipv4Addr::new(127, 0, 0, 1)));
-        assert_eq!(map.get("gateway.local"), Some(&Ipv4Addr::new(192, 168, 1, 1)));
+        assert_eq!(
+            map.get("gateway.local"),
+            Some(&Ipv4Addr::new(192, 168, 1, 1))
+        );
     }
 
     #[test]
     fn test_dns_service_cache_and_resolve() {
         let svc = DnsService::new();
         // Resolves localhost from default hosts
-        assert_eq!(svc.resolve("localhost", 1000), Some(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(
+            svc.resolve("localhost", 1000),
+            Some(Ipv4Addr::new(127, 0, 0, 1))
+        );
 
         // Insert into cache with 60 sec TTL
         svc.insert_cache("api.onuron.org", Ipv4Addr::new(10, 0, 0, 1), 60, 1000);

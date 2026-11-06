@@ -72,7 +72,10 @@ pub fn handle_fastboot_command(raw_cmd: &str, state: &mut FastbootState) -> Vec<
 
     if let Some(part) = cmd.strip_prefix("flash:") {
         let partition = part.trim();
-        let target_part = if (partition == "boot" || partition == "system") && !partition.ends_with("_a") && !partition.ends_with("_b") {
+        let target_part = if (partition == "boot" || partition == "system")
+            && !partition.ends_with("_a")
+            && !partition.ends_with("_b")
+        {
             format!("{}_{}", partition, state.current_slot)
         } else {
             partition.to_string()
@@ -83,7 +86,9 @@ pub fn handle_fastboot_command(raw_cmd: &str, state: &mut FastbootState) -> Vec<
         }
 
         let bytes_len = state.download_buffer.len();
-        state.partitions.insert(target_part.clone(), state.download_buffer.clone());
+        state
+            .partitions
+            .insert(target_part.clone(), state.download_buffer.clone());
         state.download_buffer.clear();
         return vec![
             format!("INFOflashed {} bytes to {}", bytes_len, target_part),
@@ -149,7 +154,10 @@ fn handle_getvar(var: &str, state: &FastbootState) -> Vec<String> {
                 "INFOslot-count: 2".to_string(),
                 format!("INFOmax-download-size: 0x{:x}", state.max_download_size),
                 format!("INFOsecure: {}", if state.secure { "yes" } else { "no" }),
-                format!("INFOunlocked: {}", if state.unlocked { "yes" } else { "no" }),
+                format!(
+                    "INFOunlocked: {}",
+                    if state.unlocked { "yes" } else { "no" }
+                ),
                 "OKAY".to_string(),
             ]
         }
@@ -227,7 +235,10 @@ mod tests {
         // 3. Flash to boot partition (which resolves to boot_a for active slot 'a')
         let res_flash = handle_fastboot_command("flash:boot", &mut state);
         assert!(res_flash.contains(&"OKAY".to_string()));
-        assert_eq!(state.partitions.get("boot_a"), Some(&vec![0xde, 0xad, 0xbe, 0xef]));
+        assert_eq!(
+            state.partitions.get("boot_a"),
+            Some(&vec![0xde, 0xad, 0xbe, 0xef])
+        );
     }
 
     #[test]

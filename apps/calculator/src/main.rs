@@ -178,10 +178,7 @@ pub fn view(state: &CalcState) -> Element {
                 ],
             },
             Element::Row {
-                children: vec![
-                    button("0", 0),
-                    button(".", 46),
-                ],
+                children: vec![button("0", 0), button(".", 46)],
             },
         ],
     }

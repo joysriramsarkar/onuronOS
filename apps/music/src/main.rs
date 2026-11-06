@@ -37,7 +37,8 @@ pub fn update(state: &mut MusicState, ev: Ev) {
             #[cfg(unix)]
             {
                 use std::io::Write;
-                if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/onuron/audio.sock") {
+                if let Ok(mut s) = std::os::unix::net::UnixStream::connect("/run/onuron/audio.sock")
+                {
                     let _ = s.write_all(format!("SET_VOL {}\n", state.volume).as_bytes());
                 }
             }

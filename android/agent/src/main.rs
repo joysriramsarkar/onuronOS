@@ -90,14 +90,16 @@ impl AgentResponse {
 fn valid_android_name(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 256
-        && s.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '/' || c == '-')
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || c == '.' || c == '_' || c == '/' || c == '-')
         && !s.starts_with('-')
 }
 #[cfg(unix)]
 fn valid_extra_key(k: &str) -> bool {
     !k.is_empty()
         && k.len() <= 128
-        && k.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '_')
+        && k.chars()
+            .all(|c| c.is_alphanumeric() || c == '.' || c == '_')
 }
 
 /// Launch an Activity via `am start`.

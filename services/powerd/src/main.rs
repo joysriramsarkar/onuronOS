@@ -128,7 +128,7 @@ pub fn read_battery_info() -> BatteryInfo {
         voltage_mv: hal_bat.voltage_mv,
         temp_c: hal_bat.temp_c,
         health: hal_bat.health,
-        is_simulated: hal.backend_type == nilhal::BackendType::Qemu,
+        is_simulated: hal_bat.is_simulated || hal.backend_type == nilhal::BackendType::Qemu,
     }
 }
 
@@ -266,7 +266,11 @@ pub fn handle_ipc_request(frame: &Frame, governor: &Arc<Mutex<PowerGovernor>>) -
         MessageType::PowerAcquireWakelock => {
             let tag = String::from_utf8_lossy(&frame.payload).trim().to_string();
             if tag.is_empty() || tag.len() > 128 {
-                Frame::new(MessageType::ErrorResponse, frame.request_id, b"invalid tag".to_vec())
+                Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    b"invalid tag".to_vec(),
+                )
             } else {
                 let mut g = governor.lock().unwrap();
                 g.acquire_wakelock(&tag);
@@ -276,7 +280,11 @@ pub fn handle_ipc_request(frame: &Frame, governor: &Arc<Mutex<PowerGovernor>>) -
         MessageType::PowerReleaseWakelock => {
             let tag = String::from_utf8_lossy(&frame.payload).trim().to_string();
             if tag.is_empty() || tag.len() > 128 {
-                Frame::new(MessageType::ErrorResponse, frame.request_id, b"invalid tag".to_vec())
+                Frame::new(
+                    MessageType::ErrorResponse,
+                    frame.request_id,
+                    b"invalid tag".to_vec(),
+                )
             } else {
                 let mut g = governor.lock().unwrap();
                 let ok = g.release_wakelock(&tag);

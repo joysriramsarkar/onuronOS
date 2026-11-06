@@ -164,6 +164,7 @@ impl FakePower {
                 voltage_mv: 4100,
                 temp_c: 29.5,
                 health: "Good".to_string(),
+                is_simulated: true,
             })),
             wakelocks: Arc::new(Mutex::new(Vec::new())),
             perf_mode: Arc::new(Mutex::new(PerformanceMode::Balanced)),

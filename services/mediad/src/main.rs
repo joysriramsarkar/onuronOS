@@ -180,7 +180,11 @@ impl MediaService {
         let _ = self.save_index();
     }
 
-    pub fn query(&self, search_text: Option<&str>, filter_type: Option<MediaType>) -> Vec<MediaItem> {
+    pub fn query(
+        &self,
+        search_text: Option<&str>,
+        filter_type: Option<MediaType>,
+    ) -> Vec<MediaItem> {
         let st = self.state.lock().unwrap();
         st.items
             .iter()
@@ -205,9 +209,21 @@ impl MediaService {
     pub fn get_stats(&self) -> MediaCatalogStats {
         let st = self.state.lock().unwrap();
         let total_items = st.items.len();
-        let total_audio = st.items.iter().filter(|i| i.media_type == MediaType::Audio).count();
-        let total_video = st.items.iter().filter(|i| i.media_type == MediaType::Video).count();
-        let total_image = st.items.iter().filter(|i| i.media_type == MediaType::Image).count();
+        let total_audio = st
+            .items
+            .iter()
+            .filter(|i| i.media_type == MediaType::Audio)
+            .count();
+        let total_video = st
+            .items
+            .iter()
+            .filter(|i| i.media_type == MediaType::Video)
+            .count();
+        let total_image = st
+            .items
+            .iter()
+            .filter(|i| i.media_type == MediaType::Image)
+            .count();
         let total_bytes = st.items.iter().map(|i| i.size_bytes).sum();
 
         MediaCatalogStats {
@@ -230,7 +246,11 @@ fn main() {
     let stats = service.get_stats();
     println!(
         "[mediad] Indexed {} media items (Audio: {}, Video: {}, Images: {}, Total size: {} bytes)",
-        stats.total_items, stats.total_audio, stats.total_video, stats.total_image, stats.total_bytes
+        stats.total_items,
+        stats.total_audio,
+        stats.total_video,
+        stats.total_image,
+        stats.total_bytes
     );
 
     loop {

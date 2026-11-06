@@ -111,7 +111,12 @@ pub fn view(state: &ClockState) -> Element {
                         on_click_id: 1,
                     },
                     Element::Button {
-                        label: if state.stopwatch_running { "Pause" } else { "Start" }.into(),
+                        label: if state.stopwatch_running {
+                            "Pause"
+                        } else {
+                            "Start"
+                        }
+                        .into(),
                         on_click_id: 2,
                     },
                     Element::Button {

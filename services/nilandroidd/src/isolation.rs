@@ -123,7 +123,9 @@ impl ContainerProfile {
             return Err("IPC namespace must be enabled to prevent host SysV/POSIX IPC leak".into());
         }
         if !self.namespaces.net_namespace {
-            return Err("Network namespace must be enabled to isolate Android from host interfaces".into());
+            return Err(
+                "Network namespace must be enabled to isolate Android from host interfaces".into(),
+            );
         }
         if !self.namespaces.uts_namespace {
             return Err("UTS namespace must be enabled to hide host hostname".into());

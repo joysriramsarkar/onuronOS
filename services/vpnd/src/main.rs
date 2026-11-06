@@ -25,7 +25,7 @@ pub struct WgInterfaceConfig {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct WgPeerConfig {
     pub public_key: String,
-    pub endpoint: String, // e.g. "vpn.example.com:51820"
+    pub endpoint: String,    // e.g. "vpn.example.com:51820"
     pub allowed_ips: String, // e.g. "0.0.0.0/0, ::/0"
     #[serde(default)]
     pub persistent_keepalive: Option<u32>,
@@ -53,7 +53,9 @@ pub fn is_valid_wg_key(key: &str) -> bool {
     if trimmed.len() != 44 || !trimmed.ends_with('=') {
         return false;
     }
-    trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+    trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
 }
 
 /// Parses standard WireGuard INI-style configuration file
@@ -114,9 +116,18 @@ pub fn parse_wg_conf(content: &str) -> Result<WgConfig, String> {
 
     let mut peer_configs = Vec::new();
     for p in peers {
-        let public_key = p.get("publickey").cloned().ok_or("Missing PublicKey in [Peer]")?;
-        let endpoint = p.get("endpoint").cloned().ok_or("Missing Endpoint in [Peer]")?;
-        let allowed_ips = p.get("allowedips").cloned().unwrap_or_else(|| "0.0.0.0/0".to_string());
+        let public_key = p
+            .get("publickey")
+            .cloned()
+            .ok_or("Missing PublicKey in [Peer]")?;
+        let endpoint = p
+            .get("endpoint")
+            .cloned()
+            .ok_or("Missing Endpoint in [Peer]")?;
+        let allowed_ips = p
+            .get("allowedips")
+            .cloned()
+            .unwrap_or_else(|| "0.0.0.0/0".to_string());
         let persistent_keepalive = p.get("persistentkeepalive").and_then(|k| k.parse().ok());
 
         peer_configs.push(WgPeerConfig {
@@ -262,9 +273,13 @@ mod tests {
 
     #[test]
     fn test_is_valid_wg_key() {
-        assert!(is_valid_wg_key("a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v="));
+        assert!(is_valid_wg_key(
+            "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v="
+        ));
         assert!(!is_valid_wg_key("short_key"));
-        assert!(!is_valid_wg_key("a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v8")); // No '='
+        assert!(!is_valid_wg_key(
+            "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v8"
+        )); // No '='
     }
 
     #[test]
@@ -313,7 +328,10 @@ AllowedIPs = 0.0.0.0/0
         service.connect("OnuronSecure", conf_text).expect("Connect");
         let status = service.get_status();
         assert!(status.active);
-        assert_eq!(status.peer_endpoint.as_deref(), Some("vpn.onuron.org:51820"));
+        assert_eq!(
+            status.peer_endpoint.as_deref(),
+            Some("vpn.onuron.org:51820")
+        );
 
         service.disconnect();
         assert!(!service.get_status().active);

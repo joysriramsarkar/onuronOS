@@ -1054,10 +1054,11 @@ impl Client {
         if new_id == 0 || self.objects.contains_key(&new_id) {
             return Err(self.err(
                 self.registry_object_id(),
-                display_error::INVALID_VALUE,
+                display_error::INVALID_OBJECT,
                 &format!("bind_global: invalid or already-bound new_id {new_id}"),
             ));
         }
+        let known = match iface {
             WL_COMPOSITOR => Some((ObjectKind::Compositor, VERSION_COMPOSITOR)),
             WL_SHM => Some((ObjectKind::Shm, VERSION_SHM)),
             WL_SEAT => Some((ObjectKind::Seat, VERSION_SEAT)),

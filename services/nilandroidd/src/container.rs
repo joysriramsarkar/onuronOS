@@ -468,9 +468,8 @@ fn spawn_container(
                 | CloneFlags::CLONE_NEWIPC
                 | CloneFlags::CLONE_NEWUTS
                 | CloneFlags::CLONE_NEWNET;
-            unshare(flags).map_err(|e| {
-                std::io::Error::other(format!("unshare({flags:?}) failed: {e}"))
-            })?;
+            unshare(flags)
+                .map_err(|e| std::io::Error::other(format!("unshare({flags:?}) failed: {e}")))?;
             // Identity mapping keeps uid 0 usable inside but scoped to this ns.
             let _ = std::fs::write("/proc/self/setgroups", "deny");
             let _ = std::fs::write("/proc/self/uid_map", "0 0 1\n");

@@ -2,13 +2,13 @@
 // Manages biometric fingerprint template enrollment, matching, hardware devfs interfacing,
 // and security lockout policies for OnuronOS lockscreen and authentication prompts.
 
+use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use getrandom::getrandom;
-use sha2::{Digest, Sha256};
 
 pub const AUTH_SOCK_PATH: &str = "/run/nilos/auth.sock";
 pub const FP_DEV_PATH_FPC: &str = "/dev/fpc1020";
@@ -154,7 +154,10 @@ impl AuthdService {
         drop(st);
         let _ = self.save_templates();
 
-        println!("[authd] Enrolled fingerprint '{}' (ID {}) for user {}", name, id, user_id);
+        println!(
+            "[authd] Enrolled fingerprint '{}' (ID {}) for user {}",
+            name, id, user_id
+        );
         Ok(tmpl)
     }
 
@@ -337,7 +340,8 @@ mod tests {
         let svc = AuthdService::new(tmp.clone());
 
         let tmpl_data = vec![0x01, 0x02, 0x03, 0x04];
-        svc.enroll_fingerprint(1000, "Index", tmpl_data).expect("Enroll");
+        svc.enroll_fingerprint(1000, "Index", tmpl_data)
+            .expect("Enroll");
 
         let bad_probe = vec![0xfe, 0xfd, 0xfc, 0xfb];
 
