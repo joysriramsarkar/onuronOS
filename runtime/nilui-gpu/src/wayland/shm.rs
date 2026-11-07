@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/wayland/shm.rs — wl_shm client buffer pools
 //
 // A Wayland client hands the compositor pixels by creating a shared-memory

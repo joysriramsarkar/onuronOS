@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/bin/wayland_surface_producer.rs — a standalone Wayland client
 //
 // Pushes animated frames at the Onuron compositor through the shared

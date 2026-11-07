@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/bin/present_demo.rs — Direct KMS 120Hz Mobile Panel Presentation
 use nilui_gpu::KmsPresenter;
 

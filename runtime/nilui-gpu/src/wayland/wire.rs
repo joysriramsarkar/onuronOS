@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/wayland/wire.rs — Wayland wire protocol codec
 //
 // The Wayland wire format is a stream of messages over a Unix socket:

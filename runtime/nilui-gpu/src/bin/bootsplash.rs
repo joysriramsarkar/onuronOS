@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/bin/bootsplash.rs — Direct DRM/KMS Animated Mobile Bootsplash
 use nilui_gpu::KmsPresenter;
 use std::thread;

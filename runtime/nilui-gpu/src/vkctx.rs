@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/vkctx.rs — Vulkan Context & Device Helper
 pub struct VulkanContext {
     pub instance_name: String,

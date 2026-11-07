@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/bin/wayland_compositor.rs — run the Onuron Wayland compositor
 //
 // Accepts Wayland clients, composites their committed surfaces, and presents the

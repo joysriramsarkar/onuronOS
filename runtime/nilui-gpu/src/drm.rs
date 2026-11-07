@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/drm.rs — Direct Rendering Manager modesetting.
 //
 // Drives `/dev/dri/card*` through the real KMS ioctl interface: card

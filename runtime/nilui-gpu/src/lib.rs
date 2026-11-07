@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/lib.rs — Onuron OS Direct DRM/KMS Compositor & GPU Engine
 pub mod atlas;
 pub mod compositor;

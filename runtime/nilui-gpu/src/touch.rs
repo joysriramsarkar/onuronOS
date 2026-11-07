@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/touch.rs — Interactive Touch Compositor & Gesture Session
 // Manages mobile touch hit-testing, gesture transitions (swipe-to-unlock, shade pull-down),
 // and delivers smooth 60/120Hz DRM/KMS frame composition.

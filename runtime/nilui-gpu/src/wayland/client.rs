@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/wayland/client.rs — a Wayland client for surface producers
 //
 // This is the *producer* side of the compositor: the code a component runs when

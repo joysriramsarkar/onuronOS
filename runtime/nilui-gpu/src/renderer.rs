@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/renderer.rs — Batched 2D GPU & Software Renderer
 use crate::atlas::GlyphAtlas;
 use crate::compositor::PixelBuffer;

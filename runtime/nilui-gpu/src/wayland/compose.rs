@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/wayland/compose.rs — surface compositing into the DRM path
 //
 // This is the join between the Wayland server and the display: committed

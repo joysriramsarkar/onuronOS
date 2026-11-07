@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/wayland/server.rs — the Wayland server
 //
 // Accepts client connections on a Unix socket, decodes requests against the

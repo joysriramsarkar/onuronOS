@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/atlas.rs — Glyph Atlas & Bengali HarfBuzz Text Shaping
 pub struct GlyphAtlas {
     pub width: u32,

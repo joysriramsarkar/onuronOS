@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/bin/touch_compositor.rs — Interactive DRM/KMS Mobile Touch Compositor Session
 use nilui_gpu::{KmsPresenter, SwipeGesture, TouchCompositor};
 

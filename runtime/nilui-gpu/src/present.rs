@@ -1,3 +1,4 @@
+#[cfg(unix)]
 // runtime/nilui-gpu/src/present.rs — 120Hz/60Hz Triple-Buffering DRM/KMS Presenter
 //
 // Manages three frame buffers (Front, Back, Staging) to prevent tearing, lock contention,
