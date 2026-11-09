@@ -400,10 +400,10 @@ fn capture_v4l2_frame_inner(node: &str) -> Result<Vec<u8>, String> {
 }
 
 /// Public entry: real capture on Unix, honest error otherwise.
-fn capture_v4l2_frame(node: &str) -> Result<Vec<u8>, String> {
+fn capture_v4l2_frame(_node: &str) -> Result<Vec<u8>, String> {
     #[cfg(unix)]
     {
-        return capture_v4l2_frame_inner(node);
+        return capture_v4l2_frame_inner(_node);
     }
     #[cfg(not(unix))]
     {
@@ -422,22 +422,22 @@ fn encode_base64(bytes: &[u8]) -> String {
         out.push(TABLE[((b0 >> 2) & 0x3f) as usize] as u8);
         out.push(TABLE[(((b0 << 4) | (b1 >> 4)) & 0x3f) as usize] as u8);
         out.push(TABLE[(((b1 << 2) | (b2 >> 6)) & 0x3f) as usize] as u8);
-        out.push(TABLE[((b2 & 0x3f) as usize)] as u8);
+        out.push(TABLE[(b2 & 0x3f) as usize] as u8);
         i += 3;
     }
     let rem = bytes.len() % 3;
     if rem == 1 {
         let b0 = bytes[bytes.len() - 1] as u32;
-        out.push(TABLE[((b0 >> 2) as usize & 0x3f)] as u8);
-        out.push(TABLE[((b0 << 4) as usize & 0x3f)] as u8);
+        out.push(TABLE[(b0 >> 2) as usize & 0x3f] as u8);
+        out.push(TABLE[(b0 << 4) as usize & 0x3f] as u8);
         out.push(b'=' as u8);
         out.push(b'=' as u8);
     } else if rem == 2 {
         let b0 = bytes[bytes.len() - 2] as u32;
         let b1 = bytes[bytes.len() - 1] as u32;
-        out.push(TABLE[((b0 >> 2) as usize & 0x3f)] as u8);
+        out.push(TABLE[(b0 >> 2) as usize & 0x3f] as u8);
         out.push(TABLE[(((b0 << 4) | (b1 >> 4)) & 0x3f) as usize] as u8);
-        out.push(TABLE[((b1 << 2) as usize & 0x3f)] as u8);
+        out.push(TABLE[(b1 << 2) as usize & 0x3f] as u8);
         out.push(b'=' as u8);
     }
     String::from_utf8(out).unwrap()
@@ -558,6 +558,7 @@ fn main() {
         });
     }
     let _manager = CameraManager::new();
+    #[allow(unused_variables)]
     let manager = Arc::new(Mutex::new(_manager));
     #[cfg(unix)]
     {
