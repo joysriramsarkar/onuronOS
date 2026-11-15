@@ -6,8 +6,8 @@ use std::process::ExitCode;
 
 use nilpkg::get_key_dir;
 use nilupd::{
-    apply_update, boot_status, get_install_root, mark_boot_successful, record_boot_attempt,
-    rollback, status, verify_image,
+    apply_update, boot_status, fetch_update, get_install_root, mark_boot_successful,
+    record_boot_attempt, rollback, status, verify_image, FetchUpdateOptions,
 };
 
 fn print_help() {
@@ -17,6 +17,8 @@ fn print_help() {
     println!("Usage:");
     println!("  nilupd verify <update-dir>   — Verify image digest, Ed25519 signature and publisher trust");
     println!("  nilupd apply <update-dir>    — Verify and atomically apply to the inactive slot");
+    println!("  nilupd fetch <manifest-url> [--image <url>] [--apply] [--allow-insecure]");
+    println!("                               — Fetch signed OTA update over HTTPS, verify, and optionally apply");
     println!("  nilupd rollback              — Flip back to the previously active slot");
     println!("  nilupd status                — Show the active slot and running image hash");
     println!("  nilupd boot-status           — Show bootloader/boot-control slot state & tries remaining");
@@ -68,6 +70,73 @@ fn main() -> ExitCode {
             match apply_update(Path::new(dir), &get_install_root(), &get_key_dir()) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) => failure("Update", e),
+            }
+        }
+        "fetch" => {
+            let Some(manifest_url) = args.get(2) else {
+                eprintln!("Usage: nilupd fetch <manifest-url> [--image <url>] [--apply] [--allow-insecure]");
+                return ExitCode::FAILURE;
+            };
+            let mut image_url: Option<String> = None;
+            let mut do_apply = false;
+            let mut allow_insecure = false;
+            let mut i = 3;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--image" => {
+                        let Some(v) = args.get(i + 1) else {
+                            eprintln!("--image requires a URL");
+                            return ExitCode::FAILURE;
+                        };
+                        image_url = Some(v.clone());
+                        i += 2;
+                    }
+                    "--apply" => {
+                        do_apply = true;
+                        i += 1;
+                    }
+                    "--allow-insecure" => {
+                        allow_insecure = true;
+                        i += 1;
+                    }
+                    other => {
+                        eprintln!("Unknown fetch option '{other}'");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
+            let staging_root = get_install_root().join("staging");
+            let opts = FetchUpdateOptions { allow_insecure };
+            match fetch_update(
+                manifest_url,
+                image_url.as_deref(),
+                &staging_root,
+                &get_key_dir(),
+                &opts,
+            ) {
+                Ok(fetched) => {
+                    println!(
+                        "[nilupd] Fetched and verified '{}' v{} -> {}",
+                        fetched.manifest.name,
+                        fetched.manifest.version,
+                        fetched.staging_dir.display()
+                    );
+                    if do_apply {
+                        let res = apply_update(
+                            &fetched.staging_dir,
+                            &get_install_root(),
+                            &get_key_dir(),
+                        );
+                        let _ = std::fs::remove_dir_all(&fetched.staging_dir);
+                        match res {
+                            Ok(()) => ExitCode::SUCCESS,
+                            Err(e) => failure("Apply fetched update", e),
+                        }
+                    } else {
+                        ExitCode::SUCCESS
+                    }
+                }
+                Err(e) => failure("Fetch", e),
             }
         }
         "rollback" => match rollback(&get_install_root()) {

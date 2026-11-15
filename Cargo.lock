@@ -1505,9 +1505,12 @@ dependencies = [
  "nilpkg",
  "nilprotocol",
  "nilsd",
+ "rcgen",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
+ "ureq",
 ]
 
 [[package]]
