@@ -1,4 +1,3 @@
-#[cfg(unix)]
 // runtime/nilui-gpu/src/wayland/protocol.rs — Wayland core object model
 //
 // Object ids are allocated by the client for requests that carry a `new_id`

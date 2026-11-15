@@ -1,6 +1,5 @@
 #![allow(non_camel_case_types)]
 #![allow(non_upper_case_globals)]
-#[cfg(unix)]
 // runtime/nilui-gpu/src/drm_uapi.rs — DRM kernel UAPI structures.
 //
 // Field-for-field transcriptions of `struct drm_mode_*` from

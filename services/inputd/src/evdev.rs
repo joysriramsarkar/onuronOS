@@ -1,4 +1,3 @@
-#[cfg(unix)]
 // services/inputd/src/evdev.rs — Real Linux evdev input reader
 //
 // Opens `/dev/input/event*` directly and translates raw `struct input_event`

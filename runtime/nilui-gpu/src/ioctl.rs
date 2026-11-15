@@ -1,4 +1,3 @@
-#[cfg(unix)]
 // runtime/nilui-gpu/src/ioctl.rs — Linux ioctl request encoding and invocation.
 //
 // The `_IOC` encoding is reproduced here rather than taken from a crate so that

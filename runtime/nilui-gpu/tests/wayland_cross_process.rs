@@ -1,3 +1,4 @@
+#![cfg(unix)]
 // runtime/nilui-gpu/tests/wayland_cross_process.rs — cross-process compositor test
 //
 // The unit tests in `src/wayland/server.rs` drive a client and the server inside

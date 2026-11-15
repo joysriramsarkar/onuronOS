@@ -1,4 +1,3 @@
-#[cfg(unix)]
 // services/inputd/src/main.rs — Onuron OS Unified Input Subsystem & Gesture Engine
 // Reads raw Linux evdev (/dev/input/event*) & Android Host bridge events,
 // recognizes touch gestures (Tap, DoubleTap, LongPress, Swipe, Drag, Pinch), and broadcasts over IPC.
@@ -11,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "linux")]
 mod evdev;
 
 // ─── Linux evdev constants ────────────────────────────────────────────────────

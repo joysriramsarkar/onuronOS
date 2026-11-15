@@ -1,4 +1,3 @@
-#[cfg(unix)]
 // runtime/nilui-gpu/src/wayland/ — Wayland protocol implementation
 //
 // A hand-rolled Wayland server, for the same reason `drm.rs` hand-rolls its

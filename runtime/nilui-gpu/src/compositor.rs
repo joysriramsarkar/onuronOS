@@ -1,4 +1,3 @@
-#[cfg(unix)]
 // runtime/nilui-gpu/src/compositor.rs — 2D Pixel Canvas & Direct Screen Compositor
 //
 // Provides high-performance, memory-safe pixel operations, primitive shape rasterization,
