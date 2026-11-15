@@ -6,14 +6,48 @@
 // (390x796). Every metric below was measured from the PNGs and divided by two,
 // so layout code can read directly against the reference art.
 //
-// Palette (sampled, exact):
-//   dark  bg #1E1236  card #322748  tile #4C3876  border #534A65
-//         text #FFFFFF  med #CBBDE6  dim #9588AE  icon #D9C6FF
-//   light bg #F5F0FF  card #FDFCFF  tile #E5D8FF  border #E1D9F0
-//         text #1E1236  med #5E4B86  dim #7F6F9F  icon #5B2FC0
-//   accent #9B6BFF (both themes), on-accent #14082B
+// Visual language 2.0 — "নীল-শাঁখা" (indigo ink + conch ivory + brass):
+//   dark  bg #0B0F22  card #151B33  tile #1E2542  border #2A3152
+//         text #F4EEE2  med #B6B2C4  dim #86839A  icon #E6DCC8
+//   light bg #F6F1E6  card #FFFCF5  tile #EFE7D7  border #DCD2BF
+//         text #101528  med #4A4A5E  dim #76707F  icon #6B4A12
+//   accent: brass #D9A441 (dark) / #8A5B12 (light); on-accent #191207 / #FFF9EC
+//   amoled: true-black ground (#000000) with the same ivory/brass pair, for
+//           OLED power saving; surfaces lifted only by hairline borders.
+//
+// Why this replaced the 1.7 violet: the old palette tinted ground, card and
+// icon tile in the same hue, so every surface had equal weight and the shell
+// read as a template. Here the ground is ink, the text is warm ivory, and brass
+// appears only where something is *on* — never as decoration. Every text pair
+// carries at least 4.5:1 contrast; measured values are in docs/design/ui-2.0.md.
 
 use super::*;
+
+/// The three resolved palettes. `auto` is not a palette — it resolves to
+/// Light/Dark at the moment it is applied (see `SimState::set_theme_from_mode`),
+/// so painters and screens never have to know about the user's clock.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Palette {
+    Light = 0,
+    Dark = 1,
+    Amoled = 2,
+}
+
+impl Palette {
+    /// AMOLED inherits the dark token relationships with a true-black ground.
+    pub fn is_dark(self) -> bool {
+        matches!(self, Palette::Dark | Palette::Amoled)
+    }
+
+    /// Persisted / exported suffix name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Palette::Light => "light",
+            Palette::Dark => "dark",
+            Palette::Amoled => "amoled",
+        }
+    }
+}
 
 // ─── Canvas & layout metrics (logical px, design / 2) ────────────────────────
 pub const SW: i16 = 390;
@@ -21,9 +55,9 @@ pub const SH: i16 = 796;
 
 pub const MARGIN: i16 = 16; // card margin
 pub const CARD_W: u16 = 358; // full-bleed card width (390 - 2*16)
-pub const CARD_R: i16 = 16;
+pub const CARD_R: i16 = 18;
 pub const TILE: i16 = 40; // leading icon tile
-pub const TILE_R: i16 = 12;
+pub const TILE_R: i16 = 14;
 pub const ROW_H: i16 = 72;
 pub const PAD: i16 = 16; // inner card padding
 pub const BUTTON_H: u16 = 56;
@@ -49,40 +83,100 @@ pub struct T {
     pub warn: u32,
 }
 
-pub fn t(dark: bool) -> T {
-    if dark {
+pub fn t(pal: Palette) -> T {
+    match pal {
+        Palette::Dark =>
         T {
-            bg: 0x1E1236,
-            card: 0x322748,
-            tile: 0x4C3876,
-            border: 0x534A65,
+            bg: 0x0B0F22,
+            card: 0x151B33,
+            tile: 0x1E2542,
+            border: 0x2A3152,
+            text: 0xF4EEE2,
+            med: 0xB6B2C4,
+            dim: 0x86839A,
+            accent: 0xD9A441,
+            on_accent: 0x191207,
+            icon: 0xE6DCC8,
+            track: 0x232A47,
+            danger: 0xE0604A,
+            ok: 0x4FA97D,
+            warn: 0xD08A3E,
+        },
+        Palette::Amoled =>
+        // True-black ground for OLED panels. Surfaces lift by hairline only;
+        // the ivory/brass pair is unchanged so state contrast is identical to
+        // the ink dark theme.
+        T {
+            bg: 0x000000,
+            card: 0x0F0F14,
+            tile: 0x16161D,
+            border: 0x24242E,
+            text: 0xF4EEE2,
+            med: 0xB6B2C4,
+            dim: 0x86839A,
+            accent: 0xD9A441,
+            on_accent: 0x191207,
+            icon: 0xE6DCC8,
+            track: 0x181820,
+            danger: 0xE0604A,
+            ok: 0x4FA97D,
+            warn: 0xD08A3E,
+        },
+        Palette::Light =>
+        T {
+            bg: 0xF6F1E6,
+            card: 0xFFFCF5,
+            tile: 0xEFE7D7,
+            border: 0xDCD2BF,
+            text: 0x101528,
+            med: 0x4A4A5E,
+            dim: 0x76707F,
+            accent: 0x8A5B12,
+            on_accent: 0xFFF9EC,
+            icon: 0x2A2F45,
+            track: 0xE7DDC9,
+            danger: 0xA8322A,
+            ok: 0x2A6E4F,
+            warn: 0x8C5A10,
+        },
+    }
+}
+
+/// Active palette tokens, boosted when `high_contrast` accessibility mode is on.
+pub fn tp(p: &FramePainter) -> T {
+    let base = t(p.palette);
+    if !p.high_contrast {
+        return base;
+    }
+    if p.palette.is_dark() {
+        T {
+            bg: 0x000000,
+            card: 0x0A0C14,
+            tile: 0x161A2B,
+            border: 0x8B94BA,
             text: 0xFFFFFF,
-            med: 0xCBBDE6,
-            dim: 0x9588AE,
-            accent: 0x9B6BFF,
-            on_accent: 0x14082B,
-            icon: 0xD9C6FF,
-            track: 0x423856,
-            danger: 0xFF6B6B,
-            ok: 0x4ADE80,
-            warn: 0xDA9E65,
+            med: 0xF0ECE4,
+            dim: 0xD2CEE0,
+            accent: 0xFFD166,
+            on_accent: 0x000000,
+            icon: 0xFFFFFF,
+            track: 0x2C3352,
+            ..base
         }
     } else {
         T {
-            bg: 0xF5F0FF,
-            card: 0xFDFCFF,
-            tile: 0xE5D8FF,
-            border: 0xE1D9F0,
-            text: 0x1E1236,
-            med: 0x5E4B86,
-            dim: 0x7F6F9F,
-            accent: 0x9B6BFF,
-            on_accent: 0x14082B,
-            icon: 0x5B2FC0,
-            track: 0xE6E0F3,
-            danger: 0xC2333F,
-            ok: 0x15803D,
-            warn: 0xA5540F,
+            bg: 0xFFFFFF,
+            card: 0xFFFFFF,
+            tile: 0xEAE4D6,
+            border: 0x2A2F45,
+            text: 0x000000,
+            med: 0x1A1E2E,
+            dim: 0x34394E,
+            accent: 0x6B4000,
+            on_accent: 0xFFFFFF,
+            icon: 0x000000,
+            track: 0xC8BFA9,
+            ..base
         }
     }
 }
@@ -201,7 +295,7 @@ pub fn rrb(p: &mut FramePainter, x: i16, y: i16, w: u16, h: u16, r: i16, color: 
 
 /// A card: surface fill + 1px border, matching the reference art.
 pub fn card(p: &mut FramePainter, x: i16, y: i16, w: u16, h: u16) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     rr(p, x, y, w, h, CARD_R, th.card);
     rrb(p, x, y, w, h, CARD_R, th.border);
 }
@@ -211,7 +305,7 @@ pub fn card_full(p: &mut FramePainter, y: i16, h: u16) {
 }
 
 pub fn divider(p: &mut FramePainter, x: i16, y: i16, w: u16) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     p.fill_rect(x, y, w, 1, th.border);
 }
 
@@ -365,18 +459,18 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
         }
         "terminal" => {
             path!(&[
-                (4.4, 4.4),
-                (19.6, 4.4),
-                (21.4, 6.2),
-                (21.4, 17.8),
-                (19.6, 19.6),
-                (4.4, 19.6),
-                (2.6, 17.8),
-                (2.6, 6.2),
-                (4.4, 4.4),
+                (5.4, 5.0),
+                (18.6, 5.0),
+                (19.8, 6.2),
+                (19.8, 17.8),
+                (18.6, 19.0),
+                (5.4, 19.0),
+                (4.2, 17.8),
+                (4.2, 6.2),
+                (5.4, 5.0),
             ]);
-            path!(&[(6.6, 9.2), (9.8, 12.0), (6.6, 14.8)]);
-            path!(&[(12.4, 15.0), (17.0, 15.0)]);
+            path!(&[(7.8, 9.6), (10.2, 12.0), (7.8, 14.4)]);
+            path!(&[(12.8, 14.8), (16.4, 14.8)]);
         }
         "triangle" => {
             path!(&[(12.0, 3.0), (21.4, 20.2), (2.6, 20.2), (12.0, 3.0)]);
@@ -449,6 +543,38 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
             ]);
             path!(&[(3.6, 7.2), (12.0, 12.0), (20.4, 7.2)]);
             path!(&[(12.0, 12.0), (12.0, 21.4)]);
+        }
+        // Compatibility entry: a package with an install arrow, so it cannot be
+        // confused with the nilpkg cube.
+        "apk" => {
+            path!(&[
+                (5.0, 5.0),
+                (19.0, 5.0),
+                (20.0, 6.0),
+                (20.0, 18.0),
+                (19.0, 19.0),
+                (5.0, 19.0),
+                (4.0, 18.0),
+                (4.0, 6.0),
+                (5.0, 5.0),
+            ]);
+            path!(&[(12.0, 8.2), (12.0, 13.6)]);
+            path!(&[(9.4, 11.2), (12.0, 13.8), (14.6, 11.2)]);
+        }
+        // Signed transactional update: circular arrow.
+        "update" => {
+            let arc_pts: Vec<(f32, f32)> = arc_points(
+                12.0,
+                12.0,
+                7.6,
+                7.6,
+                -1.15,
+                4.05,
+                26,
+            );
+            let mapped: Vec<(f32, f32)> = arc_pts.iter().map(|(x, y)| (px(*x), py(*y))).collect();
+            stroke(p, &mapped, w, color);
+            path!(&[(17.2, 3.2), (17.2, 7.0), (13.4, 7.0)]);
         }
         "tv" => {
             path!(&[
@@ -526,15 +652,18 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
         "chevron_r" => path!(&[(9.6, 4.8), (16.4, 12.0), (9.6, 19.2)]),
         "chevron_l" => path!(&[(14.4, 4.8), (7.6, 12.0), (14.4, 19.2)]),
         "check" => path!(&[(4.4, 12.8), (9.6, 18.0), (19.6, 6.4)]),
+        // Wi-Fi: three concentric fan arcs over a dot. Drawn with a thinner
+        // stroke than the rest of the set so the arcs separate at tile size.
         "wifi" => {
-            for r in [11.6f32, 8.0, 4.4] {
-                let a0 = -std::f32::consts::PI * 0.80;
-                let a1 = -std::f32::consts::PI * 0.20;
-                let pts: Vec<(f32, f32)> = arc_points(12.0, 18.4, r, r, a0, a1, 20);
+            let ww = (w * 0.72).max(1.0);
+            for r in [11.1f32, 7.5, 3.9] {
+                let a0 = -std::f32::consts::PI * 0.755;
+                let a1 = -std::f32::consts::PI * 0.245;
+                let pts: Vec<(f32, f32)> = arc_points(12.0, 17.4, r, r, a0, a1, 22);
                 let mapped: Vec<(f32, f32)> = pts.iter().map(|(x, y)| (px(*x), py(*y))).collect();
-                stroke(p, &mapped, w, color);
+                stroke(p, &mapped, ww, color);
             }
-            disc(p, px(12.0), py(19.6), 1.5 * k, color);
+            disc(p, px(12.0), py(19.3), 1.2 * k, color);
         }
         "signal" => {
             for (i, h) in [4.0f32, 7.2, 10.4, 13.6].iter().enumerate() {
@@ -586,89 +715,118 @@ pub fn icon(p: &mut FramePainter, kind: &str, cx: f32, cy: f32, s: f32, color: u
             ]);
             circle(p, px(12.0), py(9.6), 2.6 * k, w, color);
         }
+        // Torch: a flashlight with a head, ribbed body and three light rays.
         "torch" => {
-            path!(&[(8.8, 3.4), (15.2, 3.4), (14.4, 8.6), (9.6, 8.6), (8.8, 3.4)]);
-            path!(&[
-                (9.2, 8.6),
-                (14.8, 8.6),
-                (14.0, 20.8),
-                (10.0, 20.8),
-                (9.2, 8.6)
-            ]);
+            // head (trapezoid) and body (tapered shaft)
+            path!(&[(9.0, 7.0), (15.0, 7.0), (14.1, 10.8), (9.9, 10.8), (9.0, 7.0)]);
+            path!(&[(9.9, 10.8), (14.1, 10.8), (13.5, 20.6), (10.5, 20.6), (9.9, 10.8)]);
+            // switch
+            path!(&[(10.9, 14.6), (13.1, 14.6)]);
+            // three rays
+            path!(&[(12.0, 1.8), (12.0, 3.8)]);
+            path!(&[(7.3, 3.3), (8.5, 4.5)]);
+            path!(&[(16.7, 3.3), (15.5, 4.5)]);
         }
+        // Silent: a bell crossed by a diagonal slash. Dome, skirt bar and
+        // clapper kept to three strokes so the slash stays legible.
         "bell_off" => {
+            let ww = (w * 0.8).max(1.0);
             path!(&[
-                (6.2, 16.6),
-                (6.2, 10.6),
-                (7.6, 6.6),
-                (12.0, 4.2),
-                (16.4, 6.6),
-                (17.8, 10.6),
-                (17.8, 16.6),
-                (19.8, 18.4),
-                (4.2, 18.4),
-                (6.2, 16.6),
+                (6.4, 15.2),
+                (6.4, 10.2),
+                (7.8, 6.6),
+                (12.0, 4.6),
+                (16.2, 6.6),
+                (17.6, 10.2),
+                (17.6, 15.2),
             ]);
-            path!(&[(3.4, 3.4), (20.6, 20.6)]);
-            path!(&[(10.0, 20.8), (14.0, 20.8)]);
-        }
-        "rotate" => {
-            let pts: Vec<(f32, f32)> = arc_points(12.0, 12.0, 7.6, 7.6, 0.6, 4.6, 22);
+            path!(&[(4.8, 15.2), (19.2, 15.2)]);
+            // clapper: small downward arc centred under the dome
+            let pts: Vec<(f32, f32)> = arc_points(12.0, 17.9, 1.6, 1.6, 0.15, std::f32::consts::PI - 0.15, 10);
             let mapped: Vec<(f32, f32)> = pts.iter().map(|(x, y)| (px(*x), py(*y))).collect();
-            stroke(p, &mapped, w, color);
-            path!(&[(16.2, 2.8), (18.8, 6.2), (14.8, 6.8)]);
+            stroke(p, &mapped, ww, color);
+            // slash
+            path!(&[(4.8, 4.4), (19.2, 19.6)]);
         }
+        // Rotation: a near-full ring with the arrowhead riding the sweep end,
+        // so the glyph reads as one gesture instead of an arc plus a tack.
+        "rotate" => {
+            let a0 = -0.85f32;
+            let a1 = 3.55f32;
+            let pts: Vec<(f32, f32)> = arc_points(12.0, 12.4, 7.4, 7.4, a0, a1, 26);
+            let mapped: Vec<(f32, f32)> = pts.iter().map(|(x, y)| (px(*x), py(*y))).collect();
+            stroke(p, &mapped, (w * 0.8).max(1.0), color);
+            // end point of the sweep
+            let ex = 12.0 + 7.4 * a1.cos();
+            let ey = 12.4 + 7.4 * a1.sin();
+            // tangent at the sweep end (direction of travel)
+            let tx = -a1.sin();
+            let ty = a1.cos();
+            // normal (pointing away from the centre)
+            let nx = a1.cos();
+            let ny = a1.sin();
+            let tip = (ex + tx * 3.4, ey + ty * 3.4);
+            let b1 = (ex + nx * 2.5, ey + ny * 2.5);
+            let b2 = (ex - nx * 2.5, ey - ny * 2.5);
+            path!(&[(b1.0, b1.1), (tip.0, tip.1), (b2.0, b2.1)]);
+        }
+        // Aeroplane: a filled symmetric silhouette; stroked outlines read
+        // weakly at toggle-tile sizes, so the body is one solid dart.
         "airplane" => {
-            path!(&[
+            let pts: Vec<(f32, f32)> = [
                 (12.0, 2.4),
-                (13.8, 8.6),
-                (13.8, 10.8),
-                (21.4, 15.0),
-                (21.4, 17.2),
-                (13.8, 14.6),
-                (13.8, 19.0),
-                (16.0, 20.6),
-                (16.0, 21.8),
-                (12.0, 20.8),
-                (8.0, 21.8),
-                (8.0, 20.6),
-                (10.2, 19.0),
-                (10.2, 14.6),
-                (2.6, 17.2),
-                (2.6, 15.0),
-                (10.2, 10.8),
-                (10.2, 8.6),
-                (12.0, 2.4),
-            ]);
+                (13.2, 8.8),
+                (21.5, 14.4),
+                (21.5, 16.6),
+                (13.2, 14.6),
+                (12.9, 19.6),
+                (15.6, 21.4),
+                (15.6, 22.6),
+                (12.0, 21.4),
+                (8.4, 22.6),
+                (8.4, 21.4),
+                (11.1, 19.6),
+                (10.8, 14.6),
+                (2.5, 16.6),
+                (2.5, 14.4),
+                (10.8, 8.8),
+            ]
+            .iter()
+            .map(|(x, y)| (px(*x), py(*y)))
+            .collect();
+            fill_poly(p, &pts, color);
         }
+        // Cellular: four filled ascending bars (rounded caps).
         "cellular" => {
-            for (i, h) in [4.6f32, 7.8, 11.0, 14.2].iter().enumerate() {
-                let x = 4.6 + i as f32 * 4.8;
+            for (i, h) in [4.6f32, 7.6, 10.8, 14.2].iter().enumerate() {
+                let x = 4.2 + i as f32 * 4.4;
                 let x0 = px(x) as i16;
-                let y0 = py(20.0 - h) as i16;
+                let y0 = py(20.2 - h) as i16;
                 rr(
                     p,
                     x0,
                     y0,
-                    (2.8 * k).max(2.0) as u16,
+                    (3.0 * k).max(2.4) as u16,
                     (h * k) as u16,
-                    (0.8 * k) as i16,
+                    (1.0 * k).max(1.0) as i16,
                     color,
                 );
             }
         }
+        // Battery-saver leaf: a two-arc blade with a midrib and a short stem.
         "leaf" => {
             path!(&[
-                (3.6, 20.4),
-                (5.4, 12.4),
-                (11.6, 4.8),
-                (20.4, 3.6),
-                (19.2, 12.2),
-                (12.4, 18.4),
-                (5.6, 19.4),
-                (3.6, 20.4),
+                (3.8, 20.2),
+                (5.6, 12.6),
+                (11.2, 5.4),
+                (18.4, 3.4),
+                (20.2, 4.4),
+                (19.8, 11.6),
+                (14.2, 17.2),
+                (7.6, 19.2),
+                (3.8, 20.2),
             ]);
-            path!(&[(6.8, 17.4), (14.2, 9.6)]);
+            path!(&[(7.0, 17.0), (15.4, 8.4)]);
         }
         "camera" => {
             path!(&[
@@ -869,17 +1027,47 @@ fn fill_triangle(p: &mut FramePainter, v: [(f32, f32); 3], color: u32) {
     }
 }
 
+/// Filled n-gon via even-odd scanline fill. Used for silhouettes that read
+/// better solid than stroked at small sizes (e.g. the aeroplane glyph).
+fn fill_poly(p: &mut FramePainter, v: &[(f32, f32)], color: u32) {
+    if v.len() < 3 {
+        return;
+    }
+    let miny = v.iter().map(|q| q.1).fold(f32::INFINITY, f32::min).floor() as i16;
+    let maxy = v.iter().map(|q| q.1).fold(f32::NEG_INFINITY, f32::max).ceil() as i16;
+    for y in miny..=maxy {
+        let yc = y as f32 + 0.5;
+        let mut xs: Vec<f32> = Vec::new();
+        for i in 0..v.len() {
+            let (x1, y1) = v[i];
+            let (x2, y2) = v[(i + 1) % v.len()];
+            if (y1 <= yc && y2 > yc) || (y2 <= yc && y1 > yc) {
+                let t = (yc - y1) / (y2 - y1);
+                xs.push(x1 + t * (x2 - x1));
+            }
+        }
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        for pair in xs.chunks_exact(2) {
+            let x0 = pair[0];
+            let x1 = pair[1];
+            if x1 > x0 {
+                p.fill_rect(x0.round() as i16, y, (x1 - x0).max(1.0) as u16, 1, color);
+            }
+        }
+    }
+}
+
 // ─── Chrome: status bar, titles ─────────────────────────────────────────────
 
 pub fn status_bar(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     let (hh, mm) = crate::get_ist_time_parts();
     let clock = format!(
         "{}:{}",
         to_bengali_digits(&format!("{:02}", hh)),
         to_bengali_digits(&format!("{:02}", mm))
     );
-    text(p, 22, 8, 15.0, &clock, th.text, true);
+    text(p, 23, 9, 14.5, &clock, th.med, true);
 
     // The status bar itself is the notification-panel handle, exactly as in the
     // pre-1.7 shell (`toggle_island` covered this same region). Suppressed on the
@@ -933,17 +1121,16 @@ pub fn status_bar(p: &mut FramePainter, state: &SimState) {
 
 /// Large screen title. `back` adds the circular back button used by sub-screens.
 pub fn screen_title(p: &mut FramePainter, label: &str, back: Option<&str>) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     match back {
         Some(id) => {
-            rr(p, 20, 59, 35, 35, 18, th.card);
-            rrb(p, 20, 59, 35, 35, 18, th.border);
-            icon(p, "chevron_l", 37.5, 76.5, 15.0, th.med);
-            p.register_button(14, 53, 46, 46, id);
-            text(p, 72, 60, 30.0, label, th.text, true);
+            rr(p, 20, 58, 36, 36, 18, th.tile);
+            icon(p, "chevron_l", 38.0, 76.0, 14.0, th.icon);
+            p.register_button(14, 52, 48, 48, id);
+            text(p, 72, 60, 28.5, label, th.text, true);
         }
         None => {
-            text(p, 24, 60, 30.0, label, th.text, true);
+            text(p, 24, 60, 28.5, label, th.text, true);
         }
     }
 }
@@ -952,15 +1139,38 @@ pub fn screen_title(p: &mut FramePainter, label: &str, back: Option<&str>) {
 
 /// Leading 40x40 icon tile used by list rows.
 pub fn icon_tile(p: &mut FramePainter, x: i16, y: i16, kind: &str) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     rr(p, x, y, TILE as u16, TILE as u16, TILE_R, th.tile);
     icon(
         p,
         kind,
         (x + TILE / 2) as f32,
         (y + TILE / 2) as f32,
-        22.0,
+        21.0,
         th.icon,
+    );
+}
+
+/// Leading tile tinted by a source colour (e.g. per app in the notification
+/// shade). The tile is the theme's tile mixed 22% toward `tint`; the glyph is
+/// the tint itself on dark grounds, darkened on paper, so each source stays
+/// scannable at a glance without adding a new surface colour.
+pub fn icon_tile_tint(p: &mut FramePainter, x: i16, y: i16, kind: &str, tint: u32) {
+    let th = tp(p);
+    let fill = blend_pixel(th.tile, tint, 56);
+    let glyph = if p.palette.is_dark() {
+        tint
+    } else {
+        blend_pixel(tint, 0x000000, 96)
+    };
+    rr(p, x, y, TILE as u16, TILE as u16, TILE_R, fill);
+    icon(
+        p,
+        kind,
+        (x + TILE / 2) as f32,
+        (y + TILE / 2) as f32,
+        21.0,
+        glyph,
     );
 }
 
@@ -983,14 +1193,14 @@ pub fn row(
     trail: Trail,
     id: &str,
 ) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     icon_tile(p, x + 19, y + (ROW_H - TILE) / 2, kind);
     let tx = x + 69;
     if sub.is_empty() {
-        text(p, tx, y + 21, 15.5, title, th.text, true);
+        text(p, tx, y + 23, 15.5, title, th.text, true);
     } else {
         text(p, tx, y + 13, 15.5, title, th.text, true);
-        text(p, tx, y + 37, 12.5, sub, th.med, false);
+        text(p, tx, y + 37, 12.5, sub, th.dim, false);
     }
     match trail {
         Trail::Chevron => icon(
@@ -1018,26 +1228,26 @@ pub fn row(
 }
 
 pub fn switch(p: &mut FramePainter, x: i16, y: i16, on: bool) {
-    let th = t(p.dark_mode);
-    let (w, h) = (44u16, 24u16);
+    let th = tp(p);
+    let (w, h) = (44u16, 26u16);
     let bg = if on { th.accent } else { th.track };
-    rr(p, x, y, w, h, 12, bg);
-    let tx = if on { x + w as i16 - 22 } else { x + 2 };
-    disc(p, (tx + 10) as f32, (y + 12) as f32, 10.0, 0xFFFFFF);
+    rr(p, x, y, w, h, 13, bg);
+    let tx = if on { x + w as i16 - 24 } else { x + 2 };
+    disc(p, (tx + 11) as f32, (y + 13) as f32, 11.0, 0xFFF9EC);
 }
 
 /// Full-width switch card (label left, switch right).
 pub fn switch_card(p: &mut FramePainter, y: i16, label: &str, on: bool, id: &str) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     card_full(p, y, 54);
     text(p, MARGIN + 18, y + 18, 15.0, label, th.text, true);
-    switch(p, SW - MARGIN - 18 - 44, y + 15, on);
+    switch(p, SW - MARGIN - 18 - 44, y + 14, on);
     p.register_button(MARGIN, y, CARD_W, 54, id);
 }
 
 /// Slider card: label, percentage, track.
 pub fn slider_card(p: &mut FramePainter, y: i16, label: &str, pct: u8, id: &str) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     card_full(p, y, 70);
     text(p, MARGIN + 18, y + 14, 15.0, label, th.text, true);
     let pv = format!("{}%", to_bengali_digits(&pct.to_string()));
@@ -1047,12 +1257,19 @@ pub fn slider_card(p: &mut FramePainter, y: i16, label: &str, pct: u8, id: &str)
     rr(p, bx, y + 46, bw as u16, 6, 3, th.track);
     let fw = ((bw as f32) * pct as f32 / 100.0).max(6.0) as u16;
     rr(p, bx, y + 46, fw.min(bw as u16), 6, 3, th.accent);
+    disc(
+        p,
+        (bx as f32 + fw.min(bw as u16) as f32).clamp(bx as f32 + 6.0, (bx + bw) as f32 - 6.0),
+        (y + 49) as f32,
+        5.0,
+        0xFFF9EC,
+    );
     p.register_button(MARGIN, y, CARD_W, 70, id);
 }
 
 /// Row with a trailing slider (used by Display / Sound / Accessibility).
 pub fn slider_row(p: &mut FramePainter, x: i16, y: i16, w: u16, label: &str, pct: u8, id: &str) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     text(p, x + 18, y + 12, 15.0, label, th.text, true);
     let pv = format!("{}%", to_bengali_digits(&pct.to_string()));
     text_right(p, x + w as i16 - 18, y + 13, 14.0, &pv, th.text, true);
@@ -1061,12 +1278,19 @@ pub fn slider_row(p: &mut FramePainter, x: i16, y: i16, w: u16, label: &str, pct
     rr(p, bx, y + 44, bw as u16, 6, 3, th.track);
     let fw = ((bw as f32) * pct as f32 / 100.0).max(6.0) as u16;
     rr(p, bx, y + 44, fw.min(bw as u16), 6, 3, th.accent);
+    disc(
+        p,
+        (bx as f32 + fw.min(bw as u16) as f32).clamp(bx as f32 + 6.0, (bx + bw) as f32 - 6.0),
+        (y + 47) as f32,
+        5.0,
+        0xFFF9EC,
+    );
     p.register_button(x, y, w, 62, id);
 }
 
 /// Filter chip; returns its width.
 pub fn chip(p: &mut FramePainter, x: i16, y: i16, label: &str, active: bool, id: &str) -> i16 {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     let tw = text_w(p, 13.5, label, active);
     let w = tw + 32;
     let h = 34;
@@ -1084,7 +1308,7 @@ pub fn chip(p: &mut FramePainter, x: i16, y: i16, label: &str, active: bool, id:
 
 /// Search field. Returns the field rect for caret handling.
 pub fn search_box(p: &mut FramePainter, y: i16, placeholder: &str, id: &str) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     card_full(p, y, 44);
     icon(
         p,
@@ -1099,22 +1323,35 @@ pub fn search_box(p: &mut FramePainter, y: i16, placeholder: &str, id: &str) {
 }
 
 pub fn primary_button(p: &mut FramePainter, y: i16, label: &str, id: &str) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     let x = BUTTON_MARGIN;
     let w = (SW - 2 * BUTTON_MARGIN) as u16;
-    rr(p, x, y, w, BUTTON_H, 28, th.accent);
-    text_center(p, SW / 2, y + 17, 16.0, label, th.on_accent, true);
-    p.register_button(x, y, w, BUTTON_H, id);
+    rr(p, x, y, w, 52, 16, th.accent);
+    text_center(p, SW / 2, y + 16, 15.5, label, th.on_accent, true);
+    p.register_button(x, y, w, 52, id);
+}
+
+/// Secondary action: hairline outline, no fill emphasis. `danger` tints the label
+/// but not the surface, so destructive actions never compete with the primary one.
+pub fn ghost_button(p: &mut FramePainter, y: i16, label: &str, id: &str, danger: bool) {
+    let th = tp(p);
+    let x = BUTTON_MARGIN;
+    let w = (SW - 2 * BUTTON_MARGIN) as u16;
+    rr(p, x, y, w, 52, 16, th.card);
+    rrb(p, x, y, w, 52, 16, th.border);
+    let color = if danger { th.danger } else { th.text };
+    text_center(p, SW / 2, y + 16, 15.5, label, color, true);
+    p.register_button(x, y, w, 52, id);
 }
 
 pub fn fab(p: &mut FramePainter, label: &str, id: &str) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     let tw = text_w(p, 14.0, label, true);
     let w = tw + 58;
     let h = 48u16;
     let x = SW - 20 - w;
     let y = SH - 40 - h as i16;
-    rr(p, x, y, w as u16, h, 24, th.accent);
+    rr(p, x, y, w as u16, h, 16, th.accent);
     icon(
         p,
         "plus",
@@ -1149,7 +1386,7 @@ pub fn keypad_ex(
     vgap: i16,
     font: f32,
 ) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     let total = 3 * kw as i16 + 2 * gap;
     let x0 = (SW - total) / 2;
     for i in 0..12 {
@@ -1157,8 +1394,7 @@ pub fn keypad_ex(
         let r = (i / 3) as i16;
         let x = x0 + c * (kw as i16 + gap);
         let y = top + r * (kh as i16 + vgap);
-        rr(p, x, y, kw, kh, (kh / 2) as i16, th.card);
-        rrb(p, x, y, kw, kh, (kh / 2) as i16, th.border);
+        rr(p, x, y, kw, kh, 16, th.tile);
         text_center(
             p,
             x + kw as i16 / 2,
@@ -1173,40 +1409,79 @@ pub fn keypad_ex(
     }
 }
 
-/// Segmented "light / dark / auto" selector used by Display settings.
+/// Segmented light / dark / amoled / auto picker used by Display settings.
+/// Each card renders a miniature of its own palette (ground, raised card,
+/// brass bar and two text lines) so the choice is legible without reading the
+/// label. Active card = brass hairline + bold label; no badge, because brass
+/// already marks "selected" and a badge on a brass rim dissolves into it.
 pub fn theme_selector(p: &mut FramePainter, y: i16, active: usize) {
-    let th = t(p.dark_mode);
-    let labels = ["লাইট", "ডার্ক", "অটো"];
-    let gap = 12i16;
-    let w = ((CARD_W as i16) - 2 * gap) / 3;
-    for (i, label) in labels.iter().enumerate() {
+    let th = tp(p);
+    // (label, ground, raised card, preview border, preview text line)
+    let previews: [(&str, u32, u32, u32, u32); 4] = [
+        ("লাইট", 0xF6F1E6, 0xFFFCF5, 0xDCD2BF, 0x4A4A5E),
+        ("ডার্ক", 0x0B0F22, 0x151B33, 0x2A3152, 0xB6B2C4),
+        ("AMOLED", 0x000000, 0x0F0F14, 0x24242E, 0xB6B2C4),
+        ("অটো", 0x0B0F22, 0xF6F1E6, 0x2A3152, 0xF4EEE2),
+    ];
+    let gap = 10i16;
+    let w = (CARD_W as i16 - 3 * gap) / 4; // 82
+    let h = 148i16;
+    let pv_x_off = 9i16;
+    let pv_y_off = 14i16;
+    let pv_w = w - 2 * pv_x_off;
+    let pv_h = 80i16;
+    for (i, pv) in previews.iter().enumerate() {
         let x = MARGIN + i as i16 * (w + gap);
-        let h = 130u16;
-        if i == active {
-            rr(p, x, y, w as u16, h, CARD_R, th.card);
-            rrb(
-                p,
-                x - 1,
-                y - 1,
-                (w + 2) as u16,
-                h + 2,
-                CARD_R + 1,
-                th.accent,
-            );
-            text_center(p, x + w / 2, y + 100, 14.0, label, th.text, true);
+        let is_active = i == active;
+        rr(p, x, y, w as u16, h as u16, CARD_R, th.card);
+        if is_active {
+            rrb(p, x - 1, y - 1, (w + 2) as u16, (h + 2) as u16, CARD_R + 1, th.accent);
         } else {
-            rr(p, x, y, w as u16, h, CARD_R, th.card);
-            rrb(p, x, y, w as u16, h, CARD_R, th.border);
-            text_center(p, x + w / 2, y + 100, 14.0, label, th.med, true);
+            rrb(p, x, y, w as u16, h as u16, CARD_R, th.border);
         }
+        let px_ = x + pv_x_off;
+        let py_ = y + pv_y_off;
+        if i == 3 {
+            // Auto: ink ground with a paper panel on the left — both palettes.
+            rr(p, px_, py_, pv_w as u16, pv_h as u16, 7, 0x0B0F22);
+            rrb(p, px_, py_, pv_w as u16, pv_h as u16, 7, 0x2A3152);
+            rr(p, px_ + 7, py_ + 10, (pv_w / 2 - 10) as u16, (pv_h - 20) as u16, 5, 0xF6F1E6);
+            // left (paper): brass bar + ink lines
+            rr(p, px_ + 12, py_ + 19, 14, 3, 1, 0x8A5B12);
+            rr(p, px_ + 12, py_ + 26, 13, 2, 1, 0x4A4A5E);
+            rr(p, px_ + 12, py_ + 32, 9, 2, 1, 0x4A4A5E);
+            // right (ink): brass bar + ivory line
+            rr(p, px_ + pv_w / 2 + 7, py_ + 19, 14, 3, 1, 0xD9A441);
+            rr(p, px_ + pv_w / 2 + 7, py_ + 26, 13, 2, 1, 0xF4EEE2);
+            rr(p, px_ + pv_w / 2 + 7, py_ + 32, 9, 2, 1, 0xF4EEE2);
+        } else {
+            rr(p, px_, py_, pv_w as u16, pv_h as u16, 7, pv.1);
+            rrb(p, px_, py_, pv_w as u16, pv_h as u16, 7, pv.3);
+            // raised mini card
+            rr(p, px_ + 7, py_ + 12, (pv_w - 14) as u16, 44, 5, pv.2);
+            rrb(p, px_ + 7, py_ + 12, (pv_w - 14) as u16, 44, 5, pv.3);
+            // brass bar + two text lines inside the mini card
+            rr(p, px_ + 12, py_ + 19, 16, 3, 1, th.accent);
+            rr(p, px_ + 12, py_ + 27, 30, 3, 1, pv.4);
+            rr(p, px_ + 12, py_ + 35, 19, 3, 1, pv.4);
+        }
+        text_center(
+            p,
+            x + w / 2,
+            y + 112,
+            12.5,
+            pv.0,
+            if is_active { th.text } else { th.med },
+            is_active,
+        );
         let id = format!("theme_{}", i);
-        p.register_button(x, y, w as u16, h, &id);
+        p.register_button(x, y, w as u16, h as u16, &id);
     }
 }
 
 /// Simple value row inside a card (label left, value right).
 pub fn value_row(p: &mut FramePainter, x: i16, y: i16, w: u16, label: &str, value: &str, id: &str) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     text(p, x + 18, y + 20, 14.5, label, th.text, false);
     text_right(p, x + w as i16 - 18, y + 20, 14.5, value, th.med, false);
     if !id.is_empty() {
@@ -1216,8 +1491,11 @@ pub fn value_row(p: &mut FramePainter, x: i16, y: i16, w: u16, label: &str, valu
 
 /// Section heading inside the scrollable body (e.g. "ইতিহাস").
 pub fn section_label(p: &mut FramePainter, y: i16, label: &str) {
-    let th = t(p.dark_mode);
-    text(p, MARGIN + 4, y, 14.5, label, th.text, true);
+    let th = tp(p);
+    // A 14x2 brass rule marks the start of a section; it encodes structure, it
+    // is not decoration on top of a heading that already says the same thing.
+    p.fill_rect(MARGIN, y + 9, 14, 2, th.accent);
+    text(p, MARGIN + 22, y, 12.5, label, th.med, true);
 }
 
 // ─── Gesture navigation ─────────────────────────────────────────────────────
@@ -1236,7 +1514,7 @@ pub fn gesture_bar(p: &mut FramePainter, state: &SimState) {
     ) {
         return;
     }
-    let th = t(p.dark_mode);
+    let th = tp(p);
     let w = 160u16;
     let h = 28u16;
     let x = (SW - w as i16) / 2;

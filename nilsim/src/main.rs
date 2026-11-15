@@ -79,29 +79,38 @@ pub(crate) struct Theme {
     pub purple: u32,
 }
 
-pub(crate) fn get_theme(dark_mode: bool) -> Theme {
-    if dark_mode {
-        Theme {
-            bg: 0x1E1236,          // Sampled from the reference dark screens
-            surface: 0x322748,     // Card surface
-            surface_alt: 0x4C3876, // Leading icon tile
-            border: 0x534A65,      // 1px card border
-            text_high: 0xFFFFFF,   // Primary text
-            text_med: 0xCBBDE6,    // Secondary text
-            text_dim: 0x9588AE,    // Tertiary text
-            purple: 0x9B6BFF,      // Accent fill
-        }
-    } else {
-        Theme {
-            bg: 0xF5F0FF,          // Sampled from the reference light screens
-            surface: 0xFDFCFF,     // Card surface
-            surface_alt: 0xE5D8FF, // Leading icon tile
-            border: 0xE1D9F0,      // 1px card border
-            text_high: 0x1E1236,   // Primary text
-            text_med: 0x5E4B86,    // Secondary text
-            text_dim: 0x7F6F9F,    // Tertiary text
-            purple: 0x9B6BFF,      // Accent fill
-        }
+pub(crate) fn get_theme(pal: ui::Palette) -> Theme {
+    match pal {
+        ui::Palette::Dark => Theme {
+            bg: 0x0B0F22,
+            surface: 0x151B33,
+            surface_alt: 0x1E2542,
+            border: 0x2A3152,
+            text_high: 0xF4EEE2,
+            text_med: 0xB6B2C4,
+            text_dim: 0x86839A,
+            purple: 0xD9A441,
+        },
+        ui::Palette::Amoled => Theme {
+            bg: 0x000000,
+            surface: 0x0F0F14,
+            surface_alt: 0x16161D,
+            border: 0x24242E,
+            text_high: 0xF4EEE2,
+            text_med: 0xB6B2C4,
+            text_dim: 0x86839A,
+            purple: 0xD9A441,
+        },
+        ui::Palette::Light => Theme {
+            bg: 0xF6F1E6,
+            surface: 0xFFFCF5,
+            surface_alt: 0xEFE7D7,
+            border: 0xDCD2BF,
+            text_high: 0x101528,
+            text_med: 0x4A4A5E,
+            text_dim: 0x76707F,
+            purple: 0x8A5B12,
+        },
     }
 }
 
@@ -569,7 +578,9 @@ struct FramePainter<'a> {
     height: usize,
     fonts: &'a FontEngine,
     buttons: Vec<TouchButton>,
-    pub(crate) dark_mode: bool,
+    pub(crate) palette: ui::Palette,
+    pub(crate) high_contrast: bool,
+    pub(crate) text_scale: f32,
 }
 
 impl<'a> FramePainter<'a> {
@@ -578,7 +589,7 @@ impl<'a> FramePainter<'a> {
         width: usize,
         height: usize,
         fonts: &'a FontEngine,
-        dark_mode: bool,
+        palette: ui::Palette,
     ) -> Self {
         FramePainter {
             buffer,
@@ -586,12 +597,14 @@ impl<'a> FramePainter<'a> {
             height,
             fonts,
             buttons: Vec::new(),
-            dark_mode,
+            palette,
+            high_contrast: false,
+            text_scale: 1.0,
         }
     }
 
     pub(crate) fn theme(&self) -> Theme {
-        get_theme(self.dark_mode)
+        get_theme(self.palette)
     }
 
     pub(crate) fn put_px(&mut self, x: i16, y: i16, color: u32) {
@@ -887,6 +900,11 @@ impl<'a> FramePainter<'a> {
         if text.is_empty() {
             return x;
         }
+        let px_size = if px_size < 36.0 && (self.text_scale - 1.0).abs() > 0.001 {
+            (px_size * self.text_scale).clamp(9.0, 38.0)
+        } else {
+            px_size
+        };
 
         let runs = self.split_script_runs(text);
         let mut cur_x = x;
@@ -996,6 +1014,11 @@ impl<'a> FramePainter<'a> {
         if text.is_empty() {
             return 0;
         }
+        let px_size = if px_size < 36.0 && (self.text_scale - 1.0).abs() > 0.001 {
+            (px_size * self.text_scale).clamp(9.0, 38.0)
+        } else {
+            px_size
+        };
 
         let runs = self.split_script_runs(text);
         let mut total_w: i16 = 0;
@@ -1419,6 +1442,10 @@ struct SimState {
     android_search_query: String,
     android_search_focused: bool,
     dark_mode: bool,
+    /// True when the active palette is AMOLED (theme_mode == 2). Separate from
+    /// `dark_mode` because the legacy home/lock renderer keys off the bool; the
+    /// painter itself carries the full `ui::Palette`.
+    pub(crate) amoled: bool,
     torch_enabled: bool,
     brightness_level: u8,
     volume_level: u8,
@@ -1507,7 +1534,7 @@ struct SimState {
     // ── OnuronOS 1.7 shell state (design-system screens) ────────────────────
     pub(crate) oobe_lang: usize,
     pub(crate) oobe_pin: String,
-    pub(crate) theme_mode: u8, // 0 light, 1 dark, 2 auto
+    pub(crate) theme_mode: u8, // 0 light, 1 dark, 2 amoled, 3 auto (light/dark by clock)
     pub(crate) refresh_hz: u16,
     pub(crate) screen_timeout: u16,
     pub(crate) ring_vol: u8,
@@ -1549,6 +1576,8 @@ struct SimState {
     pub(crate) scroll_y: i16,
     pub(crate) browser_page_open: bool,
     pub(crate) browser_pending_nav: Option<String>,
+    pub(crate) search_query: String,
+    pub(crate) search_focused: bool,
 }
 
 impl SimState {
@@ -2084,6 +2113,7 @@ impl SimState {
             android_search_query: String::new(),
             android_search_focused: false,
             dark_mode: false,
+            amoled: false,
             torch_enabled: false,
             brightness_level: 100,
             volume_level: 80,
@@ -2284,6 +2314,17 @@ impl SimState {
             scroll_y: 0,
             browser_page_open: false,
             browser_pending_nav: None,
+            search_query: String::new(),
+            search_focused: false,
+        }
+    }
+
+    /// Maps the 25..150 slider percentage (default 50 -> 1.0x) into a legible font scale.
+    pub(crate) fn text_scale(&self) -> f32 {
+        if self.font_size_pct <= 50 {
+            0.85 + (self.font_size_pct.saturating_sub(25) as f32) * 0.006
+        } else {
+            1.0 + ((self.font_size_pct - 50) as f32) * 0.004
         }
     }
 
@@ -2498,7 +2539,16 @@ impl SimState {
     /// images keep loading (missing keys fall back to defaults).
     fn save_prefs(&self) {
         let v = serde_json::json!({
-            "theme_mode": self.theme_mode,
+            // v2 scheme: 0 light, 1 dark, 2 amoled, 3 auto. The legacy
+            // `theme_mode` key was NOT overwritten here so old builds could
+            // still read a sane value; load migrates 2 (old auto) -> 3 (auto).
+            "theme_scheme_v2": self.theme_mode,
+            "theme_mode": match self.theme_mode {
+                0 => 0u64,
+                1 => 1,
+                2 => 1, // old builds have no AMOLED; dark is the safest fallback
+                _ => 2, // old builds: 2 = auto
+            },
             "brightness": self.brightness_level,
             "refresh_hz": self.refresh_hz,
             "screen_timeout": self.screen_timeout,
@@ -2561,7 +2611,19 @@ impl SimState {
                 .unwrap_or_else(|| d.to_string())
         };
 
-        self.theme_mode = u("theme_mode", self.theme_mode as u64) as u8;
+        // Theme scheme migration: pre-v2 files only had `theme_mode` with
+        // 0=light, 1=dark, 2=auto. v2 renumbers to 2=amoled, 3=auto, so map a
+        // legacy 2 -> 3 once; v2 files (with `theme_scheme_v2`) load directly.
+        self.theme_mode = if let Some(v) = v.get("theme_scheme_v2").and_then(|x| x.as_u64()) {
+            (v.min(3)) as u8
+        } else {
+            match u("theme_mode", self.theme_mode as u64) {
+                0 => 0,
+                1 => 1,
+                2 => 3, // legacy auto
+                _ => 1,
+            }
+        };
         self.brightness_level = u("brightness", self.brightness_level as u64) as u8;
         self.refresh_hz = u("refresh_hz", self.refresh_hz as u64) as u16;
         self.screen_timeout = u("screen_timeout", self.screen_timeout as u64) as u16;
@@ -2600,13 +2662,28 @@ impl SimState {
     }
 
     /// Apply the persisted theme choice; `auto` follows the local clock.
+    /// AMOLED (2) is an explicit OLED power-saving theme, never an auto result.
     fn set_theme_from_mode(&mut self) {
         let (h, _) = get_ist_time_parts();
+        self.theme_mode = self.theme_mode.min(3);
+        self.amoled = self.theme_mode == 2;
         self.dark_mode = match self.theme_mode {
             0 => false,
-            1 => true,
+            1 | 2 => true,
+            // 3 (and anything unexpected) => auto: 06:00..18:00 light, else dark
             _ => !(6..18).contains(&h),
         };
+    }
+
+    /// The resolved palette for painting.
+    pub(crate) fn palette(&self) -> ui::Palette {
+        if self.amoled {
+            ui::Palette::Amoled
+        } else if self.dark_mode {
+            ui::Palette::Dark
+        } else {
+            ui::Palette::Light
+        }
     }
 
     fn save_notes_to_disk(&self) {
@@ -4435,7 +4512,7 @@ fn render_home(p: &mut FramePainter, state: &SimState) {
         38,
         10.0,
         "OnuronOS 1.7.0 • Alap Native",
-        if p.dark_mode { 0xA78BFA } else { COLOR_CYAN },
+        if p.palette.is_dark() { 0xA78BFA } else { COLOR_CYAN },
         false,
     );
 
@@ -4463,7 +4540,7 @@ fn render_home(p: &mut FramePainter, state: &SimState) {
         date_y,
         13.0,
         &date_str,
-        if p.dark_mode { 0xA78BFA } else { COLOR_CYAN },
+        if p.palette.is_dark() { 0xA78BFA } else { COLOR_CYAN },
         false,
     );
 
@@ -8155,7 +8232,7 @@ fn save_bmp(path: &Path, buf: &[u32], w: usize, h: usize) {
     let _ = fs::write(path, bmp);
 }
 
-/// Renders every shell screen (both themes) to BMP files.
+/// Renders every shell screen (all three palettes) to BMP files.
 fn export_ui(
     out_dir: &Path,
     fonts: &FontEngine,
@@ -8207,22 +8284,27 @@ fn export_ui(
     state.camera_zoom = "১X".into();
     for (name, scr) in screens {
         state.screen = scr;
-        for dark in [true, false] {
-            state.dark_mode = dark;
-            buffer.fill(get_theme(dark).bg);
+        // Export all three resolved palettes; `auto` is deliberately absent
+        // because it resolves to light/dark and would duplicate them.
+        for pal in [ui::Palette::Light, ui::Palette::Dark, ui::Palette::Amoled] {
+            state.amoled = pal == ui::Palette::Amoled;
+            state.dark_mode = pal.is_dark();
+            // Keep the persisted theme id coherent with the painted palette
+            // so exported art shows the matching card selected.
+            state.theme_mode = pal as u8;
+            buffer.fill(get_theme(pal).bg);
             {
                 let mut painter = FramePainter::new(
                     &mut buffer,
                     SCREEN_WIDTH,
                     SCREEN_HEIGHT,
                     fonts,
-                    state.dark_mode,
+                    pal,
                 );
                 paint_screen(&mut painter, &state);
             }
-            let suffix = if dark { "dark" } else { "light" };
             save_bmp(
-                &out_dir.join(format!("{}-{}.bmp", name, suffix)),
+                &out_dir.join(format!("{}-{}.bmp", name, pal.name())),
                 &buffer,
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
@@ -8236,6 +8318,8 @@ fn export_ui(
 /// Shared by the interactive loop and the headless screenshot exporter so the
 /// exported art is exactly what the simulator shows.
 fn paint_screen(mut painter: &mut FramePainter, state: &SimState) {
+    painter.high_contrast = state.high_contrast;
+    painter.text_scale = state.text_scale();
     match &state.screen {
         Screen::Lockscreen => screens::render_lockscreen(&mut painter, &state),
         Screen::Home => screens::render_home(&mut painter, &state),
@@ -8308,7 +8392,7 @@ fn paint_screen(mut painter: &mut FramePainter, state: &SimState) {
     );
 
     if state.toast_ticks > 0 && !state.toast_msg.is_empty() {
-        let th = get_theme(state.dark_mode);
+        let th = get_theme(state.palette());
         let tw = painter.text_w_ex(12.5, &state.toast_msg, false, false);
         let w = (tw + 36).max(120) as u16;
         let x = (SCREEN_WIDTH as i16 - w as i16) / 2;
@@ -8343,7 +8427,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let fonts = FontEngine::load();
 
-    // Headless art export: renders every shell screen in both themes so the
+    // Headless art export: renders every shell screen in all three palettes so the
     // result can be diffed against the reference PNGs in CI or by hand.
     if let Some(pos) = std::env::args().position(|a| a == "--export-ui") {
         let out = std::env::args()
@@ -8512,7 +8596,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.screen = Screen::AppPhone;
         state.dial_number.clear();
         state.phone_tab = 0;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8520,7 +8604,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_app_phone(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8530,7 +8614,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 2. Dialer typed '3'
         state.dial_number = "3".into();
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8538,7 +8622,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_app_phone(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8556,7 +8640,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .into();
         state.notes_cursor_pos = 79;
         state.term_cursor_ticks = 0;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8564,7 +8648,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_app_notes(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8575,7 +8659,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 4. Home screen at 390x796 with installed Android apps
         state.install_android_app(5); // Call of Duty Mobile
         state.screen = Screen::Home;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8583,7 +8667,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_home(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8594,7 +8678,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 5. Android Play Store screen
         state.screen = Screen::AppAndroid;
         state.android_running_app = None;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8602,7 +8686,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_app_android(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8612,7 +8696,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 6. Browser screen at 390x796
         state.screen = Screen::AppBrowser;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8620,7 +8704,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_app_browser(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8633,7 +8717,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.music_playing = true;
         state.media_source_app = "Spotify Music (স্পটিফাই)".into();
         state.media_live_title = "Kesariya - Arijit Singh".into();
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8641,7 +8725,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_control_center(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8650,7 +8734,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 8. Recent Apps Switcher
         state.screen = Screen::Recents;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8658,7 +8742,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_recents(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8669,7 +8753,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 9. Lockscreen PIN mode (lower-half layout, no artifacts)
         state.screen = Screen::Lockscreen;
         state.lock_mode = 0;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8677,7 +8761,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_lockscreen(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8687,7 +8771,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 10. Lockscreen Pattern mode
         state.lock_mode = 2;
         state.pattern_input = vec![1, 2, 5];
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8695,7 +8779,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_lockscreen(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8704,7 +8788,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 11. Calculator full-height layout
         state.screen = Screen::AppCalculator;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8712,7 +8796,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_app_calculator(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8722,7 +8806,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 12. Settings with Screen Lock mode selector
         state.screen = Screen::AppSettings;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8730,7 +8814,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_app_settings(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8740,8 +8824,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 13. Control Center in Dark Mode (testing crisp dark theme)
         state.screen = Screen::ControlCenter;
+        state.amoled = false;
         state.dark_mode = true;
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
         {
             let mut p = FramePainter::new(
@@ -8749,7 +8834,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_WIDTH,
                 SCREEN_HEIGHT,
                 &fonts,
-                state.dark_mode,
+                state.palette(),
             );
             render_control_center(&mut p, &state);
             render_status_bar(&mut p, &state);
@@ -8763,6 +8848,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut was_mouse_down = false;
     let mut volume_synced = state.volume_level;
     let mut drag_start: Option<(f32, f32)> = None;
+    let mut last_drag_y: Option<f32> = None;
+    // A recents card pressed on mouse-down, opened on mouse-up if it was a
+    // tap; a drag scrolls the rail instead.
+    let mut pending_recents_tap: Option<String> = None;
 
     println!(
         "[OK] Simulator running at {}x{} with Onuron OS & Alap Engine.",
@@ -8911,11 +9000,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Screen::AppNotes => {
                         if state.notes_editing {
                             state.note_insert_char(ch);
+                        } else if state.search_focused && ch != '\n' && ch != '\r' {
+                            state.search_query.push(ch);
                         }
                     }
                     Screen::AppMessages => {
                         if state.sms_composing {
                             state.sms_insert_char(ch);
+                        } else if state.search_focused && ch != '\n' && ch != '\r' {
+                            state.search_query.push(ch);
+                        }
+                    }
+                    Screen::AppNilPkg => {
+                        if state.search_focused && ch != '\n' && ch != '\r' {
+                            state.search_query.push(ch);
                         }
                     }
                     Screen::AppCalculator => {
@@ -9161,6 +9259,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             _ => {}
                         }
+                    } else if state.search_focused {
+                        match key {
+                            Key::Backspace => {
+                                state.search_query.pop();
+                            }
+                            Key::Enter | Key::Escape => {
+                                state.search_focused = false;
+                            }
+                            _ => {}
+                        }
                     }
                 }
                 Screen::AppMessages => {
@@ -9171,6 +9279,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                             Key::Tab => {
                                 state.sms_focus_to = !state.sms_focus_to;
+                            }
+                            _ => {}
+                        }
+                    } else if state.search_focused {
+                        match key {
+                            Key::Backspace => {
+                                state.search_query.pop();
+                            }
+                            Key::Enter | Key::Escape => {
+                                state.search_focused = false;
                             }
                             _ => {}
                         }
@@ -9235,6 +9353,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Key::Enter => {
                         state.android_search_focused = false;
                         state.search_and_add_android_app();
+                    }
+                    _ => {}
+                },
+                Screen::AppNilPkg => match key {
+                    Key::Backspace => {
+                        if state.search_focused {
+                            state.search_query.pop();
+                        }
+                    }
+                    Key::Enter | Key::Escape => {
+                        state.search_focused = false;
                     }
                     _ => {}
                 },
@@ -9316,7 +9445,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // 4. Render Frame to Buffer (Deep Space Obsidian Navy Backdrop)
-        let th_bg = get_theme(state.dark_mode).bg;
+        let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
 
         let mut painter = FramePainter::new(
@@ -9324,7 +9453,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             SCREEN_WIDTH,
             SCREEN_HEIGHT,
             &fonts,
-            state.dark_mode,
+            state.palette(),
         );
 
         paint_screen(&mut painter, &state);
@@ -9336,7 +9465,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if mouse_down {
             if let Some((mx, my)) = window.get_mouse_pos(MouseMode::Pass) {
                 // Continuous slider drags on the redesigned settings screens.
-                apps::drag_slider(&mut state, mx as i16, my as i16);
+                let consumed_slider = apps::drag_slider(&mut state, mx as i16, my as i16);
+                if !consumed_slider {
+                    let scrollable = matches!(
+                        state.screen,
+                        Screen::AppSettings
+                            | Screen::AppFiles
+                            | Screen::AppNotes
+                            | Screen::AppNilPkg
+                            | Screen::AppAndroid
+                            | Screen::AppSoftBus
+                            | Screen::AppMessages
+                    );
+                    if scrollable {
+                        if let Some(ly) = last_drag_y {
+                            let dy = (my - ly).round() as i16;
+                            if dy != 0 {
+                                state.scroll_y = (state.scroll_y - dy).clamp(0, 4000);
+                            }
+                        }
+                    }
+                }
+                last_drag_y = Some(my);
                 #[cfg(target_os = "windows")]
                 {
                     let webview_top = if state.screen == Screen::AppAndroid
@@ -9376,13 +9526,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if mouse_down && !was_mouse_down {
             if let Some((mx, my)) = window.get_mouse_pos(MouseMode::Pass) {
                 drag_start = Some((mx, my));
+                pending_recents_tap = None;
                 let px = mx as i16;
                 let py = my as i16;
 
                 if let Some(btn) = buttons.iter().find(|b| b.contains(px, py)) {
                     let id = &btn.id;
 
-                    if apps::handle_action(&mut state, &id) {
+                    if state.screen == Screen::Recents && id.starts_with("rec:") {
+                        // Defer to mouse-up so the drag gesture can win.
+                        pending_recents_tap = Some(id.clone());
+                    } else if apps::handle_action(&mut state, &id) {
                         // Handled by the OnuronOS 1.7 shell (screens.rs / apps.rs).
                         if std::env::var("ONURON_TRACE").is_ok() {
                             println!(
@@ -9585,11 +9739,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(25, 150);
                         state.font_size_pct = ratio as u8;
                     } else if id == "theme_light" {
-                        state.dark_mode = false;
+                        state.theme_mode = 0;
+                        state.set_theme_from_mode();
                     } else if id == "theme_dark" {
-                        state.dark_mode = true;
+                        state.theme_mode = 1;
+                        state.set_theme_from_mode();
+                    } else if id == "theme_amoled" {
+                        state.theme_mode = 2;
+                        state.set_theme_from_mode();
                     } else if id == "theme_auto" {
-                        state.dark_mode = false;
+                        state.theme_mode = 3;
+                        state.set_theme_from_mode();
                     } else if id == "nav_set_display" {
                         state.screen = Screen::SettingsDisplay;
                     } else if id == "nav_set_about" {
@@ -10517,7 +10677,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else if id == "toggle_softbus" {
                         state.softbus_enabled = !state.softbus_enabled;
                     } else if id == "toggle_theme" {
-                        state.dark_mode = !state.dark_mode;
+                        // Quick toggle in the legacy settings grid: flip between
+                        // light and dark only; AMOLED/auto stay explicit choices.
+                        state.theme_mode = if state.dark_mode { 0 } else { 1 };
+                        state.set_theme_from_mode();
                     } else if id == "toggle_torch" {
                         state.torch_enabled = !state.torch_enabled;
                     } else if id.starts_with("term_chip_") {
@@ -10536,15 +10699,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if !mouse_down && was_mouse_down {
+            last_drag_y = None;
             if let Some((mx, my)) = window.get_mouse_pos(MouseMode::Pass) {
                 if let Some((sx, sy)) = drag_start.take() {
                     let dx = mx - sx;
                     let dy = my - sy;
-                    if state.screen == Screen::Home {
+                    if let Some(id) = pending_recents_tap.take() {
+                        // Tap (pointer stayed put) opens the card; anything
+                        // larger is a rail drag and opens nothing.
+                        if dx.abs() < 30.0 && dy.abs() < 30.0 {
+                            apps::handle_action(&mut state, &id);
+                        } else {
+                            let max_sc = recent_max_scroll(&state);
+                            if dx < -25.0 {
+                                state.recents_scroll_offset =
+                                    (state.recents_scroll_offset + 1).min(max_sc);
+                            } else if dx > 25.0 {
+                                state.recents_scroll_offset =
+                                    state.recents_scroll_offset.saturating_sub(1);
+                            } else if dy < -20.0 {
+                                state.recents_scroll_offset =
+                                    (state.recents_scroll_offset + 1).min(max_sc);
+                            } else if dy > 20.0 {
+                                state.recents_scroll_offset =
+                                    state.recents_scroll_offset.saturating_sub(1);
+                            }
+                        }
+                    } else if state.screen == Screen::ControlCenter && dy < -40.0 {
+                        state.screen = Screen::Home;
+                    } else if !matches!(state.screen, Screen::Lockscreen | Screen::Oobe(_))
+                        && sy < 44.0
+                        && dy > 44.0
+                    {
+                        state.screen = Screen::ControlCenter;
+                    } else if state.screen == Screen::Home {
                         if dx < -25.0 {
                             state.home_page = 1; // Swiped Left -> Page 2
                         } else if dx > 25.0 {
                             state.home_page = 0; // Swiped Right -> Page 1
+                        } else if dy < -44.0 {
+                            state.home_page = 1; // Swiped Up -> App Drawer
+                        } else if dy > 44.0 && state.home_page == 1 {
+                            state.home_page = 0; // Swiped Down on Drawer -> Home Widgets
                         }
                     } else if state.screen == Screen::AppMemories {
                         if dx < -20.0 {
@@ -10737,7 +10933,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SCREEN_HEIGHT,
                 present_w,
                 present_h,
-                get_theme(state.dark_mode).bg,
+                get_theme(state.palette()).bg,
             );
             window.update_with_buffer(&scaled, present_w, present_h)?;
         }
@@ -10856,11 +11052,22 @@ fn run_selftest() -> i32 {
     apps::drag_slider(&mut st, 200, 300);
     check("brightness slider drag", st.brightness_level > 40);
 
-    // Theme switch
+    // Theme switch: light -> dark -> amoled -> auto
     apps_mod_handle(&mut st, "theme_0");
-    let light = !st.dark_mode;
+    let light = !st.dark_mode && !st.amoled;
     apps_mod_handle(&mut st, "theme_1");
-    check("theme selector applies light/dark", light && st.dark_mode);
+    let dark = st.dark_mode && !st.amoled;
+    check("theme selector applies light/dark", light && dark);
+    apps_mod_handle(&mut st, "theme_2");
+    check(
+        "amoled theme resolves to dark palette with black ground",
+        st.amoled && st.dark_mode && st.palette() == ui::Palette::Amoled,
+    );
+    apps_mod_handle(&mut st, "theme_3");
+    check(
+        "auto theme resolves by clock and is not amoled",
+        st.theme_mode == 3 && !st.amoled,
+    );
 
     // PIN gate
     st.screen = Screen::Lockscreen;
@@ -10984,6 +11191,41 @@ fn run_selftest() -> i32 {
     check(
         "Android shortcut opens compatibility runtime",
         st.screen == Screen::AppAndroid && st.android_running_app.is_some(),
+    );
+
+    // Display font-size slider, high contrast, lockscreen privacy, recents close, notif routing
+    st.screen = Screen::SettingsDisplay;
+    st.font_size_pct = 50;
+    apps::drag_slider(&mut st, 320, 385);
+    check(
+        "font size slider updates scale above 1.0",
+        st.font_size_pct > 50 && st.text_scale() > 1.0,
+    );
+    apps_mod_handle(&mut st, "tg:contrast");
+    check("high contrast toggle flips", st.high_contrast);
+    apps_mod_handle(&mut st, "tg:locknotif");
+    st.screen = Screen::Lockscreen;
+    apps_mod_handle(&mut st, "lock:notif_hint");
+    check(
+        "lockscreen notification tap does not unlock",
+        st.screen == Screen::Lockscreen && !st.toast_msg.is_empty(),
+    );
+    let n_before = st.notifications.len();
+    apps_mod_handle(&mut st, "notif:dismiss:1");
+    let after_dismiss = st.notifications.len();
+    apps_mod_handle(&mut st, "notif:open:0");
+    check(
+        "notification dismiss removes item and open routes to source app",
+        after_dismiss + 1 == n_before
+            && st.notifications.len() + 2 == n_before
+            && st.screen == Screen::AppMessages,
+    );
+    let rec_before = st.recent_apps.len();
+    apps_mod_handle(&mut st, "rec_close:two");
+    check(
+        "recents per-card close removes only the targeted card",
+        st.recent_apps.len() + 1 == rec_before
+            && !st.recent_apps.iter().any(|(id, _, _, _)| id == "two"),
     );
 
     // Preference round-trip
