@@ -1509,6 +1509,10 @@ struct SimState {
     // Recent Apps Switcher State
     recent_apps: Vec<(String, String, String, u32)>,
     recents_scroll_offset: usize,
+    /// Recents entry reveal, 0.0 (just opened) to 1.0 (settled). Driven by
+    /// `tick_recents_anim` once per frame; resets whenever the screen is
+    /// anything other than Recents so every entry animates.
+    pub(crate) recents_anim: f32,
 
     // NilZar Browser State
     browser_url: String,
@@ -2219,6 +2223,9 @@ impl SimState {
                 ),
             ],
             recents_scroll_offset: 0,
+            // Settled by default: headless paints (export, walkthrough) render
+            // the finished frame; the live loop resets it off-screen.
+            recents_anim: 1.0,
 
             browser_url: "https://google.com".into(),
             browser_url_input: "https://google.com".into(),
@@ -2336,6 +2343,19 @@ impl SimState {
             if self.toast_ticks == 0 {
                 self.toast_msg.clear();
             }
+        }
+    }
+
+    /// Advances the Recents entry reveal once per frame: cards rise and
+    /// grow into place with a short ease-out. Called from the interactive
+    /// loop only; while any other screen is showing the counter sits at
+    /// zero, so every entry into Recents animates. Headless paints
+    /// (export, selftest walkthrough) see the settled value directly.
+    pub(crate) fn tick_recents_anim(&mut self) {
+        if self.screen == Screen::Recents {
+            self.recents_anim = (self.recents_anim + 0.075).min(1.0);
+        } else {
+            self.recents_anim = 0.0;
         }
     }
 
@@ -10661,6 +10681,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             state.mem_toast -= 1;
         }
 
+        // Recents entry reveal: rises/grows the cards in with a staggered
+        // ease-out (see `tick_recents_anim`).
+        state.tick_recents_anim();
+
         // 4. Render Frame to Buffer (Deep Space Obsidian Navy Backdrop)
         let th_bg = get_theme(state.palette()).bg;
         buffer.fill(th_bg);
@@ -11293,6 +11317,26 @@ fn run_selftest() -> i32 {
             && !st.recent_apps.iter().any(|(id, _, _, _)| id == "two"),
     );
 
+    // Recents entry reveal: the counter resets while other screens show and
+    // settles on entry, so every open animates instead of popping in.
+    st.recents_anim = 1.0;
+    st.screen = Screen::Home;
+    st.tick_recents_anim();
+    let reveal_reset = st.recents_anim == 0.0;
+    st.screen = Screen::Recents;
+    let mut frames = 0u32;
+    while st.recents_anim < 1.0 {
+        st.tick_recents_anim();
+        frames += 1;
+        if frames > 100 {
+            break;
+        }
+    }
+    check(
+        "recents reveal resets off-screen and settles on entry",
+        reveal_reset && st.recents_anim == 1.0 && frames > 0 && frames < 100,
+    );
+
     // Preference round-trip
     st.brightness_level = 42;
     st.ring_vol = 33;
@@ -11406,6 +11450,10 @@ fn run_selftest() -> i32 {
         let mut wv = WebViewCtx::headless();
         let sms_path = st.storage_root.join("var").join("sms_threads.json");
         let sms_before = fs::read(&sms_path).ok();
+        // The dialer contact-save flow really persists; capture the store so
+        // repeat runs (and the user's simulated data) stay untouched.
+        let contacts_path = st.storage_root.join("var").join("contacts.json");
+        let contacts_before = fs::read(&contacts_path).ok();
         let mut fl = SimState::new();
         fl.load_prefs();
         fl.refresh_storage();
@@ -11475,13 +11523,21 @@ fn run_selftest() -> i32 {
                 });
         check("dialer contact save flow", dlg_up && contact_saved);
 
-        // Restore the SMS store the flow check touched.
+        // Restore the stores the flow checks touched.
         match sms_before {
             Some(b) => {
                 let _ = fs::write(&sms_path, b);
             }
             None => {
                 let _ = fs::remove_file(&sms_path);
+            }
+        }
+        match contacts_before {
+            Some(b) => {
+                let _ = fs::write(&contacts_path, b);
+            }
+            None => {
+                let _ = fs::remove_file(&contacts_path);
             }
         }
     }

@@ -1151,19 +1151,24 @@ pub fn icon_tile(p: &mut FramePainter, x: i16, y: i16, kind: &str) {
     );
 }
 
-/// Leading tile tinted by a source colour (e.g. per app in the notification
-/// shade). The tile is the theme's tile mixed 22% toward `tint`; the glyph is
-/// the tint itself on dark grounds, darkened on paper, so each source stays
-/// scannable at a glance without adding a new surface colour.
+/// Leading badge tinted by a source colour (e.g. per app in the notification
+/// shade): a full-tint circle with a high-contrast glyph — the modern
+/// notification-icon language. The earlier 22%-blended square read as a
+/// muddy, low-contrast blob at row size.
 pub fn icon_tile_tint(p: &mut FramePainter, x: i16, y: i16, kind: &str, tint: u32) {
-    let th = tp(p);
-    let fill = blend_pixel(th.tile, tint, 56);
+    // Ink glyph on the bright circle for dark grounds; white glyph on paper.
     let glyph = if p.palette.is_dark() {
-        tint
+        0x0D1220
     } else {
-        blend_pixel(tint, 0x000000, 96)
+        0xFFFFFF
     };
-    rr(p, x, y, TILE as u16, TILE as u16, TILE_R, fill);
+    disc(
+        p,
+        (x + TILE / 2) as f32,
+        (y + TILE / 2) as f32,
+        (TILE / 2) as f32,
+        tint,
+    );
     icon(
         p,
         kind,
