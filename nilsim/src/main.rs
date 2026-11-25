@@ -8410,6 +8410,1219 @@ fn paint_screen(mut painter: &mut FramePainter, state: &SimState) {
     }
 }
 
+/// Host-webview side-effect hooks for the shell dispatcher.
+///
+/// The interactive Windows host embeds a Chromium view (and one isolated
+/// sandbox view per running Android app). Every other build — and the
+/// headless selftest — runs the *same* dispatcher with a context that
+/// simply ignores these hooks, so tap behaviour is identical everywhere.
+pub struct WebViewCtx {
+    #[cfg(target_os = "windows")]
+    browser: Option<nilbrowser::chromium::NilBrowser>,
+    #[cfg(target_os = "windows")]
+    sandboxes: std::collections::HashMap<String, nilbrowser::chromium::NilBrowser>,
+    #[cfg(target_os = "windows")]
+    hwnd: isize,
+}
+
+impl WebViewCtx {
+    /// The live context used by the interactive Windows host: takes
+    /// ownership of the embedded browser and the per-app sandbox map.
+    #[cfg(target_os = "windows")]
+    pub fn interactive(
+        browser: Option<nilbrowser::chromium::NilBrowser>,
+        sandboxes: std::collections::HashMap<String, nilbrowser::chromium::NilBrowser>,
+        hwnd: isize,
+    ) -> Self {
+        Self {
+            browser,
+            sandboxes,
+            hwnd,
+        }
+    }
+
+    /// A no-op context: the headless selftest walkthrough (and every
+    /// non-Windows build) runs the dispatcher without host webviews.
+    #[cfg(target_os = "windows")]
+    #[allow(dead_code)]
+    pub fn headless() -> Self {
+        Self {
+            browser: None,
+            sandboxes: std::collections::HashMap::new(),
+            hwnd: 0,
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[allow(dead_code)]
+    pub fn headless() -> Self {
+        Self {}
+    }
+
+    /// Evaluate `js` in the main embedded view and every sandbox.
+    pub fn eval_all(&mut self, js: &str) {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(ref b) = self.browser {
+                let _ = nilbrowser::chromium::eval_js(b, js);
+            }
+            for sb in self.sandboxes.values() {
+                let _ = nilbrowser::chromium::eval_js(sb, js);
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        let _ = js;
+    }
+
+    pub fn navigate_main(&mut self, url: &str) {
+        #[cfg(target_os = "windows")]
+        if let Some(ref b) = self.browser {
+            let _ = nilbrowser::chromium::navigate_to(b, url);
+        }
+        #[cfg(not(target_os = "windows"))]
+        let _ = url;
+    }
+
+    pub fn reload_main(&mut self) {
+        #[cfg(target_os = "windows")]
+        if let Some(ref b) = self.browser {
+            let _ = nilbrowser::chromium::reload(b);
+        }
+    }
+
+    pub fn back_main(&mut self) {
+        #[cfg(target_os = "windows")]
+        if let Some(ref b) = self.browser {
+            let _ = nilbrowser::chromium::go_back(b);
+        }
+    }
+
+    /// Create the isolated sandbox view for `pkg_id` on first open.
+    pub fn ensure_app(&mut self, sandbox_dir: &std::path::Path, url: &str, pkg_id: &str) {
+        #[cfg(target_os = "windows")]
+        {
+            if !self.sandboxes.contains_key(pkg_id) {
+                if let Ok(sb) = nilbrowser::chromium::create_isolated_webview(
+                    self.hwnd,
+                    sandbox_dir,
+                    4,
+                    82,
+                    (SCREEN_WIDTH as i32) - 8,
+                    (SCREEN_HEIGHT as i32) - 82 - 54,
+                    url,
+                ) {
+                    self.sandboxes.insert(pkg_id.to_string(), sb);
+                }
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (sandbox_dir, url, pkg_id);
+        }
+    }
+
+    /// Hide and forget the sandbox view for `pkg_id` (app uninstalled).
+    pub fn close_app(&mut self, pkg_id: &str) {
+        #[cfg(target_os = "windows")]
+        if let Some(mut sb) = self.sandboxes.remove(pkg_id) {
+            let _ = nilbrowser::chromium::set_visible(&mut sb, false);
+        }
+        #[cfg(not(target_os = "windows"))]
+        let _ = pkg_id;
+    }
+
+    /// Reload the sandbox view of a running Android app.
+    pub fn reload_app_pkg(&mut self, pkg_id: &str) {
+        #[cfg(target_os = "windows")]
+        if let Some(sb) = self.sandboxes.get(pkg_id) {
+            let _ = nilbrowser::chromium::reload(sb);
+        }
+        #[cfg(not(target_os = "windows"))]
+        let _ = pkg_id;
+    }
+}
+
+/// The interactive tap dispatcher: everything a click on the shell does, in
+/// one place.
+///
+/// `apps::handle_action` (the OnuronOS 1.7 design-system shell in
+/// screens.rs/apps.rs) owns the bulk of the behaviour; the arms below are
+/// the legacy home/phone/messages/files/memories remainder that predates
+/// it. The interactive loop calls this on every button hit, and the
+/// headless selftest walkthrough presses every registered control through
+/// the *same* function, so the two paths cannot drift apart.
+///
+/// `px` is the tap x (the slider arms position by tap); `wv` carries the
+/// host-webview side effects, which are no-ops in a headless run.
+fn shell_tap(state: &mut SimState, id: &str, px: i16, wv: &mut WebViewCtx) -> bool {
+    if apps::handle_action(state, id) {
+        return true;
+    }
+    if id == "home_page_toggle" {
+        state.home_page = if state.home_page == 0 { 1 } else { 0 };
+    } else if id == "home_page_next" {
+        state.home_page = 1;
+    } else if id == "home_page_prev" {
+        state.home_page = 0;
+    } else if id == "nav_home" {
+        state.screen = Screen::Home;
+    } else if id == "nav_back" {
+        if state.screen == Screen::InCall {
+            state.screen = Screen::AppPhone;
+        } else if state.screen == Screen::AppPhone {
+            if state.phone_saving_contact {
+                state.phone_saving_contact = false;
+            } else if !state.dial_number.is_empty() {
+                state.dial_number.clear();
+            } else if state.phone_tab != 0 {
+                state.phone_tab = 0;
+            } else {
+                state.screen = Screen::Home;
+            }
+        } else if state.screen == Screen::AppMessages {
+            if state.sms_composing {
+                state.sms_composing = false;
+                state.sms_selected_idx = None;
+            } else {
+                state.screen = Screen::Home;
+            }
+        } else if state.screen == Screen::AppFiles {
+            let curr = PathBuf::from(&state.current_path);
+            if curr != state.storage_root && curr.starts_with(&state.storage_root) {
+                if let Some(parent) = curr.parent() {
+                    if parent.starts_with(&state.storage_root) {
+                        state.current_path = parent.to_string_lossy().to_string();
+                    } else {
+                        state.screen = Screen::Home;
+                    }
+                } else {
+                    state.screen = Screen::Home;
+                }
+            } else {
+                state.screen = Screen::Home;
+            }
+        } else if state.screen == Screen::AppNotes {
+            if state.notes_editing {
+                state.notes_editing = false;
+                state.notes_edit_id = None;
+            } else {
+                state.screen = Screen::Home;
+            }
+        } else if state.screen == Screen::AppMemories {
+            if state.mem_view == 1 {
+                state.mem_opening = false;
+            } else if state.mem_tab != 0 {
+                state.mem_tab = 0;
+            } else {
+                state.screen = Screen::Home;
+            }
+        } else if state.screen == Screen::AppAndroid {
+            if state.android_running_app.is_some() {
+                state.android_running_app = None;
+            } else if !state.android_search_query.is_empty()
+                || state.android_search_focused
+            {
+                state.android_search_query.clear();
+                state.android_search_focused = false;
+            } else if state.android_tab != 0 {
+                state.android_tab = 0;
+            } else {
+                state.screen = Screen::Home;
+            }
+        } else if state.screen == Screen::NanoEditor {
+            state.screen = Screen::AppTerminal;
+        } else if state.screen == Screen::Home && state.home_page != 0 {
+            state.home_page = 0;
+        } else {
+            state.screen = Screen::Home;
+        }
+    } else if id == "nav_lock" {
+        state.pin_input.clear();
+        state.lock_error = false;
+        state.screen = Screen::Lockscreen;
+    } else if id == "nav_recents" {
+        state.screen = if state.screen == Screen::Recents {
+            Screen::Home
+        } else {
+            Screen::Recents
+        };
+    } else if id == "recents_scroll_up" {
+        state.recents_scroll_offset = state.recents_scroll_offset.saturating_sub(1);
+    } else if id == "recents_scroll_down" {
+        let max_sc = recent_max_scroll(&state);
+        state.recents_scroll_offset = (state.recents_scroll_offset + 1).min(max_sc);
+    } else if id == "recents_clear_all" {
+        state.recent_apps.clear();
+        state.recents_scroll_offset = 0;
+        state.android_running_app = None;
+    } else if id.starts_with("recent_close_") {
+        if let Ok(idx) = id.trim_start_matches("recent_close_").parse::<usize>() {
+            if idx < state.recent_apps.len() {
+                state.recent_apps.remove(idx);
+                let max_sc = recent_max_scroll(&state);
+                state.recents_scroll_offset =
+                    state.recents_scroll_offset.min(max_sc);
+            }
+        }
+    } else if id.starts_with("recent_open_") {
+        let target_id = id.trim_start_matches("recent_open_");
+        match target_id {
+            "app_phone" => state.screen = Screen::AppPhone,
+            "app_browser" => state.screen = Screen::AppBrowser,
+            "app_messages" => state.screen = Screen::AppMessages,
+            "app_files" => state.screen = Screen::AppFiles,
+            "app_settings" => state.screen = Screen::AppSettings,
+            "app_terminal" => state.screen = Screen::AppTerminal,
+            "app_softbus" => state.screen = Screen::AppSoftBus,
+            "app_memories" => state.screen = Screen::AppMemories,
+            "app_notes" => state.screen = Screen::AppNotes,
+            "app_calc" => state.screen = Screen::AppCalculator,
+            "app_nilpkg" => state.screen = Screen::AppNilPkg,
+            "app_android" => state.screen = Screen::AppAndroid,
+            _ => state.screen = Screen::Home,
+        }
+    } else if id == "media_toggle" {
+        state.music_playing = !state.music_playing;
+        #[cfg(target_os = "windows")]
+        {
+            let js = "document.querySelectorAll('video, audio').forEach(m => { if (m.paused) m.play(); else m.pause(); });";
+            wv.eval_all(js);
+        }
+    } else if id == "media_prev" {
+        state.music_track_idx = if state.music_track_idx == 0 {
+            3
+        } else {
+            state.music_track_idx - 1
+        };
+        state.media_progress_ticks = 0;
+        state.music_playing = true;
+        #[cfg(target_os = "windows")]
+        {
+            let js = "(() => { \
+                if (typeof playIdx === 'function' && typeof tracks !== 'undefined' && tracks.length) { playIdx((cur - 1 + tracks.length) % tracks.length); return; } \
+                const btn = document.querySelector('.ytp-prev-button, [aria-label*=\"Previous\"], [aria-label*=\"previous\"]'); \
+                if (btn) { btn.click(); return; } \
+                const v = document.querySelector('video, audio'); \
+                if (v) { if (v.currentTime > 5) v.currentTime = 0; else window.history.back(); } \
+            })();";
+            wv.eval_all(js);
+        }
+    } else if id == "media_next" {
+        state.music_track_idx = (state.music_track_idx + 1) % 4;
+        state.media_progress_ticks = 0;
+        state.music_playing = true;
+        #[cfg(target_os = "windows")]
+        {
+            let js = "(() => { \
+                if (typeof playIdx === 'function' && typeof tracks !== 'undefined' && tracks.length) { playIdx((cur + 1) % tracks.length); return; } \
+                const btn = document.querySelector('.ytp-next-button, [aria-label*=\"Next\"], [aria-label*=\"next\"], a.ytm-autonav-bar-button'); \
+                if (btn) { btn.click(); return; } \
+                const links = Array.from(document.querySelectorAll('a[href*=\"/watch?v=\"], a[href*=\"/shorts/\"]')); \
+                if (links.length > 1) { links[1].click(); return; } \
+                const v = document.querySelector('video, audio'); \
+                if (v && v.duration) { v.currentTime = Math.min(v.duration - 1, v.currentTime + 30); } \
+            })();";
+            wv.eval_all(js);
+        }
+    } else if id == "disp_bright_slider" {
+        let card_w = ((SCREEN_WIDTH as i16) - 48).max(1) as u32;
+        let ratio =
+            (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(15, 100);
+        state.brightness_level = ratio as u8;
+    } else if id == "disp_font_slider" {
+        let card_w = ((SCREEN_WIDTH as i16) - 48).max(1) as u32;
+        let ratio =
+            (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(25, 150);
+        state.font_size_pct = ratio as u8;
+    } else if id == "theme_light" {
+        state.theme_mode = 0;
+        state.set_theme_from_mode();
+    } else if id == "theme_dark" {
+        state.theme_mode = 1;
+        state.set_theme_from_mode();
+    } else if id == "theme_amoled" {
+        state.theme_mode = 2;
+        state.set_theme_from_mode();
+    } else if id == "theme_auto" {
+        state.theme_mode = 3;
+        state.set_theme_from_mode();
+    } else if id == "nav_set_display" {
+        state.screen = Screen::SettingsDisplay;
+    } else if id == "nav_set_about" {
+        state.screen = Screen::SettingsAbout;
+    } else if id == "nav_set_wifi" {
+        state.screen = Screen::SettingsWifi;
+    } else if id == "nav_set_bluetooth" {
+        state.screen = Screen::SettingsBluetooth;
+    } else if id == "nav_set_sound" {
+        state.screen = Screen::SettingsSound;
+    } else if id == "nav_set_security" {
+        state.screen = Screen::SettingsSecurity;
+    } else if id == "nav_set_battery" {
+        state.screen = Screen::SettingsBattery;
+    } else if id == "nav_set_storage" {
+        state.screen = Screen::SettingsStorage;
+    } else if id == "nav_set_language" {
+        state.screen = Screen::SettingsLanguage;
+    } else if id == "nav_set_accessibility" {
+        state.screen = Screen::SettingsAccessibility;
+    } else if id == "nav_set_update" {
+        state.screen = Screen::SettingsUpdate;
+    } else if id == "sub_back" {
+        state.screen = Screen::AppSettings;
+    } else if id == "bright_bar" {
+        let ratio = (((px - 28).max(0) as u32) * 100
+            / ((SCREEN_WIDTH as u32) - 56).max(1))
+        .clamp(15, 100);
+        state.brightness_level = ratio as u8;
+    } else if id == "vol_bar" {
+        let ratio = (((px - 28).max(0) as u32) * 100
+            / ((SCREEN_WIDTH as u32) - 56).max(1))
+        .clamp(0, 100);
+        state.volume_level = ratio as u8;
+        #[cfg(target_os = "windows")]
+        {
+            let js = format!("document.querySelectorAll('video, audio').forEach(m => {{ m.volume = {:.2}; }});", state.volume_level as f32 / 100.0);
+            wv.eval_all(&js);
+        }
+    } else if id.starts_with("home_android_") {
+        if let Ok(idx) = id.trim_start_matches("home_android_").parse::<usize>() {
+            if let Some(app) = state.android_store_apps.get(idx).cloned() {
+                state.screen = Screen::AppAndroid;
+                state.android_running_app = Some(idx);
+                state.android_search_focused = false;
+                if app.category == "মিডিয়া"
+                    || app.pkg_id.contains("spotify")
+                    || app.pkg_id.contains("youtube")
+                {
+                    state.media_source_app = app.name.clone();
+                    state.music_playing = true;
+                }
+                state.record_recent_app(
+                    "app_android",
+                    &app.name,
+                    &format!("Android Sandbox · {}", app.pkg_id),
+                    app.accent,
+                );
+                let sandbox_dir = state
+                    .storage_root
+                    .join("var")
+                    .join("android_sandboxes")
+                    .join(&app.pkg_id);
+                wv.ensure_app(&sandbox_dir, &app.runtime_url, &app.pkg_id);
+            }
+        }
+    } else if id == "toggle_island" {
+        state.screen = Screen::ControlCenter;
+    } else if id == "close_control" {
+        state.screen = Screen::Home;
+    } else if id == "app_memories" {
+        state.screen = Screen::AppMemories;
+        state.mem_view = 0;
+        state.mem_tab = 0;
+        state.mem_anim = 0.0;
+        state.mem_opening = false;
+        state.mem_toast = 0;
+        state.record_recent_app(
+            "app_memories",
+            "স্মৃতি (গ্যালারি)",
+            "ফটো অ্যালবাম ও ক্লাউড ব্যাকআপ",
+            COLOR_PINK,
+        );
+    } else if id.starts_with("mem_open_") {
+        if let Ok(idx) = id[9..].parse::<usize>() {
+            if idx < memories::MEMORIES_COUNT {
+                state.mem_idx = idx;
+                state.mem_view = 1;
+                state.mem_anim = 0.0;
+                state.mem_opening = true;
+                state.mem_from = memories::card_rect(idx);
+            }
+        }
+    } else if id.starts_with("mem_thumb_") {
+        if let Ok(t) = id[10..].parse::<usize>() {
+            if t < 4 {
+                let idx = (state.mem_idx + t) % memories::MEMORIES_COUNT;
+                state.mem_idx = idx;
+                state.mem_view = 1;
+                state.mem_anim = 0.0;
+                state.mem_opening = true;
+                state.mem_from = (16 + t as i16 * 78, 538, 66, 66);
+            }
+        }
+    } else if id == "mem_back" {
+        state.mem_opening = false;
+    } else if id == "mem_prev" {
+        state.mem_idx = (state.mem_idx + memories::MEMORIES_COUNT - 1)
+            % memories::MEMORIES_COUNT;
+    } else if id == "mem_next" {
+        state.mem_idx = (state.mem_idx + 1) % memories::MEMORIES_COUNT;
+    } else if id == "mem_rail_prev" {
+        state.mem_rail_offset = (state.mem_rail_offset + memories::MEMORIES_COUNT
+            - 1)
+            % memories::MEMORIES_COUNT;
+    } else if id == "mem_rail_next" {
+        state.mem_rail_offset =
+            (state.mem_rail_offset + 1) % memories::MEMORIES_COUNT;
+    } else if id == "mem_share" {
+        state.mem_toast = 110;
+    } else if id.starts_with("mem_tab_") {
+        if let Ok(t) = id[8..].parse::<usize>() {
+            if t < 3 {
+                state.mem_tab = t;
+            }
+        }
+    } else if id.starts_with("mem_filter_") {
+        if let Ok(f) = id[11..].parse::<usize>() {
+            if f < 4 {
+                state.mem_filter = f;
+            }
+        }
+    } else if id == "mem_toggle_backup" {
+        state.mem_auto_backup = !state.mem_auto_backup;
+    } else if id == "app_phone" {
+        state.screen = Screen::AppPhone;
+        state.record_recent_app(
+            "app_phone",
+            "ফোন ও ডায়ালার",
+            "VoLTE HD কল ও পরিচিতি",
+            COLOR_GREEN,
+        );
+    } else if id == "app_messages" {
+        state.sms_composing = false;
+        state.sms_selected_idx = None;
+        state.screen = Screen::AppMessages;
+        state.record_recent_app(
+            "app_messages",
+            "বার্তা (SMS)",
+            "সুরক্ষিত বার্তা ও চ্যাট",
+            COLOR_AMBER,
+        );
+    } else if id == "msg_new" {
+        state.sms_composing = true;
+        state.sms_selected_idx = None;
+        state.sms_input_to.clear();
+        state.sms_input_body.clear();
+        state.sms_focus_to = true;
+    } else if id.starts_with("msg_thread_") {
+        if let Ok(idx) = id.trim_start_matches("msg_thread_").parse::<usize>() {
+            if let Some((sender, _, _)) = state.sms_threads.get(idx).cloned() {
+                state.sms_composing = true;
+                state.sms_selected_idx = Some(idx);
+                state.sms_input_to = sender;
+                state.sms_input_body.clear();
+                state.sms_focus_to = false;
+            }
+        }
+    } else if id == "msg_to_box" {
+        if state.sms_selected_idx.is_none() {
+            state.sms_focus_to = true;
+        }
+    } else if id == "msg_body_box" {
+        state.sms_focus_to = false;
+    } else if id == "msg_cancel" {
+        state.sms_composing = false;
+        state.sms_selected_idx = None;
+    } else if id == "msg_del" {
+        if let Some(idx) = state.sms_selected_idx.take() {
+            if idx < state.sms_threads.len() {
+                state.sms_threads.remove(idx);
+                state.save_sms_to_disk();
+            }
+        }
+        state.sms_composing = false;
+    } else if id == "msg_send" {
+        let to = if state.sms_input_to.trim().is_empty() {
+            "অজানা প্রাপক".to_string()
+        } else {
+            state.sms_input_to.trim().to_string()
+        };
+        let body = if state.sms_input_body.trim().is_empty() {
+            "হ্যালো!".to_string()
+        } else {
+            state.sms_input_body.trim().to_string()
+        };
+        let now_str = get_ist_time_str();
+        if let Some(idx) = state.sms_selected_idx {
+            if idx < state.sms_threads.len() {
+                state.sms_threads[idx] = (to, body, now_str);
+            }
+        } else {
+            state.sms_threads.insert(0, (to, body, now_str));
+        }
+        state.save_sms_to_disk();
+        state.sms_composing = false;
+        state.sms_selected_idx = None;
+    } else if id == "app_notes" {
+        state.notes_editing = false;
+        state.screen = Screen::AppNotes;
+        state.record_recent_app(
+            "app_notes",
+            "স্মার্ট নোটস",
+            "নীলাং ডকুমেন্ট ও নোটবুক",
+            COLOR_AMBER,
+        );
+    } else if id == "notes_new" {
+        state.notes_editing = true;
+        state.notes_editing_title = true;
+        state.notes_edit_id = None;
+        state.notes_edit_title.clear();
+        state.notes_edit_content.clear();
+        state.notes_edit_pinned = false;
+        state.notes_cursor_pos = 0;
+    } else if id == "notes_title_box" {
+        state.notes_editing_title = true;
+    } else if id == "notes_body_box" {
+        state.notes_editing_title = false;
+    } else if id == "notes_pin" {
+        state.notes_edit_pinned = !state.notes_edit_pinned;
+    } else if id == "notes_cancel" {
+        state.notes_editing = false;
+    } else if id == "notes_delete" {
+        if let Some(del_id) = state.notes_edit_id.take() {
+            state.notes.retain(|n| n.id != del_id);
+            state.save_notes_to_disk();
+        }
+        state.notes_editing = false;
+    } else if id == "notes_save" {
+        let title = if state.notes_edit_title.trim().is_empty() {
+            "শিরোনামহীন নোট".to_string()
+        } else {
+            state.notes_edit_title.trim().to_string()
+        };
+        let content = state.notes_edit_content.clone();
+        let updated = get_ist_time_str();
+        let cat = if state.notes_category == "সব নোট" {
+            "ব্যক্তিগত".to_string()
+        } else {
+            state.notes_category.clone()
+        };
+        if let Some(edit_id) = state.notes_edit_id {
+            if let Some(note) = state.notes.iter_mut().find(|n| n.id == edit_id) {
+                note.title = title;
+                note.content = content;
+                note.updated = updated;
+                note.pinned = state.notes_edit_pinned;
+            }
+        } else {
+            let next_id = state.notes.iter().map(|n| n.id).max().unwrap_or(0) + 1;
+            state.notes.insert(
+                0,
+                Note {
+                    id: next_id,
+                    title,
+                    content,
+                    category: cat,
+                    updated,
+                    pinned: state.notes_edit_pinned,
+                    color: COLOR_CYAN,
+                },
+            );
+        }
+        state.save_notes_to_disk();
+        state.notes_editing = false;
+    } else if id.starts_with("notes_cat_") {
+        state.notes_category = id.trim_start_matches("notes_cat_").to_string();
+    } else if id.starts_with("note_open_") {
+        if let Ok(nid) = id.trim_start_matches("note_open_").parse::<usize>() {
+            if let Some(n) = state.notes.iter().find(|n| n.id == nid).cloned() {
+                state.notes_editing = true;
+                state.notes_editing_title = false;
+                state.notes_edit_id = Some(n.id);
+                state.notes_edit_title = n.title;
+                state.notes_cursor_pos = n.content.chars().count();
+                state.notes_edit_content = n.content;
+                state.notes_edit_pinned = n.pinned;
+            }
+        }
+    } else if id == "app_files" {
+        state.current_path = state
+            .storage_root
+            .join("home")
+            .join("joy")
+            .to_string_lossy()
+            .to_string();
+        state.screen = Screen::AppFiles;
+        state.record_recent_app(
+            "app_files",
+            "ফাইল এক্সপ্লোরার",
+            "fscrypt v2 স্টোরেজ ম্যানেজার",
+            COLOR_BLUE,
+        );
+    } else if id == "bm_home" {
+        state.current_path = state
+            .storage_root
+            .join("home")
+            .join("joy")
+            .to_string_lossy()
+            .to_string();
+    } else if id == "bm_root" {
+        state.current_path = state.storage_root.to_string_lossy().to_string();
+    } else if id == "bm_docs" {
+        let docs = state
+            .storage_root
+            .join("home")
+            .join("joy")
+            .join("Documents");
+        let _ = std::fs::create_dir_all(&docs);
+        state.current_path = docs.to_string_lossy().to_string();
+    } else if id == "bm_up" {
+        let p = PathBuf::from(&state.current_path);
+        if p != state.storage_root && p.starts_with(&state.storage_root) {
+            if let Some(parent) = p.parent() {
+                if parent.starts_with(&state.storage_root) {
+                    state.current_path = parent.to_string_lossy().to_string();
+                }
+            }
+        }
+    } else if id.starts_with("file_open_") || id.starts_with("file_act_") {
+        let name = if id.starts_with("file_open_") {
+            id.trim_start_matches("file_open_")
+        } else {
+            id.trim_start_matches("file_act_")
+        };
+        let target = PathBuf::from(&state.current_path).join(name);
+        if target.is_dir() && target.starts_with(&state.storage_root) {
+            state.current_path = target.to_string_lossy().into();
+        } else if name.ends_with(".html") || name.ends_with(".htm") {
+            if let Ok(html_content) = std::fs::read_to_string(&target) {
+                let html_url = format!("html:{}", html_content);
+                let disp_url = format!("file:///{}", name);
+                state.browser_url = disp_url.clone();
+                state.browser_url_input = disp_url;
+                state.browser_title = name.to_string();
+                state.browser_status = format!("✓ Local HTML Document | {}", name);
+                state.browser_is_editing_url = false;
+                state.browser_loading = false;
+                state.browser_progress = 1.0;
+                state.browser_scroll_offset = 0;
+
+                let stripped = clean_html_to_text(&html_content);
+                let mut web_lines = vec![WebLine {
+                    text: format!("📄 {}", name),
+                    is_heading: true,
+                    color: COLOR_CYAN,
+                }];
+                for line in stripped.lines() {
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() {
+                        web_lines.push(WebLine {
+                            text: trimmed.to_string(),
+                            is_heading: false,
+                            color: COLOR_TEXT_HIGH,
+                        });
+                    }
+                }
+                state.browser_web_lines = web_lines;
+                if state.browser_active_tab < state.browser_tabs.len() {
+                    state.browser_tabs[state.browser_active_tab].title =
+                        name.to_string();
+                    state.browser_tabs[state.browser_active_tab].url =
+                        html_url.clone();
+                }
+                wv.navigate_main(&html_url);
+                state.screen = Screen::AppBrowser;
+                state.record_recent_app(
+                    "app_browser",
+                    "নীলজার ব্রাউজার",
+                    &format!("HTML ফাইল · {}", name),
+                    COLOR_CYAN,
+                );
+            }
+        } else if name.ends_with(".mp4")
+            || name.ends_with(".mkv")
+            || name.ends_with(".avi")
+            || name.ends_with(".mp3")
+            || name.ends_with(".ogg")
+            || name.ends_with(".flac")
+        {
+            state.screen = Screen::AppBrowser;
+        } else if name.ends_with(".txt")
+            || name.ends_with(".md")
+            || name.ends_with(".rs")
+            || name.ends_with(".sh")
+            || name.ends_with(".json")
+            || name.ends_with(".py")
+            || name.ends_with(".c")
+            || name.ends_with(".toml")
+        {
+            if let Ok(content) = std::fs::read_to_string(&target) {
+                state.nano_lines = content.lines().map(String::from).collect();
+                if state.nano_lines.is_empty() {
+                    state.nano_lines.push(String::new());
+                }
+                state.nano_filename = name.into();
+                state.nano_row = 0;
+                state.nano_col = 0;
+                state.screen = Screen::NanoEditor;
+            }
+        }
+    } else if id == "app_settings" {
+        state.screen = Screen::AppSettings;
+        state.record_recent_app(
+            "app_settings",
+            "সিস্টেম সেটিংস",
+            "নেটওয়ার্ক, ব্লুটুথ ও হার্ডওয়্যার",
+            COLOR_PURPLE,
+        );
+    } else if id == "app_nilpkg" {
+        state.screen = Screen::AppNilPkg;
+        state.record_recent_app(
+            "app_nilpkg",
+            "নীলপ্যাক স্টোর",
+            "নেটিভ .nilax প্যাকেজ ম্যানেজার",
+            COLOR_GREEN,
+        );
+    } else if id.starts_with("pkg_act_") {
+        let pkg_id = id.trim_start_matches("pkg_act_");
+        if state.is_pkg_installed(pkg_id) {
+            match pkg_id {
+                "org.onuron.notes" => {
+                    state.notes_editing = false;
+                    state.screen = Screen::AppNotes;
+                }
+                "org.onuron.calculator" => {
+                    state.screen = Screen::AppCalculator;
+                }
+                "org.mozilla.fenix" | "org.videolan.vlc" => {
+                    state.screen = Screen::AppBrowser;
+                }
+                _ => {
+                    state.push_term_line(
+                        format!("[nilrt] স্যান্ডবক্সে চালু করা হয়েছে: {}", pkg_id),
+                        COLOR_GREEN,
+                    );
+                    state.screen = Screen::AppTerminal;
+                }
+            }
+        } else {
+            state.install_pkg(pkg_id);
+        }
+    } else if id.starts_with("pkg_rem_") {
+        let pkg_id = id.trim_start_matches("pkg_rem_");
+        state.uninstall_pkg(pkg_id);
+    } else if id == "app_softbus" {
+        state.screen = Screen::AppSoftBus;
+        state.record_recent_app(
+            "app_softbus",
+            "সফটবাস মেশ",
+            "ডিস্ট্রিবিউটেড ডিভাইস নেটওয়ার্ক",
+            COLOR_GREEN,
+        );
+    } else if id == "app_android" {
+        state.screen = Screen::AppAndroid;
+        state.android_search_focused = false;
+        state.record_recent_app(
+            "app_android",
+            "Google Play স্টোর",
+            "অ্যান্ড্রয়েড অ্যাপ কন্টেইনার",
+            0x01875F,
+        );
+    } else if id == "android_sync_server" {
+        state.sync_android_store_from_server();
+    } else if id == "android_search_box" {
+        state.android_search_focused = true;
+    } else if id == "android_search_clear" {
+        state.android_search_query.clear();
+        state.android_search_focused = false;
+    } else if id == "android_fetch_remote" {
+        state.search_and_add_android_app();
+        state.install_android_app(0);
+    } else if id.starts_with("android_tab_") {
+        if let Ok(t) = id.trim_start_matches("android_tab_").parse::<usize>() {
+            if t < 4 {
+                state.android_tab = t;
+            }
+        }
+    } else if id.starts_with("android_inst_") {
+        if let Ok(idx) = id.trim_start_matches("android_inst_").parse::<usize>() {
+            state.install_android_app(idx);
+        }
+    } else if id.starts_with("android_uninst_") {
+        if let Ok(idx) = id.trim_start_matches("android_uninst_").parse::<usize>() {
+            if let Some(app) = state.android_store_apps.get(idx).cloned() {
+                wv.close_app(&app.pkg_id);
+            }
+            state.uninstall_android_app(idx);
+        }
+    } else if id.starts_with("android_open_") {
+        if let Ok(idx) = id.trim_start_matches("android_open_").parse::<usize>() {
+            if let Some(app) = state.android_store_apps.get(idx).cloned() {
+                state.android_running_app = Some(idx);
+                state.android_search_focused = false;
+                if app.category == "মিডিয়া"
+                    || app.pkg_id.contains("spotify")
+                    || app.pkg_id.contains("youtube")
+                {
+                    state.media_source_app = app.name.clone();
+                    state.music_playing = true;
+                }
+                state.record_recent_app(
+                    "app_android",
+                    &app.name,
+                    &format!("Android Sandbox · {}", app.pkg_id),
+                    app.accent,
+                );
+                state.push_term_line(
+                    format!(
+                        "[nilandroidd] আলাদা স্যান্ডবক্সে চালু হয়েছে: {} ({})",
+                        app.name, app.pkg_id
+                    ),
+                    COLOR_GREEN,
+                );
+                let sandbox_dir = state
+                    .storage_root
+                    .join("var")
+                    .join("android_sandboxes")
+                    .join(&app.pkg_id);
+                wv.ensure_app(&sandbox_dir, &app.runtime_url, &app.pkg_id);
+            }
+        }
+    } else if id == "android_close_app" {
+        state.android_running_app = None;
+    } else if id == "android_reload_app" {
+        if let Some(idx) = state.android_running_app {
+            if let Some(app) = state.android_store_apps.get(idx) {
+                wv.reload_app_pkg(&app.pkg_id);
+            }
+        }
+    } else if id == "aosp_restart" {
+        state.android_status =
+            format!("প্রোফাইল যাচাইকৃত ও সক্রিয় ({})", get_ist_time_str());
+    } else if id == "app_terminal" {
+        state.screen = Screen::AppTerminal;
+    } else if id == "term_toggle_python" {
+        state.python_mode = !state.python_mode;
+        let msg = if state.python_mode {
+            "[Python REPL সক্রিয়]"
+        } else {
+            "[Onuron Bash সক্রিয়]"
+        };
+        state.push_term_line(msg.into(), COLOR_AMBER);
+    } else if id == "app_calc" {
+        state.screen = Screen::AppCalculator;
+    } else if id == "app_music" || id == "app_vlc" {
+        state.screen = Screen::AppBrowser;
+    } else if id == "app_youtube" {
+        state.screen = Screen::AppBrowser;
+        state.browser_url = "https://youtube.com".into();
+        state.browser_url_input = "https://youtube.com".into();
+        state.browser_is_editing_url = false;
+        wv.navigate_main("https://youtube.com");
+    } else if id == "home_weather_card" {
+        state.screen = Screen::AppBrowser;
+        state.browser_url =
+            "https://www.google.com/search?q=siliguri+weather".into();
+        state.browser_url_input =
+            "https://www.google.com/search?q=siliguri+weather".into();
+        state.browser_is_editing_url = false;
+        wv.navigate_main("https://www.google.com/search?q=siliguri+weather");
+    } else if id == "tab_add" {
+        state.new_browser_tab("https://www.google.com");
+        wv.navigate_main("https://www.google.com");
+    } else if id.starts_with("tab_select_") {
+        if let Ok(idx) = id.trim_start_matches("tab_select_").parse::<usize>() {
+            state.switch_browser_tab(idx);
+            wv.navigate_main(&state.browser_url);
+        }
+    } else if id.starts_with("tab_close_") {
+        if let Ok(idx) = id.trim_start_matches("tab_close_").parse::<usize>() {
+            state.close_browser_tab(idx);
+            wv.navigate_main(&state.browser_url);
+        }
+    } else if id == "browser_reload" {
+        wv.reload_main();
+    } else if id == "browser_back" {
+        wv.back_main();
+    } else if id == "browser_go" {
+        let query = state.browser_url_input.clone();
+        state.browser_fetch_live(&query);
+        if state.browser_active_tab < state.browser_tabs.len() {
+            state.browser_tabs[state.browser_active_tab].url =
+                state.browser_url.clone();
+            state.browser_tabs[state.browser_active_tab].title =
+                state.browser_title.clone();
+        }
+        wv.navigate_main(&state.browser_url);
+    } else if id == "browser_url_bar" {
+        state.browser_is_editing_url = true;
+        state.browser_url_input = state.browser_url.clone();
+        state.browser_cursor_pos = state.browser_url_input.chars().count();
+    } else if id == "app_browser" {
+        state.screen = Screen::AppBrowser;
+    } else if id.starts_with("calc_key_") {
+        let k = id.trim_start_matches("calc_key_");
+        state.exec_calc_press(k);
+    } else if id.starts_with("sb_drop_") {
+        let dev = id.trim_start_matches("sb_drop_");
+        let drop_dir = state
+            .storage_root
+            .join("home")
+            .join("joy")
+            .join("Downloads");
+        let _ = fs::create_dir_all(&drop_dir);
+        let drop_file = drop_dir.join(format!("softbus_drop_{}.txt", dev));
+        let _ = fs::write(
+            &drop_file,
+            format!(
+                "SoftBus file drop to node '{}' at {}\n",
+                dev,
+                get_ist_time_str()
+            ),
+        );
+        state.softbus_status =
+            format!("'{}' নোডে ফাইল ড্রপ সফল ({})", dev, get_ist_time_str());
+        state.push_term_line(
+            format!("[সফটবাস] '{}' ডিভাইসে ফাইল সফলভাবে ড্রপ করা হয়েছে!", dev),
+            COLOR_GREEN,
+        );
+    } else if id == "sb_scan" {
+        state.softbus_status =
+            format!("৩টি অনলাইন নোড যাচাইকৃত ({})", get_ist_time_str());
+        state.push_term_line(
+            "[সফটবাস] মেশ নেটওয়ার্কে ৩টি অ্যাক্টিভ ডিভাইস পাওয়া গেছে।".into(),
+            COLOR_CYAN,
+        );
+    } else if id == "nano_act_save" {
+        state.nano_save();
+    } else if id == "nano_act_enter" {
+        state.nano_enter();
+    } else if id == "nano_act_exit" {
+        state.screen = Screen::AppTerminal;
+    } else if id.starts_with("lock_mode_") {
+        if let Ok(m) = id.trim_start_matches("lock_mode_").parse::<u8>() {
+            if m < 3 {
+                state.lock_mode = m;
+                state.lock_error = false;
+                state.pin_input.clear();
+                state.password_input.clear();
+                state.pattern_input.clear();
+            }
+        }
+    } else if id.starts_with("pwd_char_") {
+        let ch = id.trim_start_matches("pwd_char_");
+        state.password_input.push_str(ch);
+        state.lock_error = false;
+    } else if id == "pwd_back" {
+        state.password_input.pop();
+    } else if id == "pwd_submit" {
+        if state.password_input == state.password {
+            state.screen = Screen::Home;
+            state.password_input.clear();
+            state.lock_error = false;
+        } else {
+            state.lock_error = true;
+        }
+    } else if id.starts_with("pat_node_") {
+        if let Ok(n) = id.trim_start_matches("pat_node_").parse::<u8>() {
+            if !state.pattern_input.contains(&n) {
+                state.pattern_input.push(n);
+                state.lock_error = false;
+                if state.pattern_input == state.pattern_secret {
+                    state.screen = Screen::Home;
+                    state.pattern_input.clear();
+                    state.lock_error = false;
+                }
+            }
+        }
+    } else if id == "pat_clear" {
+        state.pattern_input.clear();
+        state.lock_error = false;
+    } else if id == "pat_submit" {
+        if state.pattern_input == state.pattern_secret {
+            state.screen = Screen::Home;
+            state.pattern_input.clear();
+            state.lock_error = false;
+        } else {
+            state.lock_error = true;
+        }
+    } else if id.starts_with("lock_key_") {
+        let key = id.trim_start_matches("lock_key_");
+        if key == "<" {
+            state.pin_input.pop();
+        } else if key == "আনলক" || key == "UNLOCK" {
+            if state.pin_input == state.pin {
+                state.screen = Screen::Home;
+                state.pin_input.clear();
+                state.lock_error = false;
+            } else {
+                state.lock_error = true;
+            }
+        } else if state.pin_input.len() < 4 {
+            let digit_char = match key {
+                "০" => "0",
+                "১" => "1",
+                "২" => "2",
+                "৩" => "3",
+                "৪" => "4",
+                "৫" => "5",
+                "৬" => "6",
+                "৭" => "7",
+                "৮" => "8",
+                "৯" => "9",
+                other => other,
+            };
+            state.pin_input.push_str(digit_char);
+            if state.pin_input.len() == 4 && state.pin_input == state.pin {
+                state.screen = Screen::Home;
+                state.pin_input.clear();
+                state.lock_error = false;
+            }
+        }
+    } else if id == "phone_add_contact" {
+        if !state.dial_number.is_empty() {
+            if let Some(existing) =
+                state.find_existing_contact_name(&state.dial_number)
+            {
+                state.phone_toast =
+                    format!("এই নম্বরটি ইতিমধ্যে '{}' নামে সেভ আছে!", existing);
+                state.phone_toast_is_error = true;
+            } else {
+                state.phone_saving_contact = true;
+                state.phone_contact_name_input.clear();
+                state.phone_contact_tag = 0;
+                state.phone_toast.clear();
+            }
+        }
+    } else if id == "phone_tag_number" {
+        if !state.dial_number.is_empty() {
+            let norm = SimState::normalize_phone(&state.dial_number);
+            if let Some(c) = state
+                .phone_contacts
+                .iter_mut()
+                .find(|(_, _, _, _, _, raw)| SimState::normalize_phone(raw) == norm)
+            {
+                if c.2.contains("[VIP]") {
+                    let existing_name = c.2.clone();
+                    state.phone_toast =
+                        format!("'{}'-এ ইতিমধ্যে [VIP] ট্যাগ যুক্ত আছে!", existing_name);
+                    state.phone_toast_is_error = true;
+                } else {
+                    c.2 = format!("{} [VIP]", c.2);
+                    let updated_name = c.2.clone();
+                    state.save_contacts_to_disk();
+                    state.phone_toast =
+                        format!("'{}'-এ [VIP] ট্যাগ যুক্ত হয়েছে", updated_name);
+                    state.phone_toast_is_error = false;
+                }
+            } else {
+                state.phone_saving_contact = true;
+                state.phone_contact_name_input.clear();
+                state.phone_contact_tag = 2; // Pre-select VIP ★ tag
+                state.phone_toast.clear();
+            }
+        }
+    } else if id == "phone_save_cancel" {
+        state.phone_saving_contact = false;
+        state.phone_contact_name_input.clear();
+    } else if id == "phone_save_confirm" {
+        state.confirm_save_contact();
+    } else if id.starts_with("phone_dlg_tag_") {
+        if let Ok(t) = id.trim_start_matches("phone_dlg_tag_").parse::<usize>() {
+            if t < 3 {
+                state.phone_contact_tag = t;
+            }
+        }
+    } else if id.starts_with("phone_qname_") {
+        state.phone_contact_name_input =
+            id.trim_start_matches("phone_qname_").to_string();
+    } else if id == "phone_toast_close" {
+        state.phone_toast.clear();
+    } else if id.starts_with("dial_key_") {
+        let k = id.trim_start_matches("dial_key_");
+        state.dial_number.push_str(k);
+        state.phone_toast.clear();
+        state.phone_tab = 0;
+    } else if id.starts_with("phone_tab_") {
+        if let Ok(t) = id.trim_start_matches("phone_tab_").parse::<usize>() {
+            if t < 3 {
+                state.phone_tab = t;
+                state.phone_toast.clear();
+            }
+        }
+    } else if id.starts_with("phone_fill_") {
+        let num = id.trim_start_matches("phone_fill_");
+        state.dial_number = num.to_string();
+        state.phone_tab = 0;
+    } else if id == "phone_del" {
+        state.dial_number.pop();
+    } else if id == "phone_call" {
+        if state.dial_number.is_empty() {
+            state.dial_number = "৯৮৭৬৫ ৪৩২১০".into();
+        }
+        state.call_active = true;
+        state.call_duration_ticks = 0;
+        state.screen = Screen::InCall;
+        state.push_term_line(
+            format!("[ভোল্টি] লাইভ কল সংযুক্ত: {}", state.dial_number),
+            COLOR_GREEN,
+        );
+    } else if id == "call_hangup" {
+        state.call_active = false;
+        state.call_duration_ticks = 0;
+        state.screen = Screen::AppPhone;
+        state.push_term_line("[ভোল্টি] কল সমাপ্ত করা হয়েছে।".into(), COLOR_AMBER);
+    } else if id == "call_toggle_mute" {
+        state.call_is_muted = !state.call_is_muted;
+    } else if id == "call_toggle_speaker" {
+        state.call_is_speaker = !state.call_is_speaker;
+    } else if id == "call_keypad" {
+        state.screen = Screen::AppPhone;
+    } else if id == "toggle_wifi" {
+        state.wifi_enabled = !state.wifi_enabled;
+    } else if id == "toggle_cellular" || id == "toggle_data" {
+        state.cellular_enabled = !state.cellular_enabled;
+        if state.cellular_enabled {
+            state.cellular_signal_level = 4;
+        } else {
+            state.cellular_signal_level = 0;
+        }
+    } else if id == "cycle_signal" {
+        if !state.cellular_enabled {
+            state.cellular_enabled = true;
+            state.cellular_signal_level = 4;
+        } else if state.cellular_signal_level > 1 {
+            state.cellular_signal_level -= 1;
+        } else if state.cellular_signal_level == 1 {
+            state.cellular_signal_level = 0;
+            state.cellular_enabled = false;
+        } else {
+            state.cellular_signal_level = 4;
+        }
+    } else if id == "toggle_battery_charge" {
+        state.battery_charging = !state.battery_charging;
+    } else if id == "toggle_bt" {
+        state.bt_enabled = !state.bt_enabled;
+    } else if id == "toggle_location" {
+        state.location_enabled = !state.location_enabled;
+    } else if id == "toggle_softbus" {
+        state.softbus_enabled = !state.softbus_enabled;
+    } else if id == "toggle_theme" {
+        // Quick toggle in the legacy settings grid: flip between
+        // light and dark only; AMOLED/auto stay explicit choices.
+        state.theme_mode = if state.dark_mode { 0 } else { 1 };
+        state.set_theme_from_mode();
+    } else if id == "toggle_torch" {
+        state.torch_enabled = !state.torch_enabled;
+    } else if id.starts_with("term_chip_") {
+        let cmd = id.trim_start_matches("term_chip_").to_string();
+        if cmd == "nano" {
+            state.open_nano("my_note.txt");
+        } else if cmd == "vlc" {
+            state.screen = Screen::AppBrowser;
+        } else if cmd == "nilpkg" {
+            state.exec_term_command("nilpkg list");
+        } else {
+            state.exec_term_command(&cmd);
+        }
+    } else {
+        // No arm matched: report the control as unhandled so the
+        // walkthrough surfaces drawn-but-inert controls.
+        return false;
+    }
+    true
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "windows")]
     unsafe {
@@ -8458,7 +9671,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "windows")]
     let parent_hwnd = window.get_window_handle() as isize;
     #[cfg(target_os = "windows")]
-    let mut embedded_browser = nilbrowser::chromium::create_embedded_browser(
+    let embedded_browser = nilbrowser::chromium::create_embedded_browser(
         parent_hwnd,
         4,
         76,
@@ -8468,10 +9681,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .ok();
     #[cfg(target_os = "windows")]
-    let mut android_sandboxes: std::collections::HashMap<
+    let android_sandboxes: std::collections::HashMap<
         String,
         nilbrowser::chromium::NilBrowser,
     > = std::collections::HashMap::new();
+    // Host-webview side-effect hooks: the interactive Windows host owns the
+    // embedded Chromium views; the headless selftest runs the same
+    // dispatcher with a no-op context.
+    #[cfg(target_os = "windows")]
+    let mut wv = WebViewCtx::interactive(embedded_browser, android_sandboxes, parent_hwnd);
+    #[cfg(not(target_os = "windows"))]
+    let mut wv = WebViewCtx::headless();
 
     #[allow(deprecated)]
     window.limit_update_rate(Some(std::time::Duration::from_micros(16600))); // 60 FPS
@@ -9120,10 +10340,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             state.browser_tabs[state.browser_active_tab].url =
                                 state.browser_url.clone();
                         }
-                        #[cfg(target_os = "windows")]
-                        if let Some(ref b) = embedded_browser {
-                            let _ = nilbrowser::chromium::navigate_to(b, &state.browser_url);
-                        }
+                        wv.navigate_main(&state.browser_url);
                     }
                     Key::Backspace => {
                         state.browser_url_backspace();
@@ -9513,12 +10730,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "document.querySelectorAll('video, audio').forEach(m => {{ m.volume = {:.2}; }});",
                             state.volume_level as f32 / 100.0
                         );
-                        if let Some(ref b) = embedded_browser {
-                            let _ = nilbrowser::chromium::eval_js(b, &js);
-                        }
-                        for sb in android_sandboxes.values() {
-                            let _ = nilbrowser::chromium::eval_js(sb, &js);
-                        }
+                        wv.eval_all(&js);
                     }
                 }
             }
@@ -9536,9 +10748,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if state.screen == Screen::Recents && id.starts_with("rec:") {
                         // Defer to mouse-up so the drag gesture can win.
                         pending_recents_tap = Some(id.clone());
-                    } else if apps::handle_action(&mut state, &id) {
-                        // Handled by the OnuronOS 1.7 shell (screens.rs / apps.rs).
-                        if std::env::var("ONURON_TRACE").is_ok() {
+                    } else {
+                        // One dispatcher serves the live window and the
+                        // headless selftest walkthrough alike (see `shell_tap`).
+                        let handled = shell_tap(&mut state, id, px, &mut wv);
+                        if handled && std::env::var("ONURON_TRACE").is_ok() {
                             println!(
                                 "[trace] click {} -> {} page_open={} url={}",
                                 id,
@@ -9546,1153 +10760,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 state.browser_page_open,
                                 state.browser_url
                             );
-                        }
-                    } else if id == "home_page_toggle" {
-                        state.home_page = if state.home_page == 0 { 1 } else { 0 };
-                    } else if id == "home_page_next" {
-                        state.home_page = 1;
-                    } else if id == "home_page_prev" {
-                        state.home_page = 0;
-                    } else if id == "nav_home" {
-                        state.screen = Screen::Home;
-                    } else if id == "nav_back" {
-                        if state.screen == Screen::InCall {
-                            state.screen = Screen::AppPhone;
-                        } else if state.screen == Screen::AppPhone {
-                            if state.phone_saving_contact {
-                                state.phone_saving_contact = false;
-                            } else if !state.dial_number.is_empty() {
-                                state.dial_number.clear();
-                            } else if state.phone_tab != 0 {
-                                state.phone_tab = 0;
-                            } else {
-                                state.screen = Screen::Home;
-                            }
-                        } else if state.screen == Screen::AppMessages {
-                            if state.sms_composing {
-                                state.sms_composing = false;
-                                state.sms_selected_idx = None;
-                            } else {
-                                state.screen = Screen::Home;
-                            }
-                        } else if state.screen == Screen::AppFiles {
-                            let curr = PathBuf::from(&state.current_path);
-                            if curr != state.storage_root && curr.starts_with(&state.storage_root) {
-                                if let Some(parent) = curr.parent() {
-                                    if parent.starts_with(&state.storage_root) {
-                                        state.current_path = parent.to_string_lossy().to_string();
-                                    } else {
-                                        state.screen = Screen::Home;
-                                    }
-                                } else {
-                                    state.screen = Screen::Home;
-                                }
-                            } else {
-                                state.screen = Screen::Home;
-                            }
-                        } else if state.screen == Screen::AppNotes {
-                            if state.notes_editing {
-                                state.notes_editing = false;
-                                state.notes_edit_id = None;
-                            } else {
-                                state.screen = Screen::Home;
-                            }
-                        } else if state.screen == Screen::AppMemories {
-                            if state.mem_view == 1 {
-                                state.mem_opening = false;
-                            } else if state.mem_tab != 0 {
-                                state.mem_tab = 0;
-                            } else {
-                                state.screen = Screen::Home;
-                            }
-                        } else if state.screen == Screen::AppAndroid {
-                            if state.android_running_app.is_some() {
-                                state.android_running_app = None;
-                            } else if !state.android_search_query.is_empty()
-                                || state.android_search_focused
-                            {
-                                state.android_search_query.clear();
-                                state.android_search_focused = false;
-                            } else if state.android_tab != 0 {
-                                state.android_tab = 0;
-                            } else {
-                                state.screen = Screen::Home;
-                            }
-                        } else if state.screen == Screen::NanoEditor {
-                            state.screen = Screen::AppTerminal;
-                        } else if state.screen == Screen::Home && state.home_page != 0 {
-                            state.home_page = 0;
-                        } else {
-                            state.screen = Screen::Home;
-                        }
-                    } else if id == "nav_lock" {
-                        state.pin_input.clear();
-                        state.lock_error = false;
-                        state.screen = Screen::Lockscreen;
-                    } else if id == "nav_recents" {
-                        state.screen = if state.screen == Screen::Recents {
-                            Screen::Home
-                        } else {
-                            Screen::Recents
-                        };
-                    } else if id == "recents_scroll_up" {
-                        state.recents_scroll_offset = state.recents_scroll_offset.saturating_sub(1);
-                    } else if id == "recents_scroll_down" {
-                        let max_sc = recent_max_scroll(&state);
-                        state.recents_scroll_offset = (state.recents_scroll_offset + 1).min(max_sc);
-                    } else if id == "recents_clear_all" {
-                        state.recent_apps.clear();
-                        state.recents_scroll_offset = 0;
-                        state.android_running_app = None;
-                    } else if id.starts_with("recent_close_") {
-                        if let Ok(idx) = id.trim_start_matches("recent_close_").parse::<usize>() {
-                            if idx < state.recent_apps.len() {
-                                state.recent_apps.remove(idx);
-                                let max_sc = recent_max_scroll(&state);
-                                state.recents_scroll_offset =
-                                    state.recents_scroll_offset.min(max_sc);
-                            }
-                        }
-                    } else if id.starts_with("recent_open_") {
-                        let target_id = id.trim_start_matches("recent_open_");
-                        match target_id {
-                            "app_phone" => state.screen = Screen::AppPhone,
-                            "app_browser" => state.screen = Screen::AppBrowser,
-                            "app_messages" => state.screen = Screen::AppMessages,
-                            "app_files" => state.screen = Screen::AppFiles,
-                            "app_settings" => state.screen = Screen::AppSettings,
-                            "app_terminal" => state.screen = Screen::AppTerminal,
-                            "app_softbus" => state.screen = Screen::AppSoftBus,
-                            "app_memories" => state.screen = Screen::AppMemories,
-                            "app_notes" => state.screen = Screen::AppNotes,
-                            "app_calc" => state.screen = Screen::AppCalculator,
-                            "app_nilpkg" => state.screen = Screen::AppNilPkg,
-                            "app_android" => state.screen = Screen::AppAndroid,
-                            _ => state.screen = Screen::Home,
-                        }
-                    } else if id == "media_toggle" {
-                        state.music_playing = !state.music_playing;
-                        #[cfg(target_os = "windows")]
-                        {
-                            let js = "document.querySelectorAll('video, audio').forEach(m => { if (m.paused) m.play(); else m.pause(); });";
-                            if let Some(ref b) = embedded_browser {
-                                let _ = nilbrowser::chromium::eval_js(b, js);
-                            }
-                            for sb in android_sandboxes.values() {
-                                let _ = nilbrowser::chromium::eval_js(sb, js);
-                            }
-                        }
-                    } else if id == "media_prev" {
-                        state.music_track_idx = if state.music_track_idx == 0 {
-                            3
-                        } else {
-                            state.music_track_idx - 1
-                        };
-                        state.media_progress_ticks = 0;
-                        state.music_playing = true;
-                        #[cfg(target_os = "windows")]
-                        {
-                            let js = "(() => { \
-                                if (typeof playIdx === 'function' && typeof tracks !== 'undefined' && tracks.length) { playIdx((cur - 1 + tracks.length) % tracks.length); return; } \
-                                const btn = document.querySelector('.ytp-prev-button, [aria-label*=\"Previous\"], [aria-label*=\"previous\"]'); \
-                                if (btn) { btn.click(); return; } \
-                                const v = document.querySelector('video, audio'); \
-                                if (v) { if (v.currentTime > 5) v.currentTime = 0; else window.history.back(); } \
-                            })();";
-                            if let Some(ref b) = embedded_browser {
-                                let _ = nilbrowser::chromium::eval_js(b, js);
-                            }
-                            for sb in android_sandboxes.values() {
-                                let _ = nilbrowser::chromium::eval_js(sb, js);
-                            }
-                        }
-                    } else if id == "media_next" {
-                        state.music_track_idx = (state.music_track_idx + 1) % 4;
-                        state.media_progress_ticks = 0;
-                        state.music_playing = true;
-                        #[cfg(target_os = "windows")]
-                        {
-                            let js = "(() => { \
-                                if (typeof playIdx === 'function' && typeof tracks !== 'undefined' && tracks.length) { playIdx((cur + 1) % tracks.length); return; } \
-                                const btn = document.querySelector('.ytp-next-button, [aria-label*=\"Next\"], [aria-label*=\"next\"], a.ytm-autonav-bar-button'); \
-                                if (btn) { btn.click(); return; } \
-                                const links = Array.from(document.querySelectorAll('a[href*=\"/watch?v=\"], a[href*=\"/shorts/\"]')); \
-                                if (links.length > 1) { links[1].click(); return; } \
-                                const v = document.querySelector('video, audio'); \
-                                if (v && v.duration) { v.currentTime = Math.min(v.duration - 1, v.currentTime + 30); } \
-                            })();";
-                            if let Some(ref b) = embedded_browser {
-                                let _ = nilbrowser::chromium::eval_js(b, js);
-                            }
-                            for sb in android_sandboxes.values() {
-                                let _ = nilbrowser::chromium::eval_js(sb, js);
-                            }
-                        }
-                    } else if id == "disp_bright_slider" {
-                        let card_w = ((SCREEN_WIDTH as i16) - 48).max(1) as u32;
-                        let ratio =
-                            (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(15, 100);
-                        state.brightness_level = ratio as u8;
-                    } else if id == "disp_font_slider" {
-                        let card_w = ((SCREEN_WIDTH as i16) - 48).max(1) as u32;
-                        let ratio =
-                            (((px - 42).max(0) as u32) * 100 / (card_w - 36)).clamp(25, 150);
-                        state.font_size_pct = ratio as u8;
-                    } else if id == "theme_light" {
-                        state.theme_mode = 0;
-                        state.set_theme_from_mode();
-                    } else if id == "theme_dark" {
-                        state.theme_mode = 1;
-                        state.set_theme_from_mode();
-                    } else if id == "theme_amoled" {
-                        state.theme_mode = 2;
-                        state.set_theme_from_mode();
-                    } else if id == "theme_auto" {
-                        state.theme_mode = 3;
-                        state.set_theme_from_mode();
-                    } else if id == "nav_set_display" {
-                        state.screen = Screen::SettingsDisplay;
-                    } else if id == "nav_set_about" {
-                        state.screen = Screen::SettingsAbout;
-                    } else if id == "nav_set_wifi" {
-                        state.screen = Screen::SettingsWifi;
-                    } else if id == "nav_set_bluetooth" {
-                        state.screen = Screen::SettingsBluetooth;
-                    } else if id == "nav_set_sound" {
-                        state.screen = Screen::SettingsSound;
-                    } else if id == "nav_set_security" {
-                        state.screen = Screen::SettingsSecurity;
-                    } else if id == "nav_set_battery" {
-                        state.screen = Screen::SettingsBattery;
-                    } else if id == "nav_set_storage" {
-                        state.screen = Screen::SettingsStorage;
-                    } else if id == "nav_set_language" {
-                        state.screen = Screen::SettingsLanguage;
-                    } else if id == "nav_set_accessibility" {
-                        state.screen = Screen::SettingsAccessibility;
-                    } else if id == "nav_set_update" {
-                        state.screen = Screen::SettingsUpdate;
-                    } else if id == "sub_back" {
-                        state.screen = Screen::AppSettings;
-                    } else if id == "bright_bar" {
-                        let ratio = (((px - 28).max(0) as u32) * 100
-                            / ((SCREEN_WIDTH as u32) - 56).max(1))
-                        .clamp(15, 100);
-                        state.brightness_level = ratio as u8;
-                    } else if id == "vol_bar" {
-                        let ratio = (((px - 28).max(0) as u32) * 100
-                            / ((SCREEN_WIDTH as u32) - 56).max(1))
-                        .clamp(0, 100);
-                        state.volume_level = ratio as u8;
-                        #[cfg(target_os = "windows")]
-                        {
-                            let js = format!("document.querySelectorAll('video, audio').forEach(m => {{ m.volume = {:.2}; }});", state.volume_level as f32 / 100.0);
-                            if let Some(ref b) = embedded_browser {
-                                let _ = nilbrowser::chromium::eval_js(b, &js);
-                            }
-                            for sb in android_sandboxes.values() {
-                                let _ = nilbrowser::chromium::eval_js(sb, &js);
-                            }
-                        }
-                    } else if id.starts_with("home_android_") {
-                        if let Ok(idx) = id.trim_start_matches("home_android_").parse::<usize>() {
-                            if let Some(app) = state.android_store_apps.get(idx).cloned() {
-                                state.screen = Screen::AppAndroid;
-                                state.android_running_app = Some(idx);
-                                state.android_search_focused = false;
-                                if app.category == "মিডিয়া"
-                                    || app.pkg_id.contains("spotify")
-                                    || app.pkg_id.contains("youtube")
-                                {
-                                    state.media_source_app = app.name.clone();
-                                    state.music_playing = true;
-                                }
-                                state.record_recent_app(
-                                    "app_android",
-                                    &app.name,
-                                    &format!("Android Sandbox · {}", app.pkg_id),
-                                    app.accent,
-                                );
-                                #[cfg(target_os = "windows")]
-                                {
-                                    if !android_sandboxes.contains_key(&app.pkg_id) {
-                                        let sandbox_dir = state
-                                            .storage_root
-                                            .join("var")
-                                            .join("android_sandboxes")
-                                            .join(&app.pkg_id);
-                                        if let Ok(sb) =
-                                            nilbrowser::chromium::create_isolated_webview(
-                                                parent_hwnd,
-                                                &sandbox_dir,
-                                                4,
-                                                82,
-                                                (SCREEN_WIDTH as i32) - 8,
-                                                (SCREEN_HEIGHT as i32) - 82 - 54,
-                                                &app.runtime_url,
-                                            )
-                                        {
-                                            android_sandboxes.insert(app.pkg_id.clone(), sb);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else if id == "toggle_island" {
-                        state.screen = Screen::ControlCenter;
-                    } else if id == "close_control" {
-                        state.screen = Screen::Home;
-                    } else if id == "app_memories" {
-                        state.screen = Screen::AppMemories;
-                        state.mem_view = 0;
-                        state.mem_tab = 0;
-                        state.mem_anim = 0.0;
-                        state.mem_opening = false;
-                        state.mem_toast = 0;
-                        state.record_recent_app(
-                            "app_memories",
-                            "স্মৃতি (গ্যালারি)",
-                            "ফটো অ্যালবাম ও ক্লাউড ব্যাকআপ",
-                            COLOR_PINK,
-                        );
-                    } else if id.starts_with("mem_open_") {
-                        if let Ok(idx) = id[9..].parse::<usize>() {
-                            if idx < memories::MEMORIES_COUNT {
-                                state.mem_idx = idx;
-                                state.mem_view = 1;
-                                state.mem_anim = 0.0;
-                                state.mem_opening = true;
-                                state.mem_from = memories::card_rect(idx);
-                            }
-                        }
-                    } else if id.starts_with("mem_thumb_") {
-                        if let Ok(t) = id[10..].parse::<usize>() {
-                            if t < 4 {
-                                let idx = (state.mem_idx + t) % memories::MEMORIES_COUNT;
-                                state.mem_idx = idx;
-                                state.mem_view = 1;
-                                state.mem_anim = 0.0;
-                                state.mem_opening = true;
-                                state.mem_from = (16 + t as i16 * 78, 538, 66, 66);
-                            }
-                        }
-                    } else if id == "mem_back" {
-                        state.mem_opening = false;
-                    } else if id == "mem_prev" {
-                        state.mem_idx = (state.mem_idx + memories::MEMORIES_COUNT - 1)
-                            % memories::MEMORIES_COUNT;
-                    } else if id == "mem_next" {
-                        state.mem_idx = (state.mem_idx + 1) % memories::MEMORIES_COUNT;
-                    } else if id == "mem_rail_prev" {
-                        state.mem_rail_offset = (state.mem_rail_offset + memories::MEMORIES_COUNT
-                            - 1)
-                            % memories::MEMORIES_COUNT;
-                    } else if id == "mem_rail_next" {
-                        state.mem_rail_offset =
-                            (state.mem_rail_offset + 1) % memories::MEMORIES_COUNT;
-                    } else if id == "mem_share" {
-                        state.mem_toast = 110;
-                    } else if id.starts_with("mem_tab_") {
-                        if let Ok(t) = id[8..].parse::<usize>() {
-                            if t < 3 {
-                                state.mem_tab = t;
-                            }
-                        }
-                    } else if id.starts_with("mem_filter_") {
-                        if let Ok(f) = id[11..].parse::<usize>() {
-                            if f < 4 {
-                                state.mem_filter = f;
-                            }
-                        }
-                    } else if id == "mem_toggle_backup" {
-                        state.mem_auto_backup = !state.mem_auto_backup;
-                    } else if id == "app_phone" {
-                        state.screen = Screen::AppPhone;
-                        state.record_recent_app(
-                            "app_phone",
-                            "ফোন ও ডায়ালার",
-                            "VoLTE HD কল ও পরিচিতি",
-                            COLOR_GREEN,
-                        );
-                    } else if id == "app_messages" {
-                        state.sms_composing = false;
-                        state.sms_selected_idx = None;
-                        state.screen = Screen::AppMessages;
-                        state.record_recent_app(
-                            "app_messages",
-                            "বার্তা (SMS)",
-                            "সুরক্ষিত বার্তা ও চ্যাট",
-                            COLOR_AMBER,
-                        );
-                    } else if id == "msg_new" {
-                        state.sms_composing = true;
-                        state.sms_selected_idx = None;
-                        state.sms_input_to.clear();
-                        state.sms_input_body.clear();
-                        state.sms_focus_to = true;
-                    } else if id.starts_with("msg_thread_") {
-                        if let Ok(idx) = id.trim_start_matches("msg_thread_").parse::<usize>() {
-                            if let Some((sender, _, _)) = state.sms_threads.get(idx).cloned() {
-                                state.sms_composing = true;
-                                state.sms_selected_idx = Some(idx);
-                                state.sms_input_to = sender;
-                                state.sms_input_body.clear();
-                                state.sms_focus_to = false;
-                            }
-                        }
-                    } else if id == "msg_to_box" {
-                        if state.sms_selected_idx.is_none() {
-                            state.sms_focus_to = true;
-                        }
-                    } else if id == "msg_body_box" {
-                        state.sms_focus_to = false;
-                    } else if id == "msg_cancel" {
-                        state.sms_composing = false;
-                        state.sms_selected_idx = None;
-                    } else if id == "msg_del" {
-                        if let Some(idx) = state.sms_selected_idx.take() {
-                            if idx < state.sms_threads.len() {
-                                state.sms_threads.remove(idx);
-                                state.save_sms_to_disk();
-                            }
-                        }
-                        state.sms_composing = false;
-                    } else if id == "msg_send" {
-                        let to = if state.sms_input_to.trim().is_empty() {
-                            "অজানা প্রাপক".to_string()
-                        } else {
-                            state.sms_input_to.trim().to_string()
-                        };
-                        let body = if state.sms_input_body.trim().is_empty() {
-                            "হ্যালো!".to_string()
-                        } else {
-                            state.sms_input_body.trim().to_string()
-                        };
-                        let now_str = get_ist_time_str();
-                        if let Some(idx) = state.sms_selected_idx {
-                            if idx < state.sms_threads.len() {
-                                state.sms_threads[idx] = (to, body, now_str);
-                            }
-                        } else {
-                            state.sms_threads.insert(0, (to, body, now_str));
-                        }
-                        state.save_sms_to_disk();
-                        state.sms_composing = false;
-                        state.sms_selected_idx = None;
-                    } else if id == "app_notes" {
-                        state.notes_editing = false;
-                        state.screen = Screen::AppNotes;
-                        state.record_recent_app(
-                            "app_notes",
-                            "স্মার্ট নোটস",
-                            "নীলাং ডকুমেন্ট ও নোটবুক",
-                            COLOR_AMBER,
-                        );
-                    } else if id == "notes_new" {
-                        state.notes_editing = true;
-                        state.notes_editing_title = true;
-                        state.notes_edit_id = None;
-                        state.notes_edit_title.clear();
-                        state.notes_edit_content.clear();
-                        state.notes_edit_pinned = false;
-                        state.notes_cursor_pos = 0;
-                    } else if id == "notes_title_box" {
-                        state.notes_editing_title = true;
-                    } else if id == "notes_body_box" {
-                        state.notes_editing_title = false;
-                    } else if id == "notes_pin" {
-                        state.notes_edit_pinned = !state.notes_edit_pinned;
-                    } else if id == "notes_cancel" {
-                        state.notes_editing = false;
-                    } else if id == "notes_delete" {
-                        if let Some(del_id) = state.notes_edit_id.take() {
-                            state.notes.retain(|n| n.id != del_id);
-                            state.save_notes_to_disk();
-                        }
-                        state.notes_editing = false;
-                    } else if id == "notes_save" {
-                        let title = if state.notes_edit_title.trim().is_empty() {
-                            "শিরোনামহীন নোট".to_string()
-                        } else {
-                            state.notes_edit_title.trim().to_string()
-                        };
-                        let content = state.notes_edit_content.clone();
-                        let updated = get_ist_time_str();
-                        let cat = if state.notes_category == "সব নোট" {
-                            "ব্যক্তিগত".to_string()
-                        } else {
-                            state.notes_category.clone()
-                        };
-                        if let Some(edit_id) = state.notes_edit_id {
-                            if let Some(note) = state.notes.iter_mut().find(|n| n.id == edit_id) {
-                                note.title = title;
-                                note.content = content;
-                                note.updated = updated;
-                                note.pinned = state.notes_edit_pinned;
-                            }
-                        } else {
-                            let next_id = state.notes.iter().map(|n| n.id).max().unwrap_or(0) + 1;
-                            state.notes.insert(
-                                0,
-                                Note {
-                                    id: next_id,
-                                    title,
-                                    content,
-                                    category: cat,
-                                    updated,
-                                    pinned: state.notes_edit_pinned,
-                                    color: COLOR_CYAN,
-                                },
-                            );
-                        }
-                        state.save_notes_to_disk();
-                        state.notes_editing = false;
-                    } else if id.starts_with("notes_cat_") {
-                        state.notes_category = id.trim_start_matches("notes_cat_").to_string();
-                    } else if id.starts_with("note_open_") {
-                        if let Ok(nid) = id.trim_start_matches("note_open_").parse::<usize>() {
-                            if let Some(n) = state.notes.iter().find(|n| n.id == nid).cloned() {
-                                state.notes_editing = true;
-                                state.notes_editing_title = false;
-                                state.notes_edit_id = Some(n.id);
-                                state.notes_edit_title = n.title;
-                                state.notes_cursor_pos = n.content.chars().count();
-                                state.notes_edit_content = n.content;
-                                state.notes_edit_pinned = n.pinned;
-                            }
-                        }
-                    } else if id == "app_files" {
-                        state.current_path = state
-                            .storage_root
-                            .join("home")
-                            .join("joy")
-                            .to_string_lossy()
-                            .to_string();
-                        state.screen = Screen::AppFiles;
-                        state.record_recent_app(
-                            "app_files",
-                            "ফাইল এক্সপ্লোরার",
-                            "fscrypt v2 স্টোরেজ ম্যানেজার",
-                            COLOR_BLUE,
-                        );
-                    } else if id == "bm_home" {
-                        state.current_path = state
-                            .storage_root
-                            .join("home")
-                            .join("joy")
-                            .to_string_lossy()
-                            .to_string();
-                    } else if id == "bm_root" {
-                        state.current_path = state.storage_root.to_string_lossy().to_string();
-                    } else if id == "bm_docs" {
-                        let docs = state
-                            .storage_root
-                            .join("home")
-                            .join("joy")
-                            .join("Documents");
-                        let _ = std::fs::create_dir_all(&docs);
-                        state.current_path = docs.to_string_lossy().to_string();
-                    } else if id == "bm_up" {
-                        let p = PathBuf::from(&state.current_path);
-                        if p != state.storage_root && p.starts_with(&state.storage_root) {
-                            if let Some(parent) = p.parent() {
-                                if parent.starts_with(&state.storage_root) {
-                                    state.current_path = parent.to_string_lossy().to_string();
-                                }
-                            }
-                        }
-                    } else if id.starts_with("file_open_") || id.starts_with("file_act_") {
-                        let name = if id.starts_with("file_open_") {
-                            id.trim_start_matches("file_open_")
-                        } else {
-                            id.trim_start_matches("file_act_")
-                        };
-                        let target = PathBuf::from(&state.current_path).join(name);
-                        if target.is_dir() && target.starts_with(&state.storage_root) {
-                            state.current_path = target.to_string_lossy().into();
-                        } else if name.ends_with(".html") || name.ends_with(".htm") {
-                            if let Ok(html_content) = std::fs::read_to_string(&target) {
-                                let html_url = format!("html:{}", html_content);
-                                let disp_url = format!("file:///{}", name);
-                                state.browser_url = disp_url.clone();
-                                state.browser_url_input = disp_url;
-                                state.browser_title = name.to_string();
-                                state.browser_status = format!("✓ Local HTML Document | {}", name);
-                                state.browser_is_editing_url = false;
-                                state.browser_loading = false;
-                                state.browser_progress = 1.0;
-                                state.browser_scroll_offset = 0;
-
-                                let stripped = clean_html_to_text(&html_content);
-                                let mut web_lines = vec![WebLine {
-                                    text: format!("📄 {}", name),
-                                    is_heading: true,
-                                    color: COLOR_CYAN,
-                                }];
-                                for line in stripped.lines() {
-                                    let trimmed = line.trim();
-                                    if !trimmed.is_empty() {
-                                        web_lines.push(WebLine {
-                                            text: trimmed.to_string(),
-                                            is_heading: false,
-                                            color: COLOR_TEXT_HIGH,
-                                        });
-                                    }
-                                }
-                                state.browser_web_lines = web_lines;
-                                if state.browser_active_tab < state.browser_tabs.len() {
-                                    state.browser_tabs[state.browser_active_tab].title =
-                                        name.to_string();
-                                    state.browser_tabs[state.browser_active_tab].url =
-                                        html_url.clone();
-                                }
-                                #[cfg(target_os = "windows")]
-                                if let Some(ref b) = embedded_browser {
-                                    let _ = nilbrowser::chromium::navigate_to(b, &html_url);
-                                }
-                                state.screen = Screen::AppBrowser;
-                                state.record_recent_app(
-                                    "app_browser",
-                                    "নীলজার ব্রাউজার",
-                                    &format!("HTML ফাইল · {}", name),
-                                    COLOR_CYAN,
-                                );
-                            }
-                        } else if name.ends_with(".mp4")
-                            || name.ends_with(".mkv")
-                            || name.ends_with(".avi")
-                            || name.ends_with(".mp3")
-                            || name.ends_with(".ogg")
-                            || name.ends_with(".flac")
-                        {
-                            state.screen = Screen::AppBrowser;
-                        } else if name.ends_with(".txt")
-                            || name.ends_with(".md")
-                            || name.ends_with(".rs")
-                            || name.ends_with(".sh")
-                            || name.ends_with(".json")
-                            || name.ends_with(".py")
-                            || name.ends_with(".c")
-                            || name.ends_with(".toml")
-                        {
-                            if let Ok(content) = std::fs::read_to_string(&target) {
-                                state.nano_lines = content.lines().map(String::from).collect();
-                                if state.nano_lines.is_empty() {
-                                    state.nano_lines.push(String::new());
-                                }
-                                state.nano_filename = name.into();
-                                state.nano_row = 0;
-                                state.nano_col = 0;
-                                state.screen = Screen::NanoEditor;
-                            }
-                        }
-                    } else if id == "app_settings" {
-                        state.screen = Screen::AppSettings;
-                        state.record_recent_app(
-                            "app_settings",
-                            "সিস্টেম সেটিংস",
-                            "নেটওয়ার্ক, ব্লুটুথ ও হার্ডওয়্যার",
-                            COLOR_PURPLE,
-                        );
-                    } else if id == "app_nilpkg" {
-                        state.screen = Screen::AppNilPkg;
-                        state.record_recent_app(
-                            "app_nilpkg",
-                            "নীলপ্যাক স্টোর",
-                            "নেটিভ .nilax প্যাকেজ ম্যানেজার",
-                            COLOR_GREEN,
-                        );
-                    } else if id.starts_with("pkg_act_") {
-                        let pkg_id = id.trim_start_matches("pkg_act_");
-                        if state.is_pkg_installed(pkg_id) {
-                            match pkg_id {
-                                "org.onuron.notes" => {
-                                    state.notes_editing = false;
-                                    state.screen = Screen::AppNotes;
-                                }
-                                "org.onuron.calculator" => {
-                                    state.screen = Screen::AppCalculator;
-                                }
-                                "org.mozilla.fenix" | "org.videolan.vlc" => {
-                                    state.screen = Screen::AppBrowser;
-                                }
-                                _ => {
-                                    state.push_term_line(
-                                        format!("[nilrt] স্যান্ডবক্সে চালু করা হয়েছে: {}", pkg_id),
-                                        COLOR_GREEN,
-                                    );
-                                    state.screen = Screen::AppTerminal;
-                                }
-                            }
-                        } else {
-                            state.install_pkg(pkg_id);
-                        }
-                    } else if id.starts_with("pkg_rem_") {
-                        let pkg_id = id.trim_start_matches("pkg_rem_");
-                        state.uninstall_pkg(pkg_id);
-                    } else if id == "app_softbus" {
-                        state.screen = Screen::AppSoftBus;
-                        state.record_recent_app(
-                            "app_softbus",
-                            "সফটবাস মেশ",
-                            "ডিস্ট্রিবিউটেড ডিভাইস নেটওয়ার্ক",
-                            COLOR_GREEN,
-                        );
-                    } else if id == "app_android" {
-                        state.screen = Screen::AppAndroid;
-                        state.android_search_focused = false;
-                        state.record_recent_app(
-                            "app_android",
-                            "Google Play স্টোর",
-                            "অ্যান্ড্রয়েড অ্যাপ কন্টেইনার",
-                            0x01875F,
-                        );
-                    } else if id == "android_sync_server" {
-                        state.sync_android_store_from_server();
-                    } else if id == "android_search_box" {
-                        state.android_search_focused = true;
-                    } else if id == "android_search_clear" {
-                        state.android_search_query.clear();
-                        state.android_search_focused = false;
-                    } else if id == "android_fetch_remote" {
-                        state.search_and_add_android_app();
-                        state.install_android_app(0);
-                    } else if id.starts_with("android_tab_") {
-                        if let Ok(t) = id.trim_start_matches("android_tab_").parse::<usize>() {
-                            if t < 4 {
-                                state.android_tab = t;
-                            }
-                        }
-                    } else if id.starts_with("android_inst_") {
-                        if let Ok(idx) = id.trim_start_matches("android_inst_").parse::<usize>() {
-                            state.install_android_app(idx);
-                        }
-                    } else if id.starts_with("android_uninst_") {
-                        if let Ok(idx) = id.trim_start_matches("android_uninst_").parse::<usize>() {
-                            if let Some(app) = state.android_store_apps.get(idx).cloned() {
-                                #[cfg(target_os = "windows")]
-                                if let Some(mut sb) = android_sandboxes.remove(&app.pkg_id) {
-                                    let _ = nilbrowser::chromium::set_visible(&mut sb, false);
-                                }
-                            }
-                            state.uninstall_android_app(idx);
-                        }
-                    } else if id.starts_with("android_open_") {
-                        if let Ok(idx) = id.trim_start_matches("android_open_").parse::<usize>() {
-                            if let Some(app) = state.android_store_apps.get(idx).cloned() {
-                                state.android_running_app = Some(idx);
-                                state.android_search_focused = false;
-                                if app.category == "মিডিয়া"
-                                    || app.pkg_id.contains("spotify")
-                                    || app.pkg_id.contains("youtube")
-                                {
-                                    state.media_source_app = app.name.clone();
-                                    state.music_playing = true;
-                                }
-                                state.record_recent_app(
-                                    "app_android",
-                                    &app.name,
-                                    &format!("Android Sandbox · {}", app.pkg_id),
-                                    app.accent,
-                                );
-                                state.push_term_line(
-                                    format!(
-                                        "[nilandroidd] আলাদা স্যান্ডবক্সে চালু হয়েছে: {} ({})",
-                                        app.name, app.pkg_id
-                                    ),
-                                    COLOR_GREEN,
-                                );
-                                #[cfg(target_os = "windows")]
-                                {
-                                    if !android_sandboxes.contains_key(&app.pkg_id) {
-                                        let sandbox_dir = state
-                                            .storage_root
-                                            .join("var")
-                                            .join("android_sandboxes")
-                                            .join(&app.pkg_id);
-                                        if let Ok(sb) =
-                                            nilbrowser::chromium::create_isolated_webview(
-                                                parent_hwnd,
-                                                &sandbox_dir,
-                                                4,
-                                                82,
-                                                (SCREEN_WIDTH as i32) - 8,
-                                                (SCREEN_HEIGHT as i32) - 82 - 54,
-                                                &app.runtime_url,
-                                            )
-                                        {
-                                            android_sandboxes.insert(app.pkg_id.clone(), sb);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else if id == "android_close_app" {
-                        state.android_running_app = None;
-                    } else if id == "android_reload_app" {
-                        #[cfg(target_os = "windows")]
-                        if let Some(idx) = state.android_running_app {
-                            if let Some(app) = state.android_store_apps.get(idx) {
-                                if let Some(sb) = android_sandboxes.get(&app.pkg_id) {
-                                    let _ = nilbrowser::chromium::reload(sb);
-                                }
-                            }
-                        }
-                    } else if id == "aosp_restart" {
-                        state.android_status =
-                            format!("প্রোফাইল যাচাইকৃত ও সক্রিয় ({})", get_ist_time_str());
-                    } else if id == "app_terminal" {
-                        state.screen = Screen::AppTerminal;
-                    } else if id == "term_toggle_python" {
-                        state.python_mode = !state.python_mode;
-                        let msg = if state.python_mode {
-                            "[Python REPL সক্রিয়]"
-                        } else {
-                            "[Onuron Bash সক্রিয়]"
-                        };
-                        state.push_term_line(msg.into(), COLOR_AMBER);
-                    } else if id == "app_calc" {
-                        state.screen = Screen::AppCalculator;
-                    } else if id == "app_music" || id == "app_vlc" {
-                        state.screen = Screen::AppBrowser;
-                    } else if id == "app_youtube" {
-                        state.screen = Screen::AppBrowser;
-                        state.browser_url = "https://youtube.com".into();
-                        state.browser_url_input = "https://youtube.com".into();
-                        state.browser_is_editing_url = false;
-                        #[cfg(target_os = "windows")]
-                        if let Some(ref b) = embedded_browser {
-                            let _ = nilbrowser::chromium::navigate_to(b, "https://youtube.com");
-                        }
-                    } else if id == "home_weather_card" {
-                        state.screen = Screen::AppBrowser;
-                        state.browser_url =
-                            "https://www.google.com/search?q=siliguri+weather".into();
-                        state.browser_url_input =
-                            "https://www.google.com/search?q=siliguri+weather".into();
-                        state.browser_is_editing_url = false;
-                        #[cfg(target_os = "windows")]
-                        if let Some(ref b) = embedded_browser {
-                            let _ = nilbrowser::chromium::navigate_to(
-                                b,
-                                "https://www.google.com/search?q=siliguri+weather",
-                            );
-                        }
-                    } else if id == "tab_add" {
-                        state.new_browser_tab("https://www.google.com");
-                        #[cfg(target_os = "windows")]
-                        if let Some(ref b) = embedded_browser {
-                            let _ = nilbrowser::chromium::navigate_to(b, "https://www.google.com");
-                        }
-                    } else if id.starts_with("tab_select_") {
-                        if let Ok(idx) = id.trim_start_matches("tab_select_").parse::<usize>() {
-                            state.switch_browser_tab(idx);
-                            #[cfg(target_os = "windows")]
-                            if let Some(ref b) = embedded_browser {
-                                let _ = nilbrowser::chromium::navigate_to(b, &state.browser_url);
-                            }
-                        }
-                    } else if id.starts_with("tab_close_") {
-                        if let Ok(idx) = id.trim_start_matches("tab_close_").parse::<usize>() {
-                            state.close_browser_tab(idx);
-                            #[cfg(target_os = "windows")]
-                            if let Some(ref b) = embedded_browser {
-                                let _ = nilbrowser::chromium::navigate_to(b, &state.browser_url);
-                            }
-                        }
-                    } else if id == "browser_reload" {
-                        #[cfg(target_os = "windows")]
-                        if let Some(ref b) = embedded_browser {
-                            let _ = nilbrowser::chromium::reload(b);
-                        }
-                    } else if id == "browser_back" {
-                        #[cfg(target_os = "windows")]
-                        if let Some(ref b) = embedded_browser {
-                            let _ = nilbrowser::chromium::go_back(b);
-                        }
-                    } else if id == "browser_go" {
-                        let query = state.browser_url_input.clone();
-                        state.browser_fetch_live(&query);
-                        if state.browser_active_tab < state.browser_tabs.len() {
-                            state.browser_tabs[state.browser_active_tab].url =
-                                state.browser_url.clone();
-                            state.browser_tabs[state.browser_active_tab].title =
-                                state.browser_title.clone();
-                        }
-                        #[cfg(target_os = "windows")]
-                        if let Some(ref b) = embedded_browser {
-                            let _ = nilbrowser::chromium::navigate_to(b, &state.browser_url);
-                        }
-                    } else if id == "browser_url_bar" {
-                        state.browser_is_editing_url = true;
-                        state.browser_url_input = state.browser_url.clone();
-                        state.browser_cursor_pos = state.browser_url_input.chars().count();
-                    } else if id == "app_browser" {
-                        state.screen = Screen::AppBrowser;
-                    } else if id.starts_with("calc_key_") {
-                        let k = id.trim_start_matches("calc_key_");
-                        state.exec_calc_press(k);
-                    } else if id.starts_with("sb_drop_") {
-                        let dev = id.trim_start_matches("sb_drop_");
-                        let drop_dir = state
-                            .storage_root
-                            .join("home")
-                            .join("joy")
-                            .join("Downloads");
-                        let _ = fs::create_dir_all(&drop_dir);
-                        let drop_file = drop_dir.join(format!("softbus_drop_{}.txt", dev));
-                        let _ = fs::write(
-                            &drop_file,
-                            format!(
-                                "SoftBus file drop to node '{}' at {}\n",
-                                dev,
-                                get_ist_time_str()
-                            ),
-                        );
-                        state.softbus_status =
-                            format!("'{}' নোডে ফাইল ড্রপ সফল ({})", dev, get_ist_time_str());
-                        state.push_term_line(
-                            format!("[সফটবাস] '{}' ডিভাইসে ফাইল সফলভাবে ড্রপ করা হয়েছে!", dev),
-                            COLOR_GREEN,
-                        );
-                    } else if id == "sb_scan" {
-                        state.softbus_status =
-                            format!("৩টি অনলাইন নোড যাচাইকৃত ({})", get_ist_time_str());
-                        state.push_term_line(
-                            "[সফটবাস] মেশ নেটওয়ার্কে ৩টি অ্যাক্টিভ ডিভাইস পাওয়া গেছে।".into(),
-                            COLOR_CYAN,
-                        );
-                    } else if id == "nano_act_save" {
-                        state.nano_save();
-                    } else if id == "nano_act_enter" {
-                        state.nano_enter();
-                    } else if id == "nano_act_exit" {
-                        state.screen = Screen::AppTerminal;
-                    } else if id.starts_with("lock_mode_") {
-                        if let Ok(m) = id.trim_start_matches("lock_mode_").parse::<u8>() {
-                            if m < 3 {
-                                state.lock_mode = m;
-                                state.lock_error = false;
-                                state.pin_input.clear();
-                                state.password_input.clear();
-                                state.pattern_input.clear();
-                            }
-                        }
-                    } else if id.starts_with("pwd_char_") {
-                        let ch = id.trim_start_matches("pwd_char_");
-                        state.password_input.push_str(ch);
-                        state.lock_error = false;
-                    } else if id == "pwd_back" {
-                        state.password_input.pop();
-                    } else if id == "pwd_submit" {
-                        if state.password_input == state.password {
-                            state.screen = Screen::Home;
-                            state.password_input.clear();
-                            state.lock_error = false;
-                        } else {
-                            state.lock_error = true;
-                        }
-                    } else if id.starts_with("pat_node_") {
-                        if let Ok(n) = id.trim_start_matches("pat_node_").parse::<u8>() {
-                            if !state.pattern_input.contains(&n) {
-                                state.pattern_input.push(n);
-                                state.lock_error = false;
-                                if state.pattern_input == state.pattern_secret {
-                                    state.screen = Screen::Home;
-                                    state.pattern_input.clear();
-                                    state.lock_error = false;
-                                }
-                            }
-                        }
-                    } else if id == "pat_clear" {
-                        state.pattern_input.clear();
-                        state.lock_error = false;
-                    } else if id == "pat_submit" {
-                        if state.pattern_input == state.pattern_secret {
-                            state.screen = Screen::Home;
-                            state.pattern_input.clear();
-                            state.lock_error = false;
-                        } else {
-                            state.lock_error = true;
-                        }
-                    } else if id.starts_with("lock_key_") {
-                        let key = id.trim_start_matches("lock_key_");
-                        if key == "<" {
-                            state.pin_input.pop();
-                        } else if key == "আনলক" || key == "UNLOCK" {
-                            if state.pin_input == state.pin {
-                                state.screen = Screen::Home;
-                                state.pin_input.clear();
-                                state.lock_error = false;
-                            } else {
-                                state.lock_error = true;
-                            }
-                        } else if state.pin_input.len() < 4 {
-                            let digit_char = match key {
-                                "০" => "0",
-                                "১" => "1",
-                                "২" => "2",
-                                "৩" => "3",
-                                "৪" => "4",
-                                "৫" => "5",
-                                "৬" => "6",
-                                "৭" => "7",
-                                "৮" => "8",
-                                "৯" => "9",
-                                other => other,
-                            };
-                            state.pin_input.push_str(digit_char);
-                            if state.pin_input.len() == 4 && state.pin_input == state.pin {
-                                state.screen = Screen::Home;
-                                state.pin_input.clear();
-                                state.lock_error = false;
-                            }
-                        }
-                    } else if id == "phone_add_contact" {
-                        if !state.dial_number.is_empty() {
-                            if let Some(existing) =
-                                state.find_existing_contact_name(&state.dial_number)
-                            {
-                                state.phone_toast =
-                                    format!("এই নম্বরটি ইতিমধ্যে '{}' নামে সেভ আছে!", existing);
-                                state.phone_toast_is_error = true;
-                            } else {
-                                state.phone_saving_contact = true;
-                                state.phone_contact_name_input.clear();
-                                state.phone_contact_tag = 0;
-                                state.phone_toast.clear();
-                            }
-                        }
-                    } else if id == "phone_tag_number" {
-                        if !state.dial_number.is_empty() {
-                            let norm = SimState::normalize_phone(&state.dial_number);
-                            if let Some(c) = state
-                                .phone_contacts
-                                .iter_mut()
-                                .find(|(_, _, _, _, _, raw)| SimState::normalize_phone(raw) == norm)
-                            {
-                                if c.2.contains("[VIP]") {
-                                    let existing_name = c.2.clone();
-                                    state.phone_toast =
-                                        format!("'{}'-এ ইতিমধ্যে [VIP] ট্যাগ যুক্ত আছে!", existing_name);
-                                    state.phone_toast_is_error = true;
-                                } else {
-                                    c.2 = format!("{} [VIP]", c.2);
-                                    let updated_name = c.2.clone();
-                                    state.save_contacts_to_disk();
-                                    state.phone_toast =
-                                        format!("'{}'-এ [VIP] ট্যাগ যুক্ত হয়েছে", updated_name);
-                                    state.phone_toast_is_error = false;
-                                }
-                            } else {
-                                state.phone_saving_contact = true;
-                                state.phone_contact_name_input.clear();
-                                state.phone_contact_tag = 2; // Pre-select VIP ★ tag
-                                state.phone_toast.clear();
-                            }
-                        }
-                    } else if id == "phone_save_cancel" {
-                        state.phone_saving_contact = false;
-                        state.phone_contact_name_input.clear();
-                    } else if id == "phone_save_confirm" {
-                        state.confirm_save_contact();
-                    } else if id.starts_with("phone_dlg_tag_") {
-                        if let Ok(t) = id.trim_start_matches("phone_dlg_tag_").parse::<usize>() {
-                            if t < 3 {
-                                state.phone_contact_tag = t;
-                            }
-                        }
-                    } else if id.starts_with("phone_qname_") {
-                        state.phone_contact_name_input =
-                            id.trim_start_matches("phone_qname_").to_string();
-                    } else if id == "phone_toast_close" {
-                        state.phone_toast.clear();
-                    } else if id.starts_with("dial_key_") {
-                        let k = id.trim_start_matches("dial_key_");
-                        state.dial_number.push_str(k);
-                        state.phone_toast.clear();
-                        state.phone_tab = 0;
-                    } else if id.starts_with("phone_tab_") {
-                        if let Ok(t) = id.trim_start_matches("phone_tab_").parse::<usize>() {
-                            if t < 3 {
-                                state.phone_tab = t;
-                                state.phone_toast.clear();
-                            }
-                        }
-                    } else if id.starts_with("phone_fill_") {
-                        let num = id.trim_start_matches("phone_fill_");
-                        state.dial_number = num.to_string();
-                        state.phone_tab = 0;
-                    } else if id == "phone_del" {
-                        state.dial_number.pop();
-                    } else if id == "phone_call" {
-                        if state.dial_number.is_empty() {
-                            state.dial_number = "৯৮৭৬৫ ৪৩২১০".into();
-                        }
-                        state.call_active = true;
-                        state.call_duration_ticks = 0;
-                        state.screen = Screen::InCall;
-                        state.push_term_line(
-                            format!("[ভোল্টি] লাইভ কল সংযুক্ত: {}", state.dial_number),
-                            COLOR_GREEN,
-                        );
-                    } else if id == "call_hangup" {
-                        state.call_active = false;
-                        state.call_duration_ticks = 0;
-                        state.screen = Screen::AppPhone;
-                        state.push_term_line("[ভোল্টি] কল সমাপ্ত করা হয়েছে।".into(), COLOR_AMBER);
-                    } else if id == "call_toggle_mute" {
-                        state.call_is_muted = !state.call_is_muted;
-                    } else if id == "call_toggle_speaker" {
-                        state.call_is_speaker = !state.call_is_speaker;
-                    } else if id == "call_keypad" {
-                        state.screen = Screen::AppPhone;
-                    } else if id == "toggle_wifi" {
-                        state.wifi_enabled = !state.wifi_enabled;
-                    } else if id == "toggle_cellular" || id == "toggle_data" {
-                        state.cellular_enabled = !state.cellular_enabled;
-                        if state.cellular_enabled {
-                            state.cellular_signal_level = 4;
-                        } else {
-                            state.cellular_signal_level = 0;
-                        }
-                    } else if id == "cycle_signal" {
-                        if !state.cellular_enabled {
-                            state.cellular_enabled = true;
-                            state.cellular_signal_level = 4;
-                        } else if state.cellular_signal_level > 1 {
-                            state.cellular_signal_level -= 1;
-                        } else if state.cellular_signal_level == 1 {
-                            state.cellular_signal_level = 0;
-                            state.cellular_enabled = false;
-                        } else {
-                            state.cellular_signal_level = 4;
-                        }
-                    } else if id == "toggle_battery_charge" {
-                        state.battery_charging = !state.battery_charging;
-                    } else if id == "toggle_bt" {
-                        state.bt_enabled = !state.bt_enabled;
-                    } else if id == "toggle_location" {
-                        state.location_enabled = !state.location_enabled;
-                    } else if id == "toggle_softbus" {
-                        state.softbus_enabled = !state.softbus_enabled;
-                    } else if id == "toggle_theme" {
-                        // Quick toggle in the legacy settings grid: flip between
-                        // light and dark only; AMOLED/auto stay explicit choices.
-                        state.theme_mode = if state.dark_mode { 0 } else { 1 };
-                        state.set_theme_from_mode();
-                    } else if id == "toggle_torch" {
-                        state.torch_enabled = !state.torch_enabled;
-                    } else if id.starts_with("term_chip_") {
-                        let cmd = id.trim_start_matches("term_chip_").to_string();
-                        if cmd == "nano" {
-                            state.open_nano("my_note.txt");
-                        } else if cmd == "vlc" {
-                            state.screen = Screen::AppBrowser;
-                        } else if cmd == "nilpkg" {
-                            state.exec_term_command("nilpkg list");
-                        } else {
-                            state.exec_term_command(&cmd);
                         }
                     }
                 }
@@ -10811,7 +10878,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     state.browser_pending_nav.is_some()
                 );
             }
-            if let Some(ref mut b) = embedded_browser {
+            if let Some(ref mut b) = wv.browser {
                 // The start page is drawn by the shell; the native WebView only
                 // appears once a page is actually opened.
                 let show_browser = state.screen == Screen::AppBrowser && state.browser_page_open;
@@ -10847,7 +10914,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // provision the same isolated WebView used by the store's Open
             // button when that path has not created a sandbox yet.
             if let Some(pkg_id) = active_android_pkg.as_deref() {
-                if !android_sandboxes.contains_key(pkg_id) {
+                if !wv.sandboxes.contains_key(pkg_id) {
                     if let Some(app) = state.android_store_apps.iter().find(|a| a.pkg_id == pkg_id)
                     {
                         let sandbox_dir = state
@@ -10864,12 +10931,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             (SCREEN_HEIGHT as i32) - 82 - 54,
                             &app.runtime_url,
                         ) {
-                            android_sandboxes.insert(app.pkg_id.clone(), sb);
+                            wv.sandboxes.insert(app.pkg_id.clone(), sb);
                         }
                     }
                 }
             }
-            for (pkg_id, sb) in android_sandboxes.iter_mut() {
+            for (pkg_id, sb) in wv.sandboxes.iter_mut() {
                 let is_active = active_android_pkg.as_deref() == Some(pkg_id.as_str());
                 if is_active {
                     let (vx, vy, vw, vh) = (
@@ -10914,10 +10981,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         #[cfg(target_os = "windows")]
         if let Some(url) = state.browser_pending_nav.take() {
-            if let Some(ref b) = embedded_browser {
-                let _ = nilbrowser::chromium::navigate_to(b, &url);
-            }
-            for sb in android_sandboxes.values_mut() {
+            wv.navigate_main(&url);
+            for sb in wv.sandboxes.values_mut() {
                 let _ = nilbrowser::chromium::set_visible(sb, false);
             }
         }
@@ -11238,6 +11303,188 @@ fn run_selftest() -> i32 {
         "prefs survive a restart",
         st2.brightness_level == 42 && st2.ring_vol == 33,
     );
+
+    // ─── Full-shell walkthrough ────────────────────────────────────────
+    // Paint every screen exactly as the window does, then press every
+    // registered control through the very same dispatcher the interactive
+    // loop uses (`shell_tap`). An unhandled id is a finding, not a pass:
+    // it means a drawn control does nothing when tapped.
+    {
+        let fonts = FontEngine::load();
+        let mut wv = WebViewCtx::headless();
+        let mut buf = vec![0u32; SCREEN_WIDTH * SCREEN_HEIGHT];
+        let mut walk = SimState::new();
+        walk.load_prefs();
+        walk.refresh_storage();
+        // Seed the state so list-based screens register their per-item
+        // controls (the Recents rail needs at least one card).
+        walk.record_recent_app(
+            "app_phone",
+            "ফোন ও ডায়ালার",
+            "VoLTE HD কল ও পরিচিতি",
+            COLOR_GREEN,
+        );
+        walk.call_active = true;
+
+        let variants: Vec<Screen> = vec![
+            Screen::Lockscreen,
+            Screen::Home,
+            Screen::AppDrawer,
+            Screen::ControlCenter,
+            Screen::Recents,
+            Screen::PowerMenu,
+            Screen::Oobe(0),
+            Screen::Oobe(1),
+            Screen::Oobe(2),
+            Screen::AppPhone,
+            Screen::InCall,
+            Screen::AppMessages,
+            Screen::AppFiles,
+            Screen::AppSettings,
+            Screen::SettingsWifi,
+            Screen::SettingsBluetooth,
+            Screen::SettingsDisplay,
+            Screen::SettingsSound,
+            Screen::SettingsSecurity,
+            Screen::SettingsBattery,
+            Screen::SettingsStorage,
+            Screen::SettingsBackup,
+            Screen::SettingsLanguage,
+            Screen::SettingsAccessibility,
+            Screen::SettingsVpn,
+            Screen::SettingsUpdate,
+            Screen::SettingsAbout,
+            Screen::AppNilPkg,
+            Screen::AppSoftBus,
+            Screen::AppAndroid,
+            Screen::AppTerminal,
+            Screen::AppNotes,
+            Screen::AppCalculator,
+            Screen::AppBrowser,
+            Screen::AppCamera,
+            Screen::AppMusic,
+            Screen::AppMemories,
+            Screen::NanoEditor,
+        ];
+        let mut total = 0usize;
+        let mut unhandled: Vec<String> = Vec::new();
+        for scr in &variants {
+            walk.screen = scr.clone();
+            buf.fill(0);
+            let pal = walk.palette();
+            let ids: Vec<String> = {
+                let mut painter =
+                    FramePainter::new(&mut buf, SCREEN_WIDTH, SCREEN_HEIGHT, &fonts, pal);
+                painter.high_contrast = walk.high_contrast;
+                painter.text_scale = walk.text_scale();
+                paint_screen(&mut painter, &walk);
+                std::mem::take(&mut painter.buttons)
+                    .iter()
+                    .map(|b| b.id.clone())
+                    .collect()
+            };
+            for id in ids {
+                total += 1;
+                if !shell_tap(&mut walk, &id, 200, &mut wv) {
+                    unhandled.push(format!("{}: {}", screen_tag(scr), id));
+                }
+                // A tap may navigate away; the walk stays on this screen.
+                walk.screen = scr.clone();
+            }
+        }
+        check(
+            &format!("walkthrough: every registered control is handled ({total} taps)"),
+            unhandled.is_empty(),
+        );
+        if !unhandled.is_empty() {
+            println!("       unhandled controls: {:?}", unhandled);
+        }
+    }
+
+    // ─── Live flows through the real dispatcher ───────────────────────
+    {
+        let mut wv = WebViewCtx::headless();
+        let sms_path = st.storage_root.join("var").join("sms_threads.json");
+        let sms_before = fs::read(&sms_path).ok();
+        let mut fl = SimState::new();
+        fl.load_prefs();
+        fl.refresh_storage();
+
+        // Dial → live call → mute/speaker/keypad → hang up.
+        fl.screen = Screen::AppPhone;
+        fl.dial_number.clear();
+        shell_tap(&mut fl, "phone_fill_9876543210", 200, &mut wv);
+        let dialed = fl.dial_number == "9876543210";
+        shell_tap(&mut fl, "phone_call", 200, &mut wv);
+        let call_up = fl.screen == Screen::InCall && fl.call_active;
+        shell_tap(&mut fl, "call_toggle_mute", 200, &mut wv);
+        let muted = fl.call_is_muted;
+        shell_tap(&mut fl, "call_toggle_speaker", 200, &mut wv);
+        let speaker = fl.call_is_speaker;
+        shell_tap(&mut fl, "call_keypad", 200, &mut wv);
+        let keypad_left = fl.screen == Screen::AppPhone && fl.call_active;
+        shell_tap(&mut fl, "call_hangup", 200, &mut wv);
+        check(
+            "dial -> call -> mute/speaker/keypad -> hang up",
+            dialed
+                && call_up
+                && muted
+                && speaker
+                && keypad_left
+                && !fl.call_active
+                && fl.screen == Screen::AppPhone,
+        );
+
+        // SMS compose → send → thread persisted to disk.
+        fl.screen = Screen::AppMessages;
+        shell_tap(&mut fl, "msg_new", 200, &mut wv);
+        let composing = fl.sms_composing && fl.sms_focus_to;
+        fl.sms_input_to = "সেলফটেস্ট".into();
+        fl.sms_input_body = "ওয়াকথ্রু পরীক্ষা".into();
+        shell_tap(&mut fl, "msg_send", 200, &mut wv);
+        let sent = !fl.sms_composing
+            && fl
+                .sms_threads
+                .first()
+                .map(|(to, body, _)| to == "সেলফটেস্ট" && body == "ওয়াকথ্রু পরীক্ষা")
+                .unwrap_or(false);
+        let persisted = fs::read_to_string(&sms_path)
+            .map(|raw| raw.contains("ওয়াকথ্রু পরীক্ষা"))
+            .unwrap_or(false);
+        check(
+            "compose -> send persists a thread",
+            composing && sent && persisted,
+        );
+
+        // Contacts: add from the dialer with the save dialog. The number is
+        // deliberately outside the seeded demo contacts.
+        fl.screen = Screen::AppPhone;
+        fl.phone_saving_contact = false;
+        shell_tap(&mut fl, "phone_fill_17005559999", 200, &mut wv);
+        shell_tap(&mut fl, "phone_add_contact", 200, &mut wv);
+        let dlg_up = fl.phone_saving_contact;
+        fl.phone_contact_name_input = "ওয়াকথ্রু পরিচিতি".into();
+        shell_tap(&mut fl, "phone_save_confirm", 200, &mut wv);
+        let contact_saved = !fl.phone_saving_contact
+            && fl
+                .phone_contacts
+                .iter()
+                .any(|(_, _, name, _, _, raw)| {
+                    name.contains("ওয়াকথ্রু পরিচিতি")
+                        && SimState::normalize_phone(raw) == SimState::normalize_phone("17005559999")
+                });
+        check("dialer contact save flow", dlg_up && contact_saved);
+
+        // Restore the SMS store the flow check touched.
+        match sms_before {
+            Some(b) => {
+                let _ = fs::write(&sms_path, b);
+            }
+            None => {
+                let _ = fs::remove_file(&sms_path);
+            }
+        }
+    }
 
     // Restore user data touched by the test
     match notes_before {
