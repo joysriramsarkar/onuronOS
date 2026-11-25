@@ -10949,10 +10949,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if let Ok(sb) = nilbrowser::chromium::create_isolated_webview(
                             parent_hwnd,
                             &sandbox_dir,
-                            4,
-                            82,
-                            (SCREEN_WIDTH as i32) - 8,
-                            (SCREEN_HEIGHT as i32) - 82 - 54,
+                            8,
+                            152,
+                            (SCREEN_WIDTH as i32) - 16,
+                            (SCREEN_HEIGHT as i32) - 152 - 96,
                             &app.runtime_url,
                         ) {
                             wv.sandboxes.insert(app.pkg_id.clone(), sb);
@@ -10964,10 +10964,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let is_active = active_android_pkg.as_deref() == Some(pkg_id.as_str());
                 if is_active {
                     let (vx, vy, vw, vh) = (
-                        4,
-                        82,
-                        (SCREEN_WIDTH as i32) - 8,
-                        (SCREEN_HEIGHT as i32) - 82 - 54,
+                        8,
+                        152,
+                        (SCREEN_WIDTH as i32) - 16,
+                        (SCREEN_HEIGHT as i32) - 152 - 96,
                     );
                     let rx = (vx as f32 * scale_x).round() as i32;
                     let ry = (vy as f32 * scale_y).round() as i32;

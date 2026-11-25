@@ -791,6 +791,29 @@ pub fn render_app_android(p: &mut FramePainter, state: &SimState) {
     let th = tp(p);
     clear(p);
     screen_title(p, "অ্যান্ড্রয়েড", None);
+
+    if let Some(idx) = state.android_running_app {
+        // Runtime view. The isolated WebView2 sandbox is positioned by the host
+        // at (8,152)-(382,700); this header and panel frame it.
+        let name = state
+            .android_store_apps
+            .get(idx)
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| "অ্যান্ড্রয়েড আ্যাপ".to_string());
+        card_full(p, 104, 44);
+        icon(p, "tv", 42.0, 126.0, 17.0, th.icon);
+        text(p, 62, 117, 13.5, &name, th.text, true);
+        icon(p, "close", (SW - 34) as f32, 126.0, 14.0, th.med);
+        p.register_button(SW - 56, 104, 44, 44, "android:close");
+
+        let panel = if p.theme().bg == 0x1E1236 { 0x241640 } else { 0xEFE7FF };
+        rr(p, 8, 152, 374, 548, 10, panel);
+        rrb(p, 8, 152, 374, 548, 10, th.border);
+        text_center(p, SW / 2, 320, 14.0, &name, th.text, true);
+        text_center(p, SW / 2, 346, 11.5, "বিচ্ছিন্ন স্যান্ডবক্সে চলছে", th.dim, false);
+        return;
+    }
+
     switch_card(
         p,
         104,
@@ -1561,6 +1584,10 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
             push_recent(state, "android", name);
             state.screen = Screen::AppBrowser;
         }
+        return true;
+    }
+    if id == "android:close" {
+        state.android_running_app = None;
         return true;
     }
     if id == "android:apk" {
