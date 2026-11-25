@@ -73,6 +73,9 @@ def build_qemu_cmd(
             qemu_bin,
             "-m", str(memory_mb),
             "-smp", str(smp),
+            # Same reason as the smoke harness: pin a modern, feature-complete
+            # virtual CPU instead of trusting the host QEMU's ancient default.
+            "-cpu", "max",
             "-kernel", kernel_path,
             "-initrd", initrd_path,
             "-append", f"console=ttyS0 init=/init panic=-1 onuron.test_persistence={phase} onuron.readiness_ms=45000",

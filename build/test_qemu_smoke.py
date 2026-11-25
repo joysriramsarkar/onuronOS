@@ -31,6 +31,8 @@ class QemuSmokeTests(unittest.TestCase):
         self.assertIn("none", cmd)
         self.assertIn("-serial", cmd)
         self.assertIn("stdio", cmd)
+        self.assertIn("-cpu", cmd)
+        self.assertIn("max", cmd)
         self.assertIn(
             "console=ttyS0 init=/init panic=-1 onuron.readiness_ms=45000",
             cmd,

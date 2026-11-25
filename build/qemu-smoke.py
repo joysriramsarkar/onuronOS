@@ -125,6 +125,14 @@ def build_qemu_cmd(qemu_bin, kernel_path, initrd_path, memory_mb=1024, smp=2, ar
             qemu_bin,
             "-m", str(memory_mb),
             "-smp", str(smp),
+            # Pin the virtual CPU explicitly. Depending on the host QEMU's
+            # default model (qemu64) leaves the guest with a pre-2008 feature
+            # set, and services built for modern hardware (crypto/quic stack)
+            # can hit unsupported-instruction traps on one runner image while
+            # booting green on another. `max` is the feature-complete virtual
+            # device every real target hardware exceeds; aarch64 already uses
+            # a concrete modern model (cortex-a57) for the same reason.
+            "-cpu", "max",
             "-kernel", kernel_path,
             "-initrd", initrd_path,
             "-append", "console=ttyS0 init=/init panic=-1 onuron.readiness_ms=45000",
