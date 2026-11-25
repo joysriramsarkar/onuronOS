@@ -31,6 +31,10 @@ class QemuSmokeTests(unittest.TestCase):
         self.assertIn("none", cmd)
         self.assertIn("-serial", cmd)
         self.assertIn("stdio", cmd)
+        self.assertIn(
+            "console=ttyS0 init=/init panic=-1 onuron.readiness_ms=45000",
+            cmd,
+        )
 
     def test_build_qemu_cmd_aarch64_structure(self):
         cmd = qemu_smoke.build_qemu_cmd(
@@ -50,7 +54,12 @@ class QemuSmokeTests(unittest.TestCase):
         self.assertIn("/boot/vmlinuz-arm", cmd)
         self.assertIn("-initrd", cmd)
         self.assertIn("/boot/initrd-arm.cpio.gz", cmd)
-        self.assertIn("console=ttyAMA0 earlycon root=/dev/ram0 rdinit=/init panic=-1 rw", cmd)
+        # The virtual-host readiness budget rides along on the kernel command
+        # line: nilinit keeps its 10 s device default unless this is present.
+        self.assertIn(
+            "console=ttyAMA0 earlycon root=/dev/ram0 rdinit=/init panic=-1 rw onuron.readiness_ms=45000",
+            cmd,
+        )
 
 
     def test_check_boot_log_success(self):
