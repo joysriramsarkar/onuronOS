@@ -99,8 +99,12 @@ The code that exists must be correct before more is built on top of it.
   bytes match exactly. The x86_64 **and** aarch64 QEMU jobs in
   `.github/workflows/linux-qemu.yml` are green with this test enabled. The
   older `build/persistent-data-test.py` + `build/mkdisk.py` harness remains as
-  the on-host substrate. **Still open:** a corrupt-image path that logs a clear
-  warning instead of silently falling back to tmpfs.
+  the on-host substrate. **The corrupt-image path is also proven:** a garbage
+  disk now boots through `build/qemu-recovery-test.py` (phase "corrupt"), which
+  fails the build unless nilinit logs the loud `CORRUPT DISK DETECTED` warning,
+  refuses the silent "no persistent disk" fallback, still reaches
+  `Onuron OS boot completed` on the emergency tmpfs, and observes zero IPC
+  policy denials on the way up.
 
 ### A4. Recovery boot path
 
@@ -124,7 +128,19 @@ The code that exists must be correct before more is built on top of it.
   after `nilinit` reports boot completion. `runtime/nilrt/src/bin/nilrecovery.rs`
   now runs a real menu whose factory-reset path requires typing `YES`, then
   unmounts and reformats a real block device (falling back to removing `/data`
-  contents for tmpfs); it has 3 unit tests. Not yet exercised under QEMU.
+  contents for tmpfs); it has unit tests. **Exercised under QEMU in CI:**
+  `build/qemu-recovery-test.py` proves all triggers on live boots — the
+  explicit `onuron.recovery=1` flag, the failed-boot counter (a real ext4 disk
+  seeded with `/data/system/boot_count = 2`), a factory reset confirmed with
+  `YES` (in-place wipe — see below), a post-reset boot that mounts the same
+  disk normally (the recovery loop is broken and the disk is not bricked), and
+  the corrupt-`/data` case. The harness also caught and fixed a shipping bug:
+  `nilrecovery` was missing from the mkinitramfs bins list, so the recovery
+  menu was unreachable on built images. **Honest limitation:** the image does
+  not ship `mkfs.ext4`, so factory reset on a real block device remounts it
+  and removes the contents in place, clearing the failed-boot counter; the
+  reset is reported as failed when the device cannot be remounted, rather than
+  silently leaving user data in place.
 
 ---
 
@@ -224,8 +240,11 @@ device safely.
   `nilandroidd`, `nilkeyd`, `softbus`, the Android agent) record the peer UID
   via `SO_PEERCRED` and check it against the UID→service policy before serving;
   unknown peers/services are denied. The decision logic is unit-tested.
-  **Not yet done:** observing a live QEMU boot to confirm no legitimate
-  service is denied — that is the remaining acceptance step.
+  **The live-boot acceptance step is wired into CI:** `build/qemu-recovery-test.py`
+  scans the full-boot console output for `nilsd:auth] denied` lines and fails
+  the build if any legitimate service is denied while the system boots to
+  completion (phases "corrupt" and "reboot"). A denial observed there is a real
+  policy finding to fix, not a harness error.
 
 ### C2. Sandbox escape-resistance review
 
@@ -534,13 +553,17 @@ host. In priority order:
 
 1. Run `.github/workflows/linux-qemu.yml` on a clean runner and fix every
    failure until it is green (A1). Nothing else on this list is trustworthy
-   until this is observed.
+   until this is observed. ✅ green on every push, x86_64 and aarch64.
 2. Validate the recovery boot path on QEMU: confirm `onuron.recovery=1` and the
    failed-boot counter both enter `nilrecovery`, including with a corrupt
    `/data` (A4). Disk persistence (A3) is now proven by
-   `build/qemu-persistence-test.py` in CI.
+   `build/qemu-persistence-test.py` in CI. ✅ `build/qemu-recovery-test.py`
+   proves the flag, the counter, the confirmed factory reset, the post-reset
+   normal boot, and the corrupt-disk warning on live QEMU boots.
 3. Run the IPC policy (`etc/nilos/ipc-policy.toml`) on a live boot and fix any
    denials; then actively attack the sandbox and close real findings (C1, C2).
+   The live-boot denial scan now gates CI via the recovery harness; the
+   sandbox attack work remains open.
 4. Exercise `nilupd` apply/rollback across a simulated power cut on Linux, and
    add the 24-hour QEMU soak run (F2, F3).
 5. Build and boot the aarch64 `-M virt` reference target, then start the
