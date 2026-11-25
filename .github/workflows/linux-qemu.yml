@@ -41,6 +41,11 @@ jobs:
       - name: QEMU end-to-end reboot persistence test
         timeout-minutes: 3
         run: python3 build/qemu-persistence-test.py
+      # The recovery decision logic is arch-neutral userspace; it is wired into
+      # the x86_64 leg to keep the aarch64 job's runtime bounded.
+      - name: QEMU recovery-path test (flag, boot counter, factory reset, corrupt disk)
+        timeout-minutes: 12
+        run: python3 build/qemu-recovery-test.py
 
   aarch64-qemu:
     runs-on: ubuntu-latest

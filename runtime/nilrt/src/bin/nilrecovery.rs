@@ -78,18 +78,78 @@ fn read_data_device() -> Option<String> {
     data_device_from_mounts(&mounts, "/data")
 }
 
-/// Wipe user data. The device is unmounted and reformatted when a real block
-/// device backs `/data`; otherwise the contents are removed in place. The
-/// failed-boot counter is always cleared so recovery is not re-entered.
+/// Where nilinit keeps the failed-boot counter (`nilinit/src/recovery.rs`).
+/// The file is a bare decimal string; nilinit treats a missing or malformed
+/// file as zero, so writing `0` here is equivalent to clearing it.
+const BOOT_COUNT_PATH: &str = "/data/system/boot_count";
+
+/// Filesystem type backing `mountpoint` according to `/proc/mounts` (the
+/// third field). Needed to remount a device after an unmount when no
+/// reformatting tool is shipped in the image.
+pub fn data_fs_type_from_mounts(mounts: &str, mountpoint: &str) -> Option<String> {
+    for line in mounts.lines() {
+        let mut fields = line.split_whitespace();
+        let _dev = fields.next()?;
+        let mount = fields.next()?;
+        if mount == mountpoint {
+            return fields.next().map(str::to_string);
+        }
+    }
+    None
+}
+
+/// Remove every entry directly under `dir` (files and directories), leaving
+/// the directory itself in place.
+fn remove_dir_contents(dir: &str) -> io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            std::fs::remove_dir_all(&path)?;
+        } else {
+            std::fs::remove_file(&path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Write the failed-boot counter in nilinit's on-disk format.
+fn write_boot_counter(path: &str, value: u32) -> io::Result<()> {
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, value.to_string())
+}
+
+/// Wipe user data.
+///
+/// A real block device is reformatted when `mkfs.ext4` is available (the
+/// fresh filesystem has no failed-boot counter by construction). When no
+/// reformat tool ships in the image — the case today, see
+/// `build/mkinitramfs.py` — the device is remounted with its recorded
+/// filesystem type and its contents are removed in place, and the
+/// failed-boot counter is cleared explicitly so the device cannot reboot
+/// straight back into recovery. A `tmpfs`-backed `/data` is wiped in place
+/// the same way.
+///
+/// A device that cannot be remounted is reported as an error rather than
+/// silently left populated.
 fn factory_reset() -> io::Result<()> {
     println!("Wiping user data...");
 
     if let Some(dev) = read_data_device() {
+        // Remember the filesystem type before unmounting so the in-place
+        // fallback can remount the device.
+        let fs_type = std::fs::read_to_string("/proc/mounts")
+            .ok()
+            .and_then(|mounts| data_fs_type_from_mounts(&mounts, "/data"));
+
         #[cfg(target_os = "linux")]
         unsafe {
             let c_path = std::ffi::CString::new("/data").unwrap();
             libc::umount(c_path.as_ptr());
         }
+
         let status = std::process::Command::new("/sbin/mkfs.ext4")
             .args(["-F", &dev])
             .status()
@@ -100,23 +160,87 @@ fn factory_reset() -> io::Result<()> {
             });
         match status {
             Ok(s) if s.success() => println!("Reformatted {} (ext4).", dev),
-            Ok(s) => eprintln!("mkfs.ext4 exited with {} — falling back to removal", s),
-            Err(e) => eprintln!("Could not run mkfs.ext4: {} — falling back to removal", e),
+            Ok(s) => {
+                eprintln!("mkfs.ext4 exited with {} — wiping in place instead", s);
+                wipe_device_in_place(&dev, fs_type.as_deref())?;
+            }
+            Err(e) => {
+                eprintln!("Could not run mkfs.ext4: {} — wiping in place instead", e);
+                wipe_device_in_place(&dev, fs_type.as_deref())?;
+            }
         }
-    }
-
-    // Remove any remaining contents (also the fallback path for tmpfs).
-    if let Ok(entries) = std::fs::read_dir("/data") {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let _ = if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                std::fs::remove_dir_all(&path)
-            } else {
-                std::fs::remove_file(&path)
-            };
-        }
+    } else {
+        // /data is tmpfs (or not a block device): wipe the contents in place
+        // and clear the counter so the next boot stays out of recovery.
+        remove_dir_contents("/data")?;
+        write_boot_counter(BOOT_COUNT_PATH, 0)?;
     }
     Ok(())
+}
+
+/// The unmount happened but no reformat tool ran: remount `dev` on `/data`
+/// and remove its contents, clearing the failed-boot counter afterwards.
+/// Returns an error when the device cannot be remounted, so a failed reset
+/// is reported instead of silently leaving user data in place.
+fn wipe_device_in_place(dev: &str, fs_type: Option<&str>) -> io::Result<()> {
+    if !data_remounted(dev, fs_type) {
+        return Err(io::Error::other(format!(
+            "could not remount {} after unmount; user data left untouched",
+            dev
+        )));
+    }
+    remove_dir_contents("/data")?;
+    write_boot_counter(BOOT_COUNT_PATH, 0)?;
+    Ok(())
+}
+
+/// True when `/data` is mounted again after the unmount. Tries the recorded
+/// filesystem type first, then ext4/ext2. Non-Linux dev hosts cannot have a
+/// dev-backed `/data`, so the wipe is refused there rather than faked.
+fn data_remounted(dev: &str, fs_type: Option<&str>) -> bool {
+    remount_data_inner(dev, fs_type)
+}
+
+#[cfg(target_os = "linux")]
+fn remount_data_inner(dev: &str, fs_type: Option<&str>) -> bool {
+    let Ok(c_dev) = std::ffi::CString::new(dev) else {
+        return false;
+    };
+    let Ok(c_data) = std::ffi::CString::new("/data") else {
+        return false;
+    };
+    let mut types: Vec<&str> = Vec::new();
+    if let Some(t) = fs_type {
+        types.push(t);
+    }
+    for fallback in ["ext4", "ext2"] {
+        if !types.contains(&fallback) {
+            types.push(fallback);
+        }
+    }
+    for ty in types {
+        let Ok(c_ty) = std::ffi::CString::new(ty) else {
+            continue;
+        };
+        let ret = unsafe {
+            libc::mount(
+                c_dev.as_ptr(),
+                c_data.as_ptr(),
+                c_ty.as_ptr(),
+                0,
+                std::ptr::null(),
+            )
+        };
+        if ret == 0 {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(not(target_os = "linux"))]
+fn remount_data_inner(_dev: &str, _fs_type: Option<&str>) -> bool {
+    false
 }
 
 fn reboot(how: libc::c_int) -> ! {
@@ -223,5 +347,75 @@ tmpfs /run tmpfs rw 0 0
 
         let tmpfs = "tmpfs /data tmpfs rw,size=64M 0 0\n";
         assert_eq!(data_device_from_mounts(tmpfs, "/data"), None);
+    }
+
+    #[test]
+    fn fs_type_is_extracted_for_the_in_place_remount() {
+        let mounts = "\
+/dev/vda /data ext4 rw,relatime 0 0
+tmpfs /run tmpfs rw 0 0
+/dev/vdb /media/usb vfat ro 0 0
+";
+        assert_eq!(
+            data_fs_type_from_mounts(mounts, "/data").as_deref(),
+            Some("ext4")
+        );
+        assert_eq!(
+            data_fs_type_from_mounts(mounts, "/run").as_deref(),
+            Some("tmpfs")
+        );
+        assert_eq!(
+            data_fs_type_from_mounts(mounts, "/media/usb").as_deref(),
+            Some("vfat")
+        );
+        assert_eq!(data_fs_type_from_mounts(mounts, "/not/mounted"), None);
+    }
+
+    #[test]
+    fn remove_dir_contents_clears_files_and_directories_but_keeps_dir() {
+        let dir = std::env::temp_dir().join(format!(
+            "onuron-recov-wipe-{}-{:x}",
+            std::process::id(),
+            now_nanos()
+        ));
+        std::fs::create_dir_all(dir.join("nested")).unwrap();
+        std::fs::write(dir.join("file.txt"), b"x").unwrap();
+        std::fs::write(dir.join("nested/inner.txt"), b"y").unwrap();
+
+        remove_dir_contents(dir.to_str().unwrap()).unwrap();
+
+        assert!(dir.is_dir(), "the wiped directory itself must remain");
+        assert!(std::fs::read_dir(&dir).unwrap().next().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn boot_counter_write_matches_nilinit_disk_format() {
+        let dir = std::env::temp_dir().join(format!(
+            "onuron-recov-count-{}-{:x}",
+            std::process::id(),
+            now_nanos()
+        ));
+        let path = dir.join("system/boot_count");
+
+        // Creating the parent directory is part of the contract: nilinit's
+        // write_boot_count does the same when the hierarchy is fresh.
+        write_boot_counter(path.to_str().unwrap(), 0).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "0");
+
+        // A bare decimal, exactly what nilinit's parse_boot_count reads back.
+        write_boot_counter(path.to_str().unwrap(), 3).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "3");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // Tiny helper so temp paths unique per run need no extra dependency.
+    fn now_nanos() -> u64 {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0)
     }
 }

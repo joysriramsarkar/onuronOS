@@ -213,6 +213,31 @@ Environment: Debian 13 (trixie). Rust stable via `source $HOME/.cargo/env`.
   `shell/src/simulated.rs` that no entry claims. Tests: `python3 -m unittest build.test_gen_maturity`.
 - `build/mkinitramfs.py` copies an explicit `bins` list into the rootfs. A new
   daemon or app binary must be added to that list or it will not ship.
+  `nilrecovery` was missing from that list while the recovery code existed —
+  the menu was unreachable on built images until the QEMU recovery harness
+  (below) made the gap visible. Anything PID 1 execs must be in `bins`.
+
+### Recovery path: what is proven and how
+
+`build/qemu-recovery-test.py` gates the recovery boot path on live QEMU boots,
+in the x86_64 leg of `linux-qemu.yml`: the explicit `onuron.recovery=1` flag,
+the failed-boot counter (a real ext4 disk seeded with
+`/data/system/boot_count = 2` via `mke2fs -d`), a factory reset confirmed with
+`YES`, the post-reset normal boot of the same disk (counter cleared, disk not
+bricked), and a garbage disk (loud `CORRUPT DISK DETECTED`, never the silent
+no-disk tmpfs fallback, full boot on emergency tmpfs, zero IPC denials).
+
+Two facts about factory reset worth remembering:
+
+- **The image ships no `mkfs.ext4`.** `nilrecovery` therefore remounts the
+  unmounted device (filesystem type recorded from `/proc/mounts` before the
+  unmount) and removes the contents in place, then writes the failed-boot
+  counter to `0`. If the device cannot be remounted, the reset is reported as
+  failed instead of pretending to succeed. Do not describe device factory reset
+  as "reformat" unless a mkfs tool actually ships.
+- **The failed-boot counter must be cleared by any successful reset.** Leaving
+  it at its old value re-enters recovery on the next boot, which is how a
+  recovery loop bricks a device that was just "fixed".
 
 ### Kernel ABI facts worth not re-deriving
 
