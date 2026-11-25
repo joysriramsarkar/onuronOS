@@ -37,6 +37,9 @@ use nilpkg::lockfile::PackageLock;
 // Reuse nilpkg's proven signing/trust machinery rather than duplicating it.
 use nilpkg::{compute_sha256, hex, is_revoked, trusted_publisher, verify_signature};
 
+pub mod fetch;
+pub use fetch::{fetch_update, fetch_update_with_agent, FetchUpdateOptions, FetchedUpdate};
+
 /// The two A/B slots. Exactly one is active at a time.
 pub const SLOTS: [&str; 2] = ["A", "B"];
 
@@ -611,7 +614,27 @@ pub fn verify_image(
         ));
     }
 
-    // 2. Signature presence and Ed25519 verification over canonical bytes.
+    // 2. Signature presence and Ed25519 verification over canonical bytes,
+    //    followed by explicit local trust check.
+    verify_manifest_trust(&manifest, key_dir)?;
+
+    Ok(manifest)
+}
+
+/// Verify only the manifest's slot, Ed25519 signature, and local publisher
+/// trust (no payload check). Used both by `verify_image` and pre-download by
+/// `fetch::fetch_update` before streaming a multi-megabyte system image.
+pub fn verify_manifest_trust(
+    manifest: &UpdateManifest,
+    key_dir: &std::path::Path,
+) -> Result<(), String> {
+    if !SLOTS.contains(&manifest.target_slot.as_str()) {
+        return Err(format!(
+            "Update targets unknown slot '{}' (expected A or B)",
+            manifest.target_slot
+        ));
+    }
+
     let sig_hex = manifest
         .signature_hex
         .as_ref()
@@ -644,13 +667,11 @@ pub fn verify_image(
         return Err("Ed25519 signature verification failed; update may be tampered".into());
     }
 
-    // 3. Explicit local trust: the embedded key proves nothing on its own.
     if is_revoked(key_dir, &pub_bytes) {
         return Err("Publisher key has been revoked".into());
     }
     trusted_publisher(key_dir, &publisher_manifest(pub_hex))?;
-
-    Ok(manifest)
+    Ok(())
 }
 
 // ── A/B slot application ────────────────────────────────────────────────────

@@ -1289,6 +1289,90 @@ fn find_binary(bin_name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(bin_name)
 }
 
+const KEYD_RECORD_PATH: &str = "/data/nilos/enc_key.json";
+const KEYD_MASTER_PATH: &str = "/run/nilos/master.key";
+
+fn nilkeyd_available() -> Option<std::path::PathBuf> {
+    let bin = find_binary("nilkeyd");
+    if bin.is_file() {
+        Some(bin)
+    } else {
+        None
+    }
+}
+
+fn init_and_unwrap_keyd(pin: &str) {
+    let Some(bin) = nilkeyd_available() else {
+        return;
+    };
+    if !Path::new(KEYD_RECORD_PATH).exists() {
+        let _ = std::process::Command::new(&bin)
+            .arg("init")
+            .env("ONURON_PIN", pin)
+            .status();
+    }
+    if Path::new(KEYD_RECORD_PATH).exists() && !Path::new(KEYD_MASTER_PATH).exists() {
+        let _ = std::process::Command::new(&bin)
+            .arg("unwrap")
+            .env("ONURON_PIN", pin)
+            .status();
+    }
+}
+
+fn unwrap_keyd_on_unlock(pin: &str) {
+    if !Path::new(KEYD_RECORD_PATH).exists() || Path::new(KEYD_MASTER_PATH).exists() {
+        return;
+    }
+    if let Some(bin) = nilkeyd_available() {
+        let _ = std::process::Command::new(&bin)
+            .arg("unwrap")
+            .env("ONURON_PIN", pin)
+            .status();
+    }
+}
+
+fn parse_pin_change_args(rest: &str) -> (Option<&str>, &str) {
+    let parts: Vec<&str> = rest.split_whitespace().collect();
+    if parts.len() == 2 {
+        (Some(parts[0]), parts[1])
+    } else {
+        (None, rest.trim())
+    }
+}
+
+fn rewrap_keyd_with_bin(
+    bin: &Path,
+    record_path: &Path,
+    device_secret_path: Option<&Path>,
+    old_pin: &str,
+    new_pin: &str,
+) -> Result<(), String> {
+    let mut cmd = std::process::Command::new(bin);
+    cmd.arg("rewrap")
+        .arg("--record")
+        .arg(record_path)
+        .arg("--old-pin")
+        .arg(old_pin)
+        .arg("--new-pin")
+        .arg(new_pin);
+    if let Some(sec) = device_secret_path {
+        cmd.arg("--device-secret").arg(sec);
+    }
+    let out = cmd
+        .output()
+        .map_err(|e| format!("failed to launch nilkeyd: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        Err(if stderr.is_empty() {
+            format!("nilkeyd rewrap exited with {}", out.status)
+        } else {
+            stderr
+        })
+    }
+}
+
 fn launch_app(sink: &mut Sink, app_id: &str) {
     sink.println(&format!(
         "\n  {}🚀 Launching {} via nilrt sandbox...{}",
@@ -2259,6 +2343,7 @@ fn main() {
                             state.pin = record;
                             state.pending_pin.clear();
                             state.save_pin();
+                            init_and_unwrap_keyd(&cmd);
                             state.mark_oobe_done();
                             screen = Screen::OobeDone;
                         }
@@ -2288,10 +2373,12 @@ fn main() {
             // ── Lock Screen ───────────────────────────────────────────────────
             Screen::Lockscreen => match pin::check_pin(&state.pin, &cmd) {
                 pin::CheckResult::Verified => {
+                    unwrap_keyd_on_unlock(&cmd);
                     lock_error = false;
                     screen = Screen::Home;
                 }
                 pin::CheckResult::VerifiedNeedsMigration => {
+                    unwrap_keyd_on_unlock(&cmd);
                     if let Ok(record) = pin::create_record(&cmd) {
                         state.pin = record;
                         state.save_pin();
@@ -2569,21 +2656,64 @@ fn main() {
                             state.brightness = b.clamp(10, 100);
                         }
                     } else if cmd.starts_with("pin ") {
-                        let new_pin = cmd.trim_start_matches("pin ").trim();
-                        if let Ok(record) = pin::create_record(new_pin) {
-                            state.pin = record;
-                            state.save_pin();
-                            sink.println(&format!(
-                                "\n  {}✅ PIN updated and salted-hash persisted!{}",
-                                FG_GREEN, R
-                            ));
-                            read_line();
-                        } else {
+                        let rest = cmd.trim_start_matches("pin ").trim();
+                        let (maybe_old, new_pin) = parse_pin_change_args(rest);
+                        if !pin::valid_pin(new_pin) {
                             sink.println(&format!(
                                 "\n  {}❌ PIN must be 4–8 ASCII digits.{}",
                                 FG_RED, R
                             ));
                             read_line();
+                        } else {
+                            let mut rewrap_ok = true;
+                            if Path::new(KEYD_RECORD_PATH).exists() {
+                                let old_pin = match maybe_old {
+                                    Some(p) => p.to_string(),
+                                    None => {
+                                        sink.print("  Current PIN (to re-wrap encryption key): ");
+                                        read_line()
+                                    }
+                                };
+                                if !state.pin.is_empty()
+                                    && matches!(
+                                        pin::check_pin(&state.pin, &old_pin),
+                                        pin::CheckResult::Rejected
+                                    )
+                                {
+                                    sink.println(&format!(
+                                        "\n  {}❌ Current PIN incorrect; key not re-wrapped.{}",
+                                        FG_RED, R
+                                    ));
+                                    read_line();
+                                    rewrap_ok = false;
+                                } else if let Some(bin) = nilkeyd_available() {
+                                    if let Err(e) = rewrap_keyd_with_bin(
+                                        &bin,
+                                        Path::new(KEYD_RECORD_PATH),
+                                        None,
+                                        &old_pin,
+                                        new_pin,
+                                    ) {
+                                        sink.println(&format!(
+                                            "\n  {}❌ nilkeyd key re-wrap failed: {}{}",
+                                            FG_RED, e, R
+                                        ));
+                                        read_line();
+                                        rewrap_ok = false;
+                                    }
+                                }
+                            }
+                            if rewrap_ok {
+                                if let Ok(record) = pin::create_record(new_pin) {
+                                    state.pin = record;
+                                    state.save_pin();
+                                    sink.println(&format!(
+                                        "\n  {}✅ PIN updated (salted hash + nilkeyd key re-wrapped)!{}",
+                                        FG_GREEN, R
+                                    ));
+                                    read_line();
+                                }
+                            }
                         }
                     } else if cmd.starts_with("profile ") {
                         let prof = cmd.trim_start_matches("profile ").trim().to_lowercase();
@@ -3451,5 +3581,56 @@ mod tests {
         assert_eq!(loaded[3].title, "পরীক্ষামূলক নোট");
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_pin_change_args_and_keyd_rewrap_helper() {
+        assert_eq!(parse_pin_change_args("5678"), (None, "5678"));
+        assert_eq!(parse_pin_change_args("1234 5678"), (Some("1234"), "5678"));
+
+        // If nilkeyd binary has been built in target/debug, verify real init+rewrap+unwrap.
+        let keyd_bin = find_binary("nilkeyd");
+        if keyd_bin.is_file() {
+            let tmp = std::env::temp_dir().join(format!(
+                "nilshell-keyd-rewrap-{}",
+                std::process::id()
+            ));
+            let _ = fs::remove_dir_all(&tmp);
+            fs::create_dir_all(&tmp).unwrap();
+            let rec = tmp.join("enc_key.json");
+            let sec = tmp.join("device.sec");
+            let master = tmp.join("master.key");
+
+            let init_ok = std::process::Command::new(&keyd_bin)
+                .args(["init", "--record"])
+                .arg(&rec)
+                .args(["--device-secret"])
+                .arg(&sec)
+                .args(["--pin", "1234"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            assert!(init_ok, "nilkeyd init should succeed");
+
+            rewrap_keyd_with_bin(&keyd_bin, &rec, Some(&sec), "1234", "5678")
+                .expect("rewrap with right old pin must succeed");
+            assert!(
+                rewrap_keyd_with_bin(&keyd_bin, &rec, Some(&sec), "1234", "9999").is_err(),
+                "rewrap with old pin after change must fail"
+            );
+            let unwrap_ok = std::process::Command::new(&keyd_bin)
+                .args(["unwrap", "--record"])
+                .arg(&rec)
+                .args(["--device-secret"])
+                .arg(&sec)
+                .args(["--master-key"])
+                .arg(&master)
+                .args(["--pin", "5678"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            assert!(unwrap_ok, "unwrap with new PIN must succeed");
+            let _ = fs::remove_dir_all(&tmp);
+        }
     }
 }

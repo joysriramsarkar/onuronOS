@@ -1602,12 +1602,22 @@ mod tests {
         }
     }
 
-    /// Whether any descriptor in this process still refers to `inode`.
+    /// Whether this round's pool descriptor is still open anywhere in the
+    /// process, verified by inode **and** by the magic this round wrote into
+    /// the pool.
     ///
     /// Checking a specific inode rather than counting descriptors is what makes
     /// this test immune to the other tests running in parallel: their pools have
-    /// different inodes and are simply not this test's business.
-    fn inode_still_open(inode: u64) -> bool {
+    /// different inodes and are simply not this test's business. But inodes are
+    /// recycled: once the server closes this round's descriptor, a parallel
+    /// test thread can hand the very same number to a brand-new file before
+    /// this scan runs, which once reported a phantom leak on a freshly booted
+    /// CI runner (small inode numbers, busy allocation). The magic settles it:
+    /// the server rejects the request without reading the pool, so a genuinely
+    /// surviving descriptor still starts with the bytes written this round,
+    /// while a recycled inode does not. Descriptors that cannot be reopened
+    /// through their /proc path (sockets and the like) are not ours either.
+    fn inode_still_open(inode: u64, magic: &[u8]) -> bool {
         let Ok(dir) = std::fs::read_dir("/proc/self/fd") else {
             return false;
         };
@@ -1619,8 +1629,12 @@ mod tests {
             let Ok(cpath) = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()) else {
                 continue;
             };
-            if unsafe { libc::stat(cpath.as_ptr(), &mut st) } == 0 && st.st_ino as u64 == inode {
-                return true;
+            if unsafe { libc::stat(cpath.as_ptr(), &mut st) } != 0 || st.st_ino as u64 != inode {
+                continue;
+            }
+            match std::fs::read(&path) {
+                Ok(bytes) if bytes.starts_with(magic) => return true,
+                _ => continue,
             }
         }
         false
@@ -1682,7 +1696,7 @@ mod tests {
 
         const ROUNDS: usize = 40;
         let mut leaked = Vec::new();
-        for _ in 0..ROUNDS {
+        for round in 0..ROUNDS {
             let mut c = TestClient::connect(&path);
             // Handshake far enough to own a wl_shm, then misuse it: create_pool
             // on an object that was never created. The descriptor attached here
@@ -1692,6 +1706,19 @@ mod tests {
             // A fresh descriptor each round, attached to a request the server
             // must reject because object 4 was never created.
             let fd = crate::wayland::shm::create_pool_fd(4096).expect("memfd");
+            // Tag the pool with a magic unique to this round. The server never
+            // reads a pool it rejects, so a descriptor that survived against all
+            // odds still carries it — and an inode recycled to some other
+            // parallel test's file does not.
+            let mut magic: Vec<u8> = b"FDLEAK-R".to_vec();
+            magic.extend_from_slice(&(round as u64).to_le_bytes());
+            // SAFETY: writing our own freshly created descriptor.
+            let wrote = unsafe { libc::write(fd, magic.as_ptr().cast(), magic.len()) };
+            assert_eq!(
+                wrote,
+                magic.len() as isize,
+                "write the round magic into the pool descriptor"
+            );
             let inode = inode_of(fd);
             let mut e = wire::Encoder::begin(4, shm_req::CREATE_POOL);
             e.put_new_id(5).put_fd(fd).put_int(4096);
@@ -1709,7 +1736,9 @@ mod tests {
 
             // The descriptor this round sent must be gone. The client's copy was
             // closed by `send`, so any surviving reference is the server's.
-            if inode_still_open(inode) {
+            // (The magic check in `inode_still_open` is what distinguishes a
+            // genuine survivor from an inode number recycled to another test.)
+            if inode_still_open(inode, &magic) {
                 leaked.push(inode);
             }
         }

@@ -88,12 +88,12 @@ pub const ALL_APPS: [NativeApp; 15] = [
     NativeApp {
         id: "android",
         label: "অ্যান্ড্রয়েড",
-        icon: "cube",
+        icon: "apk",
     },
     NativeApp {
         id: "update",
         label: "আপডেট",
-        icon: "tv",
+        icon: "update",
     },
 ];
 
@@ -166,47 +166,25 @@ fn bn(n: impl ToString) -> String {
 }
 
 fn clear(p: &mut FramePainter) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     p.fill_rect(0, 0, SW as u16, SH as u16, th.bg);
 }
 
 /// Rounded square launcher tile with a vector icon.
 fn app_tile(p: &mut FramePainter, x: i16, y: i16, icon_name: &str, label: &str, id: &str) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     let s = 59u16;
-    rr(p, x, y, s, s, 18, th.card);
-    rrb(p, x, y, s, s, 18, th.border);
+    rr(p, x, y, s, s, 19, th.tile);
     icon(
         p,
         icon_name,
         (x + 30) as f32,
         (y + 30) as f32,
-        25.0,
+        26.0,
         th.icon,
     );
-    text_center(p, x + 30, y + 66, 12.0, label, th.text, true);
-    p.register_button(x, y, s, s + 18, id);
-}
-
-fn android_tile(
-    p: &mut FramePainter,
-    x: i16,
-    y: i16,
-    label: &str,
-    short: &str,
-    color: u32,
-    id: &str,
-) {
-    let th = t(p.dark_mode);
-    rr(p, x, y, 59, 59, 18, color);
-    let sz = if short.chars().count() > 2 {
-        12.0
-    } else {
-        16.0
-    };
-    text_center(p, x + 30, y + 18, sz, short, 0xFFFFFF, true);
-    text_center(p, x + 30, y + 66, 11.5, label, th.text, false);
-    p.register_button(x, y, 59, 78, id);
+    text_center(p, x + 30, y + 64, 13.0, label, th.med, false);
+    p.register_button(x, y, s, s + 16, id);
 }
 
 fn grid_x(col: i16) -> i16 {
@@ -215,103 +193,152 @@ fn grid_x(col: i16) -> i16 {
 
 // ─── Home ───────────────────────────────────────────────────────────────────
 pub fn render_home(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
     text(
         p,
         24,
-        41,
-        12.0,
-        "OnuronOS 1.7.0 • Alap Native",
-        th.med,
+        36,
+        10.5,
+        "OnuronOS · Alap Native",
+        th.dim,
         false,
     );
 
     let (hh, mm) = get_ist_time_parts();
     let clock = format!("{}:{}", bn(format!("{:02}", hh)), bn(format!("{:02}", mm)));
-    text_center(p, SW / 2, 68, 58.0, &clock, th.text, true);
+    text_center(p, SW / 2, 60, 54.0, &clock, th.text, true);
 
     let date = get_ist_date_str();
-    text_center(p, SW / 2, 137, 15.0, &date, th.icon, true);
+    text_center(p, SW / 2, 130, 14.5, &date, th.med, false);
 
-    // Live status pill.
-    let pkg_count = state.installed_pkgs.len().max(1);
-    let note_count = state.notes.len();
-    let pill = format!(
-        "x86_64 • {}টি প্যাকেজ • {}টি নোট • কন্ট্রোল সেন্টার",
-        bn(pkg_count),
-        bn(note_count)
-    );
-    card(p, 17, 173, 356, 39);
-    text_center(p, SW / 2, 185, 12.0, &pill, th.med, false);
-    p.register_button(17, 173, 356, 39, "open_control");
+    // Tapping the clock block opens the control centre.
+    p.register_button(0, 40, SW as u16, 132, "open_control");
 
     for (i, a) in NATIVE_APPS.iter().enumerate() {
         let col = (i % 4) as i16;
         let row = (i / 4) as i16;
         let id = format!("app:{}", a.id);
-        app_tile(p, grid_x(col), 235 + row * 104, a.icon, a.label, &id);
+        app_tile(p, grid_x(col), 196 + row * 100, a.icon, a.label, &id);
     }
 
-    section_label(p, 556, "ইনস্টল করা অ্যান্ড্রয়েড আ্যপসমূহ");
+    // Android compatibility is a subsystem, not part of the native home. The 1.7
+    // grid of eight letter tiles read as placeholders and gave the compatibility
+    // layer the same visual weight as native apps; it is now one honest shelf
+    // entry that opens the Android hub.
+    section_label(p, 492, "অ্যান্ড্রয়েড সামঞ্জস্য");
+    card_full(p, 512, 88);
+    icon_tile(p, 35, 530, "apk");
+    text(p, 85, 531, 15.0, "ইনস্টল করা অ্যান্ড্রয়েড অ্যাপ", th.text, true);
+    text(
+        p,
+        85,
+        555,
+        12.0,
+        "আলাদা স্যান্ডবক্স · নিজস্ব অনুমতি",
+        th.dim,
+        false,
+    );
+    icon(p, "chevron_r", 341.0, 554.0, 14.0, th.dim);
+    p.register_button(16, 512, CARD_W, 88, "android_shelf");
 
-    let android: [(&str, &str, u32, &str); 8] = [
-        ("YouTube", "YT", 0xD92D2D, "youtube"),
-        ("Telegram", "TG", 0x0B6EA8, "telegram"),
-        ("Wikipedia", "W", 0x1B2A41, "wikipedia"),
-        ("ম্যাপ", "ম্যাপ", 0x15803D, "maps"),
-        ("Instagram", "IG", 0xC2377E, "instagram"),
-        ("Call of Du", "CoD", 0xA5540F, "callofduty"),
-        ("Spotify", "SP", 0x15803D, "spotify"),
-        ("2048 Arcad", "2048", 0xB45309, "g2048"),
+    // System strip: real state only. The 1.7 pill said these things in one
+    // cramped line; three labelled columns are readable at a glance.
+    card_full(p, 628, 84);
+    let used = state.storage_usage().0;
+    let used_label = if used == 0 {
+        "—".to_string()
+    } else {
+        let mb = used / (1024 * 1024);
+        if mb >= 1024 {
+            format!(
+                "{} GB",
+                to_bengali_digits(&format!("{:.1}", mb as f64 / 1024.0))
+            )
+        } else {
+            format!("{} MB", to_bengali_digits(&mb.to_string()))
+        }
+    };
+    let stats = [
+        (
+            "ব্যাটারি",
+            format!("{}%", to_bengali_digits(&state.battery_level.to_string())),
+        ),
+        ("স্টোরেজ", used_label),
+        (
+            "প্যাকেজ",
+            format!("{}টি", to_bengali_digits(&state.installed_pkgs.len().max(1).to_string())),
+        ),
     ];
-    for (i, (label, short, color, id)) in android.iter().enumerate() {
-        let col = (i % 4) as i16;
-        let row = (i / 4) as i16;
-        let bid = format!("android:{}", id);
-        android_tile(p, grid_x(col), 584 + row * 92, label, short, *color, &bid);
+    for (i, (label, value)) in stats.iter().enumerate() {
+        let cx = 75 + i as i16 * 120;
+        text_center(p, cx, 644, 11.0, label, th.dim, false);
+        text_center(p, cx, 666, 17.0, value, th.text, true);
     }
+    p.register_button(16, 628, CARD_W, 84, "set:battery");
 }
 
 // ─── Lock screen ────────────────────────────────────────────────────────────
 pub fn render_lockscreen(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
     let (hh, mm) = get_ist_time_parts();
     let clock = format!("{}:{}", bn(format!("{:02}", hh)), bn(format!("{:02}", mm)));
-    text_center(p, SW / 2, 104, 58.0, &clock, th.text, true);
+    text_center(p, SW / 2, 96, 54.0, &clock, th.text, true);
     let date = get_ist_date_str();
-    text_center(p, SW / 2, 172, 14.5, &date, th.med, false);
+    text_center(p, SW / 2, 162, 14.5, &date, th.med, false);
 
     // Latest notification preview.
-    card(p, 21, 229, 348, 74);
-    text(p, 39, 243, 11.5, "বার্তা · এখন", th.med, false);
+    card(p, 21, 212, 348, 76);
     if let Some(n) = state.notifications.first() {
-        text(p, 39, 264, 13.5, &n.title, th.text, true);
+        if state.lock_notifications {
+            text(
+                p,
+                39,
+                226,
+                11.5,
+                &format!("{} · {}", n.app, n.time),
+                th.dim,
+                false,
+            );
+            text(p, 39, 248, 13.5, &n.title, th.text, true);
+        } else {
+            text(p, 39, 226, 11.5, "নোটিফিকেশন গোপন", th.dim, false);
+            text(
+                p,
+                39,
+                248,
+                13.5,
+                &format!("{} টি নতুন বার্তা — দেখতে আনলক করুন", bn(state.notifications.len())),
+                th.med,
+                true,
+            );
+        }
     } else {
-        text(p, 39, 264, 13.5, "কোনো নতুন বার্তা নেই", th.dim, false);
+        text(p, 39, 226, 11.5, "বার্তা · এখন", th.dim, false);
+        text(p, 39, 248, 13.5, "কোনো নতুন বার্তা নেই", th.dim, false);
     }
-    p.register_button(21, 229, 348, 74, "open_control");
+    p.register_button(21, 212, 348, 76, "lock:notif_hint");
 
-    text_center(p, SW / 2, 334, 15.0, "পিন দিন", th.text, true);
+    text_center(p, SW / 2, 320, 15.0, "পিন দিন", th.text, true);
 
     // Four PIN dots.
     let filled = state.pin_input.chars().count();
     for i in 0..4 {
         let cx = SW / 2 - 33 + i as i16 * 22;
         if i < filled {
-            disc(p, cx as f32, 366.0, 5.5, th.text);
+            disc(p, cx as f32, 352.0, 5.5, th.accent);
         } else {
-            circle(p, cx as f32, 366.0, 5.0, 1.6, th.dim);
+            circle(p, cx as f32, 352.0, 5.0, 1.4, th.dim);
         }
     }
     if state.lock_error {
         text_center(
             p,
             SW / 2,
-            382,
+            368,
             11.5,
             "ভুল পিন, আবার চেষ্টা করুন",
             th.danger,
@@ -320,15 +347,15 @@ pub fn render_lockscreen(p: &mut FramePainter, state: &SimState) {
     }
 
     let keys = ["১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯", "*", "০", "#"];
-    keypad(p, 409, &keys, "pin");
+    keypad(p, 396, &keys, "pin");
 }
 
 // ─── Control centre / notification panel ────────────────────────────────────
 pub fn render_control_center(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
-    text(p, 24, 52, 17.0, &get_ist_date_short(), th.text, true);
+    text(p, 24, 50, 15.5, &get_ist_date_short(), th.text, true);
 
     let tiles: [(&str, &str, bool, &str); 8] = [
         ("wifi", "ওয়াই-ফাই", state.wifi_enabled, "tg:wifi"),
@@ -346,12 +373,11 @@ pub fn render_control_center(p: &mut FramePainter, state: &SimState) {
         let x = 25 + col * 93;
         let y = 97 + row * 103;
         if *on {
-            rr(p, x, y, 62, 62, 18, th.accent);
-            icon(p, ic, (x + 31) as f32, (y + 31) as f32, 24.0, th.on_accent);
+            rr(p, x, y, 62, 62, 20, th.accent);
+            icon(p, ic, (x + 31) as f32, (y + 31) as f32, 25.0, th.on_accent);
         } else {
-            rr(p, x, y, 62, 62, 18, th.card);
-            rrb(p, x, y, 62, 62, 18, th.border);
-            icon(p, ic, (x + 31) as f32, (y + 31) as f32, 24.0, th.icon);
+            rr(p, x, y, 62, 62, 20, th.tile);
+            icon(p, ic, (x + 31) as f32, (y + 31) as f32, 25.0, th.icon);
         }
         text_center(
             p,
@@ -375,19 +401,50 @@ pub fn render_control_center(p: &mut FramePainter, state: &SimState) {
     rr(p, bx, 356, bw as u16, 6, 3, th.track);
     let fw = ((bw as f32) * state.brightness_level as f32 / 100.0).max(6.0) as u16;
     rr(p, bx, 356, fw.min(bw as u16), 6, 3, th.accent);
+    disc(
+        p,
+        (bx as f32 + fw.min(bw as u16) as f32).clamp(bx as f32 + 6.0, (bx + bw) as f32 - 6.0),
+        359.0,
+        5.5,
+        0xFFF9EC,
+    );
     p.register_button(34, 305, (SW - 68) as u16, 75, "sl:brightness");
 
-    text(p, 24, 399, 15.0, "নোটিফিকেশন", th.text, true);
+    section_label(p, 396, "নোটিফিকেশন");
+    if !state.notifications.is_empty() {
+        // Muted count on the same baseline as the section rule.
+        text_right(
+            p,
+            SW - MARGIN,
+            397,
+            11.5,
+            &format!("{} টি", bn(state.notifications.len())),
+            th.dim,
+            false,
+        );
+    }
 
-    let mut y = 432;
+    let mut y = 428;
     for (i, n) in state.notifications.iter().take(3).enumerate() {
         let h = 74u16;
         card_full(p, y, h);
-        icon_tile(p, 35, y + 17, &n.icon);
+        // Per-source tint: each notification is scannable by colour alone,
+        // without introducing extra surface hues.
+        let tint = match n.icon.as_str() {
+            "chat" => 0x3ECF8E,
+            "phone" => 0x4AA3FF,
+            "sliders" => 0xB79BFF,
+            _ => 0x8FD3FF,
+        };
+        icon_tile_tint(p, 35, y + 17, &n.icon, tint);
         text(p, 85, y + 14, 12.0, &n.app, th.med, false);
-        text_right(p, SW - 34, y + 14, 11.5, &n.time, th.med, false);
+        text_right(p, SW - 58, y + 14, 11.5, &n.time, th.med, false);
+        // Dismiss button registered first so it wins hit-testing over the card.
+        rr(p, SW - 46, y + 10, 22, 22, 11, th.tile);
+        text_center(p, SW - 35, y + 12, 12.0, "×", th.med, true);
+        p.register_button(SW - 50, y + 6, 30, 30, &format!("notif:dismiss:{}", i));
         text(p, 85, y + 40, 13.5, &n.title, th.text, true);
-        let id = format!("notif:{}", i);
+        let id = format!("notif:open:{}", i);
         p.register_button(16, y, CARD_W, h, &id);
         y += h as i16 + 13;
     }
@@ -404,39 +461,102 @@ pub fn render_control_center(p: &mut FramePainter, state: &SimState) {
         );
     }
 
-    primary_button(p, 709, "সব মুছুন", "notif_clear");
+    ghost_button(p, 712, "সব মুছুন", "notif_clear", true);
 }
 
 // ─── Recents ────────────────────────────────────────────────────────────────
 pub fn render_recents(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
-    // Recents is a horizontal card rail.  The previous renderer always drew
-    // the first four cards and therefore ignored recents_scroll_offset even
-    // though the input path updated it.
-    let rail_offset = (state.recents_scroll_offset as i16) * 286;
+    // Header: title + live count.
+    text(p, MARGIN, 50, 15.5, "সাম্প্রতিক", th.text, true);
+    if !state.recent_apps.is_empty() {
+        text_right(
+            p,
+            SW - MARGIN,
+            51,
+            12.0,
+            &format!("{} টি অ্যাপ", bn(state.recent_apps.len())),
+            th.med,
+            false,
+        );
+    }
+
+    // Recents is a horizontal card rail. Card taps fire on mouse *release*
+    // (see the input path in main.rs) so that a drag actually scrolls the
+    // rail instead of opening whatever card the drag started on.
+    let max_offset = state.recent_apps.len().saturating_sub(1);
+    let offset = state.recents_scroll_offset.min(max_offset);
+    let rail_offset = (offset as i16) * 286;
     let mut x = 60i16 - rail_offset;
     for (app_id, name, _, _) in state.recent_apps.iter() {
         let w = 268u16;
         let y = 90i16;
         let h = 470u16;
-        rr(p, x, y, w, h, 24, th.card);
+        rr(p, x, y, w, h, 20, th.card);
         outline(p, x, y, w, h, th.border);
         text(p, x + 22, y + 20, 15.0, name, th.text, true);
+        // Per-card close pill registered before the card button so tap-to-close wins.
+        rr(p, x + w as i16 - 40, y + 14, 24, 24, 12, th.tile);
+        text_center(p, x + w as i16 - 28, y + 16, 13.0, "×", th.med, true);
+        p.register_button(
+            x + w as i16 - 44,
+            y + 10,
+            32,
+            32,
+            &format!("rec_close:{}", app_id),
+        );
         // Live thumbnail placeholder tinted with the app accent.
-        rr(
+        rr(p, x + 18, y + 52, w - 36, h - 78, 16, th.tile);
+        // No live preview exists yet; show the app's own glyph instead of an
+        // empty rectangle, so the card reads as "no thumbnail" rather than broken.
+        let glyph = NATIVE_APPS
+            .iter()
+            .find(|a| a.id == *app_id)
+            .map(|a| a.icon)
+            .unwrap_or("cube");
+        icon(
             p,
-            x + 18,
-            y + 52,
-            w - 36,
-            h - 78,
-            18,
-            if p.dark_mode { 0x3B2C5C } else { 0xEFE7FF },
+            glyph,
+            (x + w as i16 / 2) as f32,
+            (y + 52 + (h - 78) as i16 / 2) as f32,
+            44.0,
+            th.dim,
         );
         let id = format!("rec:{}", app_id);
         p.register_button(x, y, w, h, &id);
         x += 286;
+    }
+
+    if state.recent_apps.is_empty() {
+        text_center(
+            p,
+            SW / 2,
+            320,
+            13.5,
+            "কোনো সাম্প্রতিক অ্যাপ চালু নেই",
+            th.dim,
+            false,
+        );
+    }
+
+    // Position dots: the active page is a brass pill, the rest quiet dots.
+    // This is the rail's only scroll affordance, so it is always drawn.
+    let len = state.recent_apps.len();
+    if len > 1 {
+        let gap = 10i16;
+        let widths: Vec<i16> = (0..len).map(|i| if i == offset { 16 } else { 6 }).collect();
+        let total: i16 = widths.iter().sum::<i16>() + gap * (len as i16 - 1);
+        let mut dx = SW / 2 - total / 2;
+        for (i, &w_) in widths.iter().enumerate() {
+            if i == offset {
+                rr(p, dx, 666, w_ as u16, 6, 3, th.accent);
+            } else {
+                rr(p, dx, 666, w_ as u16, 6, 3, th.dim);
+            }
+            dx += w_ + gap;
+        }
     }
 
     primary_button(p, 708, "সব বন্ধ করুন", "recents_clear");
@@ -444,8 +564,10 @@ pub fn render_recents(p: &mut FramePainter, state: &SimState) {
 
 // ─── Power menu ─────────────────────────────────────────────────────────────
 pub fn render_power_menu(p: &mut FramePainter, _state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
+    text(p, 24, 60, 28.5, "পাওয়ার", th.text, true);
+    text(p, 24, 100, 12.0, "ডিভাইস বন্ধ বা রিস্টার্ট করুন", th.dim, false);
     let items = [
         ("বন্ধ করুন", "power_off"),
         ("রিস্টার্ট", "power_restart"),
@@ -453,17 +575,27 @@ pub fn render_power_menu(p: &mut FramePainter, _state: &SimState) {
         ("বাতিল", "power_cancel"),
     ];
     for (i, (label, id)) in items.iter().enumerate() {
-        let y = 279 + i as i16 * 66;
-        rr(p, 25, y, 340, 58, 29, th.card);
-        outline(p, 25, y, 340, 58, th.border);
-        text_center(p, SW / 2, y + 18, 15.0, label, th.text, true);
-        p.register_button(25, y, 340, 58, id);
+        let y = 252 + i as i16 * 66;
+        let ghost = *id == "power_cancel";
+        let colour = match *id {
+            "power_off" => th.danger,
+            "power_recovery" => th.warn,
+            _ => th.text,
+        };
+        rr(p, 25, y, 340, 56, 18, th.card);
+        if ghost {
+            rrb(p, 25, y, 340, 56, 18, th.border);
+            text_center(p, SW / 2, y + 16, 15.0, label, th.med, true);
+        } else {
+            text_center(p, SW / 2, y + 16, 15.0, label, colour, true);
+        }
+        p.register_button(25, y, 340, 56, id);
     }
 }
 
 // ─── OOBE ───────────────────────────────────────────────────────────────────
 pub fn render_oobe(p: &mut FramePainter, state: &SimState, step: u8) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
     match step {
@@ -522,7 +654,7 @@ pub fn render_oobe(p: &mut FramePainter, state: &SimState, step: u8) {
                         cx as f32,
                         160.0,
                         5.5,
-                        if p.dark_mode { 0xD9C6FF } else { 0xB79BFF },
+                        if p.palette.is_dark() { 0xD9C6FF } else { 0xB79BFF },
                     );
                 } else {
                     circle(p, cx as f32, 160.0, 5.0, 1.6, th.dim);
@@ -538,7 +670,7 @@ pub fn render_oobe(p: &mut FramePainter, state: &SimState, step: u8) {
 
 /// Page indicator used by the OOBE: `count` dots, `active` stretched.
 fn dots(p: &mut FramePainter, y: i16, count: usize, active: usize) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     let total = count as i16 * 10 + (count as i16 - 1) * 12 + 22;
     let mut x = SW / 2 - total / 2;
     for i in 0..count {
@@ -593,7 +725,7 @@ const SETTINGS_ROWS: [SettingRow; 11] = [
         id: "set:security",
     },
     SettingRow {
-        icon: "plus",
+        icon: "battery",
         title: "ব্যাটারি",
         sub: "ব্যবহার, সাশ্রয়",
         id: "set:battery",
@@ -642,7 +774,7 @@ pub fn settings_max_scroll() -> i16 {
 }
 
 pub fn render_app_settings(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
     let bottom = SETTINGS_CARD_TOP + SETTINGS_CARD_H;
@@ -676,25 +808,26 @@ pub fn render_app_settings(p: &mut FramePainter, state: &SimState) {
     // Scroll affordance: only when there is more content below.
     let max_scroll = settings_max_scroll();
     if max_scroll > 0 {
-        let track_x = SW - 6;
+        let track_x = SW - 7;
         let track_top = SETTINGS_CARD_TOP + 10;
         let track_h = (SETTINGS_CARD_H - 20) as u16;
         rr(p, track_x, track_top, 2, track_h, 1, th.track);
         let visible = (SETTINGS_CARD_H - 20) as f32 / (max_scroll + SETTINGS_CARD_H - 20) as f32;
-        let thumb_h = ((track_h as f32) * visible).max(28.0) as u16;
+        let thumb_h = ((track_h as f32) * visible).max(24.0) as u16;
         let t = if max_scroll > 0 {
             off as f32 / max_scroll as f32
         } else {
             0.0
         };
         let ty = track_top + ((track_h - thumb_h) as f32 * t) as i16;
-        rr(p, track_x - 1, ty, 4, thumb_h, 2, th.dim);
+        // 2px thumb, inset in the margin: a hairline, not a second border.
+        rr(p, track_x, ty, 2, thumb_h, 1, th.dim);
     }
 }
 
 // ─── Settings: Wi-Fi ────────────────────────────────────────────────────────
 pub fn render_settings_wifi(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "ওয়াই-ফাই", Some("back"));
     switch_card(p, 104, "ওয়াই-ফাই", state.wifi_enabled, "tg:wifi");
@@ -720,7 +853,7 @@ pub fn render_settings_wifi(p: &mut FramePainter, state: &SimState) {
 
 // ─── Settings: Bluetooth ────────────────────────────────────────────────────
 pub fn render_settings_bluetooth(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "ব্লুটুথ", Some("back"));
     switch_card(p, 104, "ব্লুটুথ", state.bt_enabled, "tg:bt");
@@ -759,24 +892,24 @@ pub fn render_settings_display(p: &mut FramePainter, state: &SimState) {
     clear(p);
     screen_title(p, "ডিসপ্লে", Some("back"));
     theme_selector(p, 104, state.theme_mode as usize);
-    slider_card(p, 250, "উজ্জ্বলতা", state.brightness_level, "sl:brightness");
-    slider_card(p, 330, "লেখার আকার", state.font_size_pct, "sl:font");
+    slider_card(p, 268, "উজ্জ্বলতা", state.brightness_level, "sl:brightness");
+    slider_card(p, 354, "লেখার আকার", state.font_size_pct, "sl:font");
 
-    card_full(p, 410, 116);
+    card_full(p, 438, 116);
     value_row(
         p,
         16,
-        414,
+        442,
         CARD_W,
         "রিফ্রেশ রেট",
         &format!("{} Hz", bn(state.refresh_hz)),
         "opt:refresh",
     );
-    divider(p, 34, 470, CARD_W - 36);
+    divider(p, 34, 498, CARD_W - 36);
     value_row(
         p,
         16,
-        470,
+        498,
         CARD_W,
         "স্ক্রিন বন্ধ হবে",
         &format!("{} সেকেন্ড", bn(state.screen_timeout)),
@@ -793,14 +926,14 @@ pub fn render_settings_sound(p: &mut FramePainter, state: &SimState) {
     slider_card(p, 276, "আ্যালার্ম", state.alarm_vol, "sl:alarm");
     switch_card(p, 366, "কস্পন", state.vibration_enabled, "tg:vibration");
     card_full(p, 430, 54);
-    text(p, 34, 448, 15.0, "রিংটোন", t(p.dark_mode).text, true);
+    text(p, 34, 448, 15.0, "রিংটোন", tp(p).text, true);
     text_right(
         p,
         SW - 34,
         449,
         14.0,
         &state.ringtone,
-        t(p.dark_mode).med,
+        tp(p).med,
         false,
     );
     p.register_button(16, 430, CARD_W, 54, "opt:ringtone");
@@ -808,14 +941,15 @@ pub fn render_settings_sound(p: &mut FramePainter, state: &SimState) {
 
 // ─── Settings: Security ─────────────────────────────────────────────────────
 pub fn render_settings_security(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "নিরাপত্তা", Some("back"));
 
     card_full(p, 104, 216);
+    let timeout_str = format!("{} সেকেন্ড", bn(state.screen_timeout));
     let rows = [
         ("keypad", "পিন পরিবর্তন", "লক স্ক্রিনের পিন", "sec:pin"),
-        ("sliders", "স্ক্রিন লক সময়", "৩০ সেকেন্ড", "opt:timeout"),
+        ("sliders", "স্ক্রিন লক সময়", &timeout_str, "opt:timeout"),
         ("folder", "আ্যাপ অনুমতি", "ক্যামেরা, মাইক, ফাইল", "sec:perm"),
     ];
     for (i, (ic, title, sub, id)) in rows.iter().enumerate() {
@@ -869,7 +1003,7 @@ pub fn render_settings_security(p: &mut FramePainter, state: &SimState) {
 
 // ─── Settings: Battery ──────────────────────────────────────────────────────
 pub fn render_settings_battery(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "ব্যাটারি", Some("back"));
 
@@ -892,7 +1026,7 @@ pub fn render_settings_battery(p: &mut FramePainter, state: &SimState) {
 
 // ─── Settings: Storage ──────────────────────────────────────────────────────
 pub fn render_settings_storage(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "স্টোরেজ", Some("back"));
 
@@ -921,8 +1055,8 @@ pub fn render_settings_storage(p: &mut FramePainter, state: &SimState) {
         let m = seg(media);
         let r = (filled - a - m).max(0);
         rr(p, bx, 148, a.max(1) as u16, 8, 4, th.accent);
-        rr(p, bx + a, 148, m.max(1) as u16, 8, 4, 0xC4A8FF);
-        rr(p, bx + a + m, 148, r.max(1) as u16, 8, 4, 0x7C4DD8);
+        rr(p, bx + a, 148, m.max(1) as u16, 8, 4, th.ok);
+        rr(p, bx + a + m, 148, r.max(1) as u16, 8, 4, th.dim);
     }
     let used_mb = used as f64 / (1024.0 * 1024.0);
     text_right(
@@ -954,7 +1088,7 @@ pub fn render_settings_storage(p: &mut FramePainter, state: &SimState) {
 
 // ─── Settings: Backup ───────────────────────────────────────────────────────
 pub fn render_settings_backup(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "ব্যাকআপ", Some("back"));
 
@@ -970,7 +1104,7 @@ pub fn render_settings_backup(p: &mut FramePainter, state: &SimState) {
 
 // ─── Settings: Language & keyboard ──────────────────────────────────────────
 pub fn render_settings_language(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "ভাষা ও কিবোর্ড", Some("back"));
 
@@ -1049,7 +1183,7 @@ pub fn render_settings_accessibility(p: &mut FramePainter, state: &SimState) {
 
 // ─── Settings: VPN ──────────────────────────────────────────────────────────
 pub fn render_settings_vpn(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "ভিপিএন", Some("back"));
     switch_card(p, 104, "ভিপিএন", state.vpn_enabled, "tg:vpn");
@@ -1078,7 +1212,7 @@ pub fn render_settings_vpn(p: &mut FramePainter, state: &SimState) {
 
 // ─── Settings: System update ────────────────────────────────────────────────
 pub fn render_settings_update(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "সিস্টেম আপডেট", Some("back"));
 
@@ -1097,7 +1231,7 @@ pub fn render_settings_update(p: &mut FramePainter, state: &SimState) {
 
 // ─── Settings: About ────────────────────────────────────────────────────────
 pub fn render_settings_about(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "অনুরণ সম্পর্কে", Some("back"));
 
@@ -1132,7 +1266,7 @@ pub fn render_settings_about(p: &mut FramePainter, state: &SimState) {
 /// Full application list. The designed home grid holds twelve tiles; the drawer
 /// is where the remaining native apps (camera, music) are reachable.
 pub fn render_app_drawer(p: &mut FramePainter, _state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "সব আ্যাপ", Some("back"));
     for (i, a) in ALL_APPS.iter().enumerate() {

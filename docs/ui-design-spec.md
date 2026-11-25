@@ -1,5 +1,11 @@
 # OnuronOS UI — measured design specification
 
+> **Historical geometry record.** This file measures the 1.7 reference art
+> (780×1592), which is still the geometric contract. The **current** palette,
+> typography and component styling are the “নীল-শাঁখা” system in
+> [`docs/design/ui-2.0.md`](../design/ui-2.0.md) (ADR-0011); the palette table
+> below describes 1.7 and no longer matches the shell.
+
 Source of truth: `অনুরণ ওএস — অ্যাপ UI ডিজাইন-png/` (35 screens × dark/light),
 780×1592 px each. The phone canvas used by `nilsim` is **390×796**, exactly half,
 so every metric below is *design px ÷ 2* and can be read straight against the art.
@@ -53,14 +59,14 @@ Call of Duty `#A5540F`, Spotify `#15803D`, 2048 `#B45309`.
 | Home | brand 12 @ (24,41); clock 58 centred @ y68; date 15 bold @ y137; status pill `17,173 356×39`; app grid 59×59 tiles at x `26/118/211/304`, rows y `235/339/443`, label at tile+66; section label y556; Android tiles y `584/676` |
 | Lock | clock 58 @ y104; date @ y172; notification card `21,229 348×74`; "পিন দিন" y340; 4 PIN dots y366 (22 pitch); keypad top 409 |
 | Notification panel | date 16 @ (24,32); 8 tiles 61×61 at x `24+85c`, y `66+92r`, label +68; brightness card `258 h78` (bar y306); "নোটিফিকেশন" y352; notification cards from y378, h74, gap 8; "সব মুছুন" y708 |
-| Recents | cards 268×470 at y90, x60 step 286; "সব বন্ধ করুন" y708 |
+| Recents | "সাম্প্রতিক" y50 + count; cards 268×470 at y90, x60 step 286 (tap opens on release; drag scrolls); position dots y666; "সব বন্ধ করুন" y708 |
 | Power menu | pills `25,y 340×58` radius 29 at y `279 + 66i` |
 | OOBE 1 | logo `130,171 129×130` r34; "স্বাগতম" 29 @ y336; sub @ y388; dots y429; button y708 |
 | OOBE 2 | title 27 @ (24,60); card `130 h144`; 2 rows of 72; dots y290; button y708 |
 | OOBE 3 | title @ 60; hint @ 118; 4 dots y160; keypad top 200; page dots y470; button y708 |
 | Settings | card from y130; 9 rows pitch 72.5 starting 146 |
 | Wi-Fi / Bluetooth | master switch card y104; list card y170 (72/row); Bluetooth action button y708 |
-| Display | 3 theme cards 111×130 at y104; brightness y250; text size y330; info card y410 h116 |
+| Display | 4 theme cards 82×148 at y104 (লাইট/ডার্ক/AMOLED/অটো, মিনি প্রিভিউ সহ); brightness y268; text size y354; info card y438 h116 |
 | Sound | 3 slider cards y `104/190/276`; haptics switch y366; ringtone row y430 |
 | Security | list card y104 (3 rows); switches y336, y400 |
 | Battery | hero card y104 h170 (52 bold %); 3 usage rows from 290; saver switch 536 |

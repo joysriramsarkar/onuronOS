@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "linux")]
 mod evdev;
 
 // ─── Linux evdev constants ────────────────────────────────────────────────────

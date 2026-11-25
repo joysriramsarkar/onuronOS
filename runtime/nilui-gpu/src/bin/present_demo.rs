@@ -1,91 +1,106 @@
 // runtime/nilui-gpu/src/bin/present_demo.rs — Direct KMS 120Hz Mobile Panel Presentation
-use nilui_gpu::KmsPresenter;
 
-/// 2 = the panel could not be reached. Distinct from a panic so a caller (and
-/// the boot sequence) can tell "composed but not displayed" from "crashed".
-const EXIT_NO_PANEL: i32 = 2;
+#[cfg(unix)]
+mod imp {
+    use nilui_gpu::KmsPresenter;
 
-fn main() {
-    println!("\x1b[1;36m=========================================================\x1b[0m");
-    println!("\x1b[1;36m     Onuron OS: Direct DRM/KMS 120Hz Mobile Compositor   \x1b[0m");
-    println!("\x1b[1;36m=========================================================\x1b[0m");
+    /// 2 = the panel could not be reached. Distinct from a panic so a caller (and
+    /// the boot sequence) can tell "composed but not displayed" from "crashed".
+    const EXIT_NO_PANEL: i32 = 2;
 
-    // Initialize mobile panel at 720x1440 @ 120Hz
-    let mut presenter = KmsPresenter::with_resolution(720, 1440, 120);
-    println!(
-        "[present_demo] Display Node: {} (Hardware={})",
-        presenter.drm_device.card_path,
-        presenter.drm_device.is_hardware()
-    );
-    if let Some(reason) = presenter.drm_device.backend.reason() {
-        println!("[present_demo] No panel available: {reason}");
-    }
-    println!(
-        "[present_demo] Resolution: {}x{} @ {}Hz (Target: 8.33ms / frame)",
-        presenter.width, presenter.height, presenter.refresh_rate_hz
-    );
+    pub fn main() {
+        println!("\x1b[1;36m=========================================================\x1b[0m");
+        println!("\x1b[1;36m     Onuron OS: Direct DRM/KMS 120Hz Mobile Compositor   \x1b[0m");
+        println!("\x1b[1;36m=========================================================\x1b[0m");
 
-    // Simulate 60 rendered frames of a mobile lockscreen & UI
-    for frame in 0..60 {
-        let _slot = presenter.acquire_next_slot();
-        let buf = presenter.back_buffer_mut();
-
-        // 1. Dark background
-        buf.clear(0xFF0F172A); // Slate 900
-
-        // 2. Status bar (Wi-Fi, 5G, Clock 12:45, Battery 88%)
-        buf.fill_rect(0, 0, 720, 48, 0xFF1E293B);
-        buf.draw_text("12:45", 330, 16, 2, 0xFFFFFFFF);
-        buf.draw_text("5G 88%", 610, 16, 2, 0xFF10B981); // Emerald green
-
-        // 3. Central hero clock
-        buf.draw_text("12:45", 260, 280, 5, 0xFFF8FAFC);
-        buf.draw_text("Tuesday, Sep 1", 240, 360, 2, 0xFF94A3B8);
-
-        // 4. Notification / App Card (Rounded Box with gradient accent)
-        let pulse = (frame as u32 * 4).min(255);
-        let accent_color = 0xFF000000 | (pulse << 16) | (0x80 << 8) | 0xF6;
-        buf.fill_rounded_rect(40, 480, 640, 200, 24, 0xFF1E293B);
-        buf.fill_rect(40, 480, 8, 200, accent_color); // Accent strip
-        buf.draw_text("NILOS NOTIFICATION", 70, 510, 2, 0xFF38BDF8); // Cyan
-        buf.draw_text(
-            "Direct DRM/KMS 120Hz Tear-Free Display Active",
-            70,
-            550,
-            2,
-            0xFFF1F5F9,
+        // Initialize mobile panel at 720x1440 @ 120Hz
+        let mut presenter = KmsPresenter::with_resolution(720, 1440, 120);
+        println!(
+            "[present_demo] Display Node: {} (Hardware={})",
+            presenter.drm_device.card_path,
+            presenter.drm_device.is_hardware()
         );
-        buf.draw_text("Zero X11 / Zero Desktop Bloat", 70, 590, 2, 0xFF64748B);
+        if let Some(reason) = presenter.drm_device.backend.reason() {
+            println!("[present_demo] No panel available: {reason}");
+        }
+        println!(
+            "[present_demo] Resolution: {}x{} @ {}Hz (Target: 8.33ms / frame)",
+            presenter.width, presenter.height, presenter.refresh_rate_hz
+        );
 
-        // 5. Bottom Navigation Bar
-        buf.fill_rounded_rect(260, 1400, 200, 8, 4, 0xFFE2E8F0);
+        // Simulate 60 rendered frames of a mobile lockscreen & UI
+        for frame in 0..60 {
+            let _slot = presenter.acquire_next_slot();
+            let buf = presenter.back_buffer_mut();
 
-        // Present to DRM/KMS
-        let stats = presenter.present_frame();
-        if frame % 15 == 0 || frame == 59 {
-            // "VBLANK synced" is only true when the kernel actually reported a
-            // flip event; on the offscreen backend nothing reached a panel.
-            let sync = if stats.page_flip_success {
-                "VBLANK synced"
-            } else {
-                "not displayed"
-            };
-            println!(
-                "[present_demo] Frame {:02}: Slot {} | {:.2} ms/frame | {:.1} FPS ({sync})",
-                stats.frame_index, stats.slot, stats.frame_time_ms, stats.fps
+            // 1. Dark background
+            buf.clear(0xFF0F172A); // Slate 900
+
+            // 2. Status bar (Wi-Fi, 5G, Clock 12:45, Battery 88%)
+            buf.fill_rect(0, 0, 720, 48, 0xFF1E293B);
+            buf.draw_text("12:45", 330, 16, 2, 0xFFFFFFFF);
+            buf.draw_text("5G 88%", 610, 16, 2, 0xFF10B981); // Emerald green
+
+            // 3. Central hero clock
+            buf.draw_text("12:45", 260, 280, 5, 0xFFF8FAFC);
+            buf.draw_text("Tuesday, Sep 1", 240, 360, 2, 0xFF94A3B8);
+
+            // 4. Notification / App Card (Rounded Box with gradient accent)
+            let pulse = (frame as u32 * 4).min(255);
+            let accent_color = 0xFF000000 | (pulse << 16) | (0x80 << 8) | 0xF6;
+            buf.fill_rounded_rect(40, 480, 640, 200, 24, 0xFF1E293B);
+            buf.fill_rect(40, 480, 8, 200, accent_color); // Accent strip
+            buf.draw_text("NILOS NOTIFICATION", 70, 510, 2, 0xFF38BDF8); // Cyan
+            buf.draw_text(
+                "Direct DRM/KMS 120Hz Tear-Free Display Active",
+                70,
+                550,
+                2,
+                0xFFF1F5F9,
             );
+            buf.draw_text("Zero X11 / Zero Desktop Bloat", 70, 590, 2, 0xFF64748B);
+
+            // 5. Bottom Navigation Bar
+            buf.fill_rounded_rect(260, 1400, 200, 8, 4, 0xFFE2E8F0);
+
+            // Present to DRM/KMS
+            let stats = presenter.present_frame();
+            if frame % 15 == 0 || frame == 59 {
+                // "VBLANK synced" is only true when the kernel actually reported a
+                // flip event; on the offscreen backend nothing reached a panel.
+                let sync = if stats.page_flip_success {
+                    "VBLANK synced"
+                } else {
+                    "not displayed"
+                };
+                println!(
+                    "[present_demo] Frame {:02}: Slot {} | {:.2} ms/frame | {:.1} FPS ({sync})",
+                    stats.frame_index, stats.slot, stats.frame_time_ms, stats.fps
+                );
+            }
+        }
+
+        if presenter.drm_device.is_hardware() {
+            println!("\x1b[1;32m[present_demo] [ SUCCESS ] 60 frames rendered tear-free via KMS triple-buffering.\x1b[0m");
+        } else {
+            let reason = presenter
+                .drm_device
+                .backend
+                .reason()
+                .unwrap_or("no display device");
+            println!("\x1b[1;33m[present_demo] [ NO PANEL ] 60 frames composed in memory; nothing was displayed ({reason}).\x1b[0m");
+            std::process::exit(EXIT_NO_PANEL);
         }
     }
+}
 
-    if presenter.drm_device.is_hardware() {
-        println!("\x1b[1;32m[present_demo] [ SUCCESS ] 60 frames rendered tear-free via KMS triple-buffering.\x1b[0m");
-    } else {
-        let reason = presenter
-            .drm_device
-            .backend
-            .reason()
-            .unwrap_or("no display device");
-        println!("\x1b[1;33m[present_demo] [ NO PANEL ] 60 frames composed in memory; nothing was displayed ({reason}).\x1b[0m");
-        std::process::exit(EXIT_NO_PANEL);
-    }
+#[cfg(unix)]
+fn main() {
+    imp::main();
+}
+
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("present_demo requires a Unix/Linux host");
+    std::process::exit(1);
 }

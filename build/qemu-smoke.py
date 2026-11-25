@@ -100,6 +100,10 @@ DEFAULT_INITRD = ARCH_DEFAULTS["x86_64"]["initrd"]
 def build_qemu_cmd(qemu_bin, kernel_path, initrd_path, memory_mb=1024, smp=2, arch="x86_64", data_disk=None):
     """Builds the argument list for headless QEMU execution across architectures."""
     norm_arch = "aarch64" if arch in ("aarch64", "arm64") else "x86_64"
+    # The readiness budget is raised for virtual hosts: a loaded CI runner can
+    # take longer than the device-default 10 s to bring every core socket up,
+    # and nilinit honours this override (bounded, still fails fast on a real
+    # outage once the budget passes).
     if norm_arch == "aarch64":
         cmd = [
             qemu_bin,
@@ -109,7 +113,7 @@ def build_qemu_cmd(qemu_bin, kernel_path, initrd_path, memory_mb=1024, smp=2, ar
             "-smp", str(smp),
             "-kernel", kernel_path,
             "-initrd", initrd_path,
-            "-append", "console=ttyAMA0 earlycon root=/dev/ram0 rdinit=/init panic=-1 rw",
+            "-append", "console=ttyAMA0 earlycon root=/dev/ram0 rdinit=/init panic=-1 rw onuron.readiness_ms=45000",
             "-display", "none",
             "-monitor", "none",
             "-serial", "stdio",
@@ -121,9 +125,17 @@ def build_qemu_cmd(qemu_bin, kernel_path, initrd_path, memory_mb=1024, smp=2, ar
             qemu_bin,
             "-m", str(memory_mb),
             "-smp", str(smp),
+            # Pin the virtual CPU explicitly. Depending on the host QEMU's
+            # default model (qemu64) leaves the guest with a pre-2008 feature
+            # set, and services built for modern hardware (crypto/quic stack)
+            # can hit unsupported-instruction traps on one runner image while
+            # booting green on another. `max` is the feature-complete virtual
+            # device every real target hardware exceeds; aarch64 already uses
+            # a concrete modern model (cortex-a57) for the same reason.
+            "-cpu", "max",
             "-kernel", kernel_path,
             "-initrd", initrd_path,
-            "-append", "console=ttyS0 init=/init panic=-1",
+            "-append", "console=ttyS0 init=/init panic=-1 onuron.readiness_ms=45000",
             "-display", "none",
             "-monitor", "none",
             "-serial", "stdio",
@@ -207,6 +219,12 @@ def run_smoke_test(kernel=None, initrd=None, timeout_secs=90, allow_skip=False, 
                 log = output.read().decode("utf-8", errors="replace")
                 status, details = check_boot_log(log)
                 if status == "PANIC":
+                    # Show the console tail so the failing service is visible
+                    # in CI: "degraded" alone does not say which socket was
+                    # still pending, and a one-line verdict is undiagnosable.
+                    print("---- console tail ----", file=sys.stderr)
+                    print(log[-12000:], file=sys.stderr)
+                    print("---- end console tail ----", file=sys.stderr)
                     raise RuntimeError(f"Kernel boot failure: {details}")
                 if status == "SUCCESS":
                     print(f"\x1b[1;32m[qemu-smoke] [ PASS ] ({norm_arch}) {details}\x1b[0m")

@@ -13,13 +13,13 @@ fn bn(n: impl ToString) -> String {
 }
 
 fn clear(p: &mut FramePainter) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     p.fill_rect(0, 0, SW as u16, SH as u16, th.bg);
 }
 
 // ─── Phone ──────────────────────────────────────────────────────────────────
 pub fn render_app_phone(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "ফোন", None);
 
@@ -99,7 +99,7 @@ pub fn render_app_phone(p: &mut FramePainter, state: &SimState) {
 
 // ─── Messages ───────────────────────────────────────────────────────────────
 pub fn render_app_messages(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
     if state.sms_composing {
@@ -146,19 +146,42 @@ pub fn render_app_messages(p: &mut FramePainter, state: &SimState) {
     }
 
     screen_title(p, "বার্তা", None);
-    search_box(p, 104, "থ্রেড খুঁজুন", "noop");
+    let msg_ph = if !state.search_query.is_empty() {
+        state.search_query.as_str()
+    } else if state.search_focused {
+        "টাইপ করুন…"
+    } else {
+        "থ্রেড খুঁজুন"
+    };
+    if !state.search_query.is_empty() {
+        p.register_button(SW - 54, 108, 36, 36, "search:clear");
+    }
+    search_box(p, 104, msg_ph, "search:focus");
+    if !state.search_query.is_empty() {
+        text_center(p, SW - 36, 117, 13.0, "×", th.med, true);
+    }
 
+    let q = state.search_query.to_lowercase();
+    let threads: Vec<(usize, &(String, String, String))> = state
+        .sms_threads
+        .iter()
+        .enumerate()
+        .filter(|(_, (name, preview, _))| {
+            q.is_empty() || name.to_lowercase().contains(&q) || preview.to_lowercase().contains(&q)
+        })
+        .take(5)
+        .collect();
     card_full(p, 160, 360);
-    for (i, (name, preview, time)) in state.sms_threads.iter().take(5).enumerate() {
-        let y = 160 + i as i16 * 72;
+    for (row_idx, (orig_idx, (name, preview, time))) in threads.iter().enumerate() {
+        let y = 160 + row_idx as i16 * 72;
         icon_tile(p, 35, y + 16, "chat");
         text(p, 85, y + 13, 15.0, name, th.text, true);
         text(p, 85, y + 38, 12.0, preview, th.med, false);
         text_right(p, SW - 34, y + 15, 11.5, time, th.med, false);
-        let id = format!("sms:thread{}", i);
+        let id = format!("sms:thread{}", orig_idx);
         p.register_button(16, y, CARD_W, 72, &id);
     }
-    if state.sms_threads.is_empty() {
+    if threads.is_empty() {
         text_center(p, SW / 2, 320, 13.0, "কোনো বার্তা নেই", th.dim, false);
     }
 
@@ -167,7 +190,7 @@ pub fn render_app_messages(p: &mut FramePainter, state: &SimState) {
 
 // ─── Files ──────────────────────────────────────────────────────────────────
 pub fn render_app_files(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "ফাইল", None);
     text(p, 24, 112, 13.0, &state.current_path, th.med, false);
@@ -212,7 +235,7 @@ pub fn render_app_files(p: &mut FramePainter, state: &SimState) {
 
 // ─── Notes ──────────────────────────────────────────────────────────────────
 pub fn render_app_notes(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
     if state.notes_editing {
@@ -245,7 +268,20 @@ pub fn render_app_notes(p: &mut FramePainter, state: &SimState) {
     }
 
     screen_title(p, "নোট", None);
-    search_box(p, 104, "নোট খুঁজুন", "noop");
+    let note_ph = if !state.search_query.is_empty() {
+        state.search_query.as_str()
+    } else if state.search_focused {
+        "টাইপ করুন…"
+    } else {
+        "নোট খুঁজুন"
+    };
+    if !state.search_query.is_empty() {
+        p.register_button(SW - 54, 108, 36, 36, "search:clear");
+    }
+    search_box(p, 104, note_ph, "search:focus");
+    if !state.search_query.is_empty() {
+        text_center(p, SW - 36, 117, 13.0, "×", th.med, true);
+    }
 
     let filters = ["সব", "কাজ", "ব্যক্তিগত", "জরুরি"];
     let mut x = 16;
@@ -254,6 +290,7 @@ pub fn render_app_notes(p: &mut FramePainter, state: &SimState) {
         x += chip(p, x, 158, f, state.notes_filter == i, &id) + 8;
     }
 
+    let nq = state.search_query.to_lowercase();
     let visible: Vec<&Note> = state
         .notes
         .iter()
@@ -262,6 +299,11 @@ pub fn render_app_notes(p: &mut FramePainter, state: &SimState) {
             2 => n.category == "ব্যক্তিগত",
             3 => n.category == "জরুরি",
             _ => true,
+        })
+        .filter(|n| {
+            nq.is_empty()
+                || n.title.to_lowercase().contains(&nq)
+                || n.content.to_lowercase().contains(&nq)
         })
         .collect();
 
@@ -296,11 +338,11 @@ pub fn render_app_notes(p: &mut FramePainter, state: &SimState) {
 
 // ─── Calculator ─────────────────────────────────────────────────────────────
 pub fn render_app_calculator(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
-    let expr = if state.calc_expr.is_empty() {
-        "0"
+    let expr = if state.calc_expr == "০" || state.calc_expr == "0" {
+        ""
     } else {
         &state.calc_expr
     };
@@ -309,8 +351,13 @@ pub fn render_app_calculator(p: &mut FramePainter, state: &SimState) {
     } else {
         &state.calc_result
     };
-    text_right(p, SW - 24, 100, 15.0, expr, th.med, false);
-    text_right(p, SW - 24, 132, 44.0, result, th.text, true);
+    screen_title(p, "ক্যালকুলেটর", None);
+    // The rule is the shelf the display sits on; the keys start below it.
+    p.fill_rect(22, 228, 346, 1, th.border);
+    if !expr.is_empty() {
+        text_right(p, SW - 24, 236, 14.0, expr, th.dim, false);
+    }
+    text_right(p, SW - 24, 256, 52.0, result, th.text, true);
 
     let fns = ["sin", "cos", "√", "π"];
     let fw = 76u16;
@@ -319,11 +366,11 @@ pub fn render_app_calculator(p: &mut FramePainter, state: &SimState) {
     // leaving a large dead gap in the middle of the calculator.
     for (i, f) in fns.iter().enumerate() {
         let x = 20 + i as i16 * (fw as i16 + gap);
-        rr(p, x, 350, fw, 34, 17, th.card);
-        rrb(p, x, 350, fw, 34, 17, th.border);
-        text_center(p, x + fw as i16 / 2, 360, 13.5, f, th.med, false);
+        rr(p, x, 340, fw, 32, 12, th.card);
+        rrb(p, x, 340, fw, 32, 12, th.border);
+        text_center(p, x + fw as i16 / 2, 349, 13.5, f, th.med, false);
         let id = format!("calc:fn{}", i);
-        p.register_button(x, 350, fw, 34, &id);
+        p.register_button(x, 340, fw, 32, &id);
     }
 
     let rows: [[&str; 4]; 5] = [
@@ -334,11 +381,11 @@ pub fn render_app_calculator(p: &mut FramePainter, state: &SimState) {
         ["০", ".", "⌫", "="],
     ];
     let bw = 79u16;
-    let bh = 68u16;
+    let bh = 60u16;
     let hgap = 10i16;
-    let vgap = 7i16;
+    let vgap = 8i16;
     let x0 = (SW - (4 * bw as i16 + 3 * hgap)) / 2;
-    let y0 = 395i16;
+    let y0 = 392i16;
     for (r, row) in rows.iter().enumerate() {
         for (c, label) in row.iter().enumerate() {
             let x = x0 + c as i16 * (bw as i16 + hgap);
@@ -352,9 +399,9 @@ pub fn render_app_calculator(p: &mut FramePainter, state: &SimState) {
             } else {
                 th.card
             };
-            rr(p, x, y, bw, bh, 34, fill);
+            rr(p, x, y, bw, bh, 18, fill);
             if !is_eq && !is_op {
-                rrb(p, x, y, bw, bh, 34, th.border);
+                rrb(p, x, y, bw, bh, 18, th.border);
             }
             let color = if is_eq { th.on_accent } else { th.text };
             if *label == "⌫" {
@@ -373,7 +420,7 @@ pub fn render_app_calculator(p: &mut FramePainter, state: &SimState) {
                 stroke(p, &[(cx - 3.0, cy - 2.5), (cx + 2.0, cy + 2.5)], 1.4, color);
                 stroke(p, &[(cx + 2.0, cy - 2.5), (cx - 3.0, cy + 2.5)], 1.4, color);
             } else {
-                text_center(p, x + bw as i16 / 2, y + 22, 20.0, label, color, true);
+                text_center(p, x + bw as i16 / 2, y + 19, 20.0, label, color, true);
             }
             let id = format!("calc:key{}", label);
             p.register_button(x, y, bw, bh, &id);
@@ -383,12 +430,18 @@ pub fn render_app_calculator(p: &mut FramePainter, state: &SimState) {
 
 // ─── Music ──────────────────────────────────────────────────────────────────
 pub fn render_app_music(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "মিউজিক", None);
 
     card(p, 24, 112, 342, 248);
-    icon(p, "music", (SW / 2) as f32, 236.0, 64.0, th.icon);
+    // Cover art is absent in the simulator. Concentric hairlines are the same
+    // resonance motif as the shell, so the empty cover reads as intentional
+    // silence rather than a missing asset.
+    for r in [38.0f32, 62.0, 86.0] {
+        circle(p, (SW / 2) as f32, 236.0, r, 1.0, th.border);
+    }
+    icon(p, "music", (SW / 2) as f32, 236.0, 44.0, th.icon);
 
     let now_title = if state.media_live_title.is_empty() {
         state
@@ -458,7 +511,7 @@ fn browser_open(state: &mut SimState, url: &str, title: &str) {
 }
 
 pub fn render_app_browser(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "ব্রাউজার", None);
 
@@ -485,7 +538,7 @@ pub fn render_app_browser(p: &mut FramePainter, state: &SimState) {
     if state.browser_page_open {
         // The native WebView2 surface is positioned by the host at
         // (8,152)-(382,700); this panel is what shows if no engine is available.
-        let panel = if p.dark_mode { 0x241640 } else { 0xEFE7FF };
+        let panel = th.tile;
         rr(p, 8, 152, 374, 548, 10, panel);
         rrb(p, 8, 152, 374, 548, 10, th.border);
         text_center(p, SW / 2, 300, 15.0, &state.browser_title, th.text, true);
@@ -568,13 +621,25 @@ pub fn render_app_browser(p: &mut FramePainter, state: &SimState) {
 
 // ─── Camera ─────────────────────────────────────────────────────────────────
 pub fn render_app_camera(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
 
-    let vf = 0x2A1B4A; // camera preview is dark in both themes (design)
+    let vf = 0x05070D; // a camera preview is dark in both themes, by design
     rr(p, 16, 40, 358, 548, CARD_R, vf);
-    rrb(p, 16, 40, 358, 548, CARD_R, 0x4C4067);
-    text_center(p, SW / 2, 566, 12.0, &state.camera_zoom, 0xCBBDE6, false);
+    rrb(p, 16, 40, 358, 548, CARD_R, th.border);
+    // The desktop shell has no sensor: say so instead of faking a scene.
+    icon(p, "camera", (SW / 2) as f32, 286.0, 44.0, th.border);
+    text_center(
+        p,
+        SW / 2,
+        322,
+        12.0,
+        "ক্যামেরা · সিমুলেটেড",
+        th.dim,
+        false,
+    );
+    rr(p, SW / 2 - 24, 548, 48, 26, 13, 0x0D1220);
+    text_center(p, SW / 2, 555, 12.0, &state.camera_zoom, th.med, false);
 
     let tabs = ["ছবি", "ভিডিও"];
     for (i, label) in tabs.iter().enumerate() {
@@ -602,7 +667,7 @@ pub fn render_app_camera(p: &mut FramePainter, state: &SimState) {
     p.register_button(28, 666, 48, 48, "camera:gallery");
 
     disc(p, (SW / 2) as f32, 690.0, 33.0, th.accent);
-    disc(p, (SW / 2) as f32, 690.0, 26.0, 0xFFFFFF);
+    disc(p, (SW / 2) as f32, 690.0, 26.0, 0xFFF9EC);
     p.register_button(SW / 2 - 33, 657, 66, 66, "camera:shutter");
 
     disc(p, (SW - 52) as f32, 690.0, 22.0, th.card);
@@ -613,7 +678,7 @@ pub fn render_app_camera(p: &mut FramePainter, state: &SimState) {
 
 // ─── SoftBus ────────────────────────────────────────────────────────────────
 pub fn render_app_softbus(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "সফটবাস", None);
 
@@ -655,10 +720,23 @@ pub fn render_app_softbus(p: &mut FramePainter, state: &SimState) {
 
 // ─── nilpkg ─────────────────────────────────────────────────────────────────
 pub fn render_app_nilpkg(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "নীলপ্যাক", None);
-    search_box(p, 104, "প্যাকেজ খুঁজুন", "noop");
+    let pkg_ph = if !state.search_query.is_empty() {
+        state.search_query.as_str()
+    } else if state.search_focused {
+        "টাইপ করুন…"
+    } else {
+        "প্যাকেজ খুঁজুন"
+    };
+    if !state.search_query.is_empty() {
+        p.register_button(SW - 54, 108, 36, 36, "search:clear");
+    }
+    search_box(p, 104, pkg_ph, "search:focus");
+    if !state.search_query.is_empty() {
+        text_center(p, SW - 36, 117, 13.0, "×", th.med, true);
+    }
 
     let filters = ["সব", "ইনস্টল করা", "আপডেট"];
     let mut x = 16;
@@ -667,7 +745,14 @@ pub fn render_app_nilpkg(p: &mut FramePainter, state: &SimState) {
         x += chip(p, x, 160, f, state.nilpkg_filter == i, &id) + 8;
     }
 
-    let pkgs = state.package_list();
+    let pq = state.search_query.to_lowercase();
+    let pkgs: Vec<(String, String, String)> = state
+        .package_list()
+        .into_iter()
+        .filter(|(name, meta, _)| {
+            pq.is_empty() || name.to_lowercase().contains(&pq) || meta.to_lowercase().contains(&pq)
+        })
+        .collect();
     card_full(p, 206, (pkgs.len() as u16 * 72).min(288));
     for (i, (name, meta, action)) in pkgs.iter().take(4).enumerate() {
         let y = 206 + i as i16 * 72;
@@ -703,7 +788,7 @@ pub fn render_app_nilpkg(p: &mut FramePainter, state: &SimState) {
 
 // ─── Android compatibility ──────────────────────────────────────────────────
 pub fn render_app_android(p: &mut FramePainter, state: &SimState) {
-    let th = t(p.dark_mode);
+    let th = tp(p);
     clear(p);
     screen_title(p, "অ্যান্ড্রয়েড", None);
     switch_card(
@@ -995,6 +1080,8 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
                 .unwrap_or_else(|| rest.to_string());
             push_recent(state, rest, &name);
             state.scroll_y = 0;
+            state.search_query.clear();
+            state.search_focused = false;
             state.screen = scr;
             if rest == "settings" {
                 state.screen = Screen::AppSettings;
@@ -1019,10 +1106,29 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
     if id == "gesture:home" {
         state.screen = Screen::Home;
         state.scroll_y = 0;
+        state.search_focused = false;
         return true;
     }
     if id == "gesture:recents" {
         state.screen = Screen::Recents;
+        return true;
+    }
+    if id == "lock:notif_hint" {
+        state.toast("দেখতে আগে আনলক করুন");
+        return true;
+    }
+    if id == "search:focus" {
+        state.search_focused = true;
+        return true;
+    }
+    if id == "search:clear" {
+        state.search_query.clear();
+        state.search_focused = false;
+        return true;
+    }
+    if id == "android_shelf" {
+        state.scroll_y = 0;
+        state.screen = Screen::AppAndroid;
         return true;
     }
     if id == "open_control" {
@@ -1042,6 +1148,30 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
         state.screen = Screen::Home;
         return true;
     }
+    if let Some(rest) = id.strip_prefix("notif:dismiss:") {
+        let idx: usize = rest.parse().unwrap_or(0);
+        if idx < state.notifications.len() {
+            state.notifications.remove(idx);
+        }
+        return true;
+    }
+    if let Some(rest) = id.strip_prefix("notif:open:") {
+        let idx: usize = rest.parse().unwrap_or(0);
+        if idx < state.notifications.len() {
+            let n = state.notifications.remove(idx);
+            state.scroll_y = 0;
+            state.screen = match n.app.as_str() {
+                "বার্তা" => Screen::AppMessages,
+                "ফোন" => Screen::AppPhone,
+                "সেটিংস" => Screen::AppSettings,
+                "সিস্টেম" | "আপডেট" => Screen::SettingsUpdate,
+                _ => Screen::Home,
+            };
+        } else {
+            state.screen = Screen::Home;
+        }
+        return true;
+    }
     if let Some(rest) = id.strip_prefix("notif:") {
         let idx: usize = rest.parse().unwrap_or(0);
         if idx < state.notifications.len() {
@@ -1052,7 +1182,14 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
     }
     if id == "recents_clear" {
         state.recent_apps.clear();
+        state.recents_scroll_offset = 0;
         state.screen = Screen::Home;
+        return true;
+    }
+    if let Some(rest) = id.strip_prefix("rec_close:") {
+        state.recent_apps.retain(|(app_id, _, _, _)| app_id != rest);
+        let max_sc = state.recent_apps.len().saturating_sub(1);
+        state.recents_scroll_offset = state.recents_scroll_offset.min(max_sc);
         return true;
     }
     if let Some(rest) = id.strip_prefix("rec:") {
@@ -1225,7 +1362,7 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
                 category: "সাধারণ".into(),
                 updated: get_ist_date_str(),
                 pinned: false,
-                color: 0x9B6BFF,
+                color: 0xD9A441,
             },
         );
         open_note(state, id);
@@ -1577,7 +1714,8 @@ pub fn handle_action(state: &mut SimState, id: &str) -> bool {
         return true;
     }
     if let Some(rest) = id.strip_prefix("theme_") {
-        state.theme_mode = rest.parse().unwrap_or(1);
+        // 0 light, 1 dark, 2 amoled, 3 auto
+        state.theme_mode = rest.parse::<u8>().unwrap_or(1).min(3);
         state.set_theme_from_mode();
         state.prefs_dirty = true;
         return true;
@@ -1609,12 +1747,12 @@ pub fn drag_slider(state: &mut SimState, x: i16, y: i16) -> bool {
             }
         }
         Screen::SettingsDisplay => {
-            if (250..320).contains(&y) {
+            if (268..338).contains(&y) {
                 state.brightness_level = ratio.clamp(15, 100);
                 state.prefs_dirty = true;
                 return true;
             }
-            if (330..400).contains(&y) {
+            if (354..424).contains(&y) {
                 state.font_size_pct = ratio.clamp(25, 150);
                 state.prefs_dirty = true;
                 return true;

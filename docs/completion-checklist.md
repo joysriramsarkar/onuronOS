@@ -179,12 +179,31 @@ automated Linux/QEMU boot smoke test and persistent data harness now passing gre
 - **Soak (F3):** 10,000-iteration supervision bookkeeping test; not the
   24-hour QEMU run.
 
+- **Key encryption (`pkg/nilpkg/src/keymgmt.rs`):** upgraded to `enc2$`
+  (PBKDF2-HMAC-SHA256 100k rounds + Encrypt-then-MAC 32-byte HMAC-SHA256 over
+  salt and ciphertext, constant-time tag verification, RFC 4231 / RFC 6070
+  vector tests), while preserving read compatibility for legacy `enc1$` keys.
+- **OTA HTTPS fetch (`services/nilupd/src/fetch.rs` + `nilupd fetch`):**
+  downloads `update.json` over HTTPS (TLS validation always on), verifies the
+  Ed25519 signature and publisher trust before streaming the image payload,
+  verifies byte size + streamed SHA-256 into a clean staging directory, and
+  removes all staging files on any failure (verified with local `rustls` TLS
+  loopback server tests).
+- **Shell PIN -> `nilkeyd` lifecycle (`shell/src/main.rs`):** OOBE PIN setup
+  initializes/unwraps `nilkeyd`, lockscreen unlock unwraps `nilkeyd` when
+  needed, and `pin <new>` verifies the current PIN and runs `nilkeyd rewrap`
+  before persisting the new PIN hash.
+- **Desktop simulator (`nilsim`):** fixed `SettingsDisplay` slider hitboxes,
+  wired `font_size_pct` scaling, `high_contrast` palette boost,
+  `lock_notifications` lockscreen privacy redaction, notification route vs
+  dismiss, recents per-card close, search filtering in Messages/Notes/NilPkg,
+  and continuous drag-scroll + edge swipes (26/26 `--selftest` checks).
+
 ## Remaining release gates
 
-1. **Linux CI + QEMU (A1, A3):** the workflows exist but no green run is
-   recorded. Persistent-data validation needs a real QEMU write→reboot→read
-   cycle; corrupt-image handling must log rather than silently fall back to
-   tmpfs.
+1. **Linux CI + QEMU (A1, A3):** persistent-data validation needs a real Linux
+   QEMU write→reboot→read cycle on the current codebase; rebuild `out/`
+   initramfs/images on a Linux host or CI runner.
 2. **Security, live:** run the IPC policy on a real boot and fix any denials;
    attack the sandbox; implement measured/verified boot (TPM or bootloader
    measurement) — the current update trust anchor is not hardware-rooted.
@@ -194,8 +213,5 @@ automated Linux/QEMU boot smoke test and persistent data harness now passing gre
 4. **Applications:** background/resume semantics, memory-pressure behaviour,
    and distinguishing simulated telephony/Android from real integration.
 5. **Release engineering:** pin the kernel by digest and make real `mke2fs`
-   images deterministic; download updates over HTTPS inside `nilupd`; a
-   24-hour QEMU soak run; documented supported devices and accessibility
-   checks.
-6. **Key encryption:** `keygen` still derives the private-key wrapping key
-   from a single SHA-256; replace with age/NaCl/scrypt for production.
+   images deterministic; a 24-hour QEMU soak run; documented supported devices
+   and accessibility checks.
