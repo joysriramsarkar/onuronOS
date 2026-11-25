@@ -85,8 +85,8 @@ simulated = false
 [[entries]]
 name = "Shell Design System (OnuronOS 1.7)"
 tier = "functional-prototype"
-details = "Sampled dark/light tokens, measured 390x796 metrics, vector icon set and shared widgets; 33 reference screens implemented in the simulator, validated by headless export and a behaviour selftest"
-evidence = ["nilsim/src/ui.rs", "nilsim/src/screens.rs", "nilsim/src/apps.rs", "docs/ui-design-spec.md", "docs/adr/0010-shell-design-system.md"]
+details = "Sampled dark/light tokens, measured 390x796 metrics, vector icon set and shared widgets; 38 shell screens implemented in the simulator, validated by headless export and a 30-check behaviour selftest whose walkthrough paints every screen and presses all 665 registered controls through the exact interactive dispatcher (`shell_tap`), plus live dial/call/SMS/contact flows; wired into CI"
+evidence = ["nilsim/src/ui.rs", "nilsim/src/screens.rs", "nilsim/src/apps.rs", "nilsim/src/main.rs", "docs/ui-design-spec.md", "docs/adr/0010-shell-design-system.md"]
 
 [[entries]]
 name = "Home Launcher"

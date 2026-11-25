@@ -23,6 +23,12 @@ jobs:
       - name: Build Simulator (Release)
         run: cargo build --release -p nilsim
 
+      # Behaviour gate: the same headless selftest that walks every screen
+      # and presses every registered control through the interactive
+      # dispatcher (`shell_tap`). A drawn control that does nothing fails CI.
+      - name: Shell behaviour selftest (walkthrough + flows)
+        run: cargo run --release -p nilsim -- --selftest
+
       - name: Upload Simulator Binary Artifact
         uses: actions/upload-artifact@v4
         with:

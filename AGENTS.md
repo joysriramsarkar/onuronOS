@@ -217,6 +217,31 @@ Environment: Debian 13 (trixie). Rust stable via `source $HOME/.cargo/env`.
   the menu was unreachable on built images until the QEMU recovery harness
   (below) made the gap visible. Anything PID 1 execs must be in `bins`.
 
+### Simulator shell: one tap dispatcher, proven by walkthrough
+
+`nilsim` has a single tap dispatcher, `shell_tap` in `nilsim/src/main.rs`:
+`apps::handle_action` (the OnuronOS 1.7 design-system shell) plus the legacy
+home/phone/messages/files/memories arms. The interactive window loop calls it
+on every button hit, and the headless selftest walkthrough (`nilsim --selftest`,
+gated in CI on the Windows Simulator workflow) paints all 38 shell screens,
+collects every registered control, and presses each one through the *same*
+function. Consequences worth remembering:
+
+- A new control that nothing handles fails the walkthrough with the exact
+  screen/id pair — draw nothing you do not handle.
+- The walkthrough found a real bug on its first run: the extracted dispatcher
+  executed chain arms but always returned "unhandled", i.e. the compile said
+  one thing and the observable contract said another. Behaviour gates beat
+  code review here.
+- Host-webview side effects (embedded Chromium, per-Android-app sandboxes)
+  live behind `WebViewCtx`; the headless selftest and non-Windows builds run
+  the identical dispatcher with a no-op context. Do not reintroduce direct
+  `embedded_browser` references in dispatch arms — headless runs cannot see
+  them, and the walkthrough would silently diverge from the live window.
+- The selftest writes into the simulated storage root and restores what it
+  touched (notes, prefs, sms store, backup dir). A new flow check that
+  persists must capture-and-restore the same way.
+
 ### Recovery path: what is proven and how
 
 `build/qemu-recovery-test.py` gates the recovery boot path on live QEMU boots,
