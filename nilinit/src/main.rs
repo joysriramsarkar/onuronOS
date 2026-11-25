@@ -522,6 +522,24 @@ fn handle_system_shutdown(action: &str, supervisor: &mut Supervisor) {
     std::process::exit(0);
 }
 
+fn readiness_budget_ms() -> u64 {
+    // `onuron.readiness_ms=<n>` overrides the core-service readiness budget
+    // on development/QEMU hosts. The device default stays at 10 s so a stuck
+    // service is still surfaced quickly on real hardware.
+    if let Ok(cmdline) = fs::read_to_string("/proc/cmdline") {
+        for token in cmdline.split_ascii_whitespace() {
+            if let Some(rest) = token.strip_prefix("onuron.readiness_ms=") {
+                if let Ok(ms) = rest.trim().parse::<u64>() {
+                    if ms > 0 && ms <= 600_000 {
+                        return ms;
+                    }
+                }
+            }
+        }
+    }
+    10_000
+}
+
 fn check_persistence_test(supervisor: &mut Supervisor) {
     if let Ok(cmdline) = fs::read_to_string("/proc/cmdline") {
         if cmdline.contains("onuron.test_persistence=write") {
@@ -750,8 +768,13 @@ fn main() {
         ),
     ];
 
-    // Bounded retry loop for readiness checks
-    let max_readiness_wait = Duration::from_millis(10000);
+    // Bounded retry loop for readiness checks. The default budget is tight
+    // (10 s) to surface a genuinely stuck service quickly on device; virtual
+    // development hosts can raise it with `onuron.readiness_ms=<n>` on the
+    // kernel command line, which is what the QEMU smoke harness does — CI
+    // runners can be slow enough under load that 10 s produces a false
+    // degradation verdict while every service is healthy.
+    let max_readiness_wait = Duration::from_millis(readiness_budget_ms());
     let poll_interval = Duration::from_millis(100);
     let readiness_start = Instant::now();
     let mut readiness_ok = false;
