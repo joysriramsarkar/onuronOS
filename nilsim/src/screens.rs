@@ -440,8 +440,9 @@ pub fn render_control_center(p: &mut FramePainter, state: &SimState) {
         text(p, 85, y + 14, 12.0, &n.app, th.med, false);
         text_right(p, SW - 58, y + 14, 11.5, &n.time, th.med, false);
         // Dismiss button registered first so it wins hit-testing over the card.
+        // Vector close glyph — the font's '×' rendered off-baseline and thin.
         rr(p, SW - 46, y + 10, 22, 22, 11, th.tile);
-        text_center(p, SW - 35, y + 12, 12.0, "×", th.med, true);
+        icon(p, "close", (SW - 35) as f32, (y + 21) as f32, 11.0, th.med);
         p.register_button(SW - 50, y + 6, 30, 30, &format!("notif:dismiss:{}", i));
         text(p, 85, y + 40, 13.5, &n.title, th.text, true);
         let id = format!("notif:open:{}", i);
@@ -465,17 +466,31 @@ pub fn render_control_center(p: &mut FramePainter, state: &SimState) {
 }
 
 // ─── Recents ────────────────────────────────────────────────────────────────
+/// Quintic-out ease for the Recents reveal: fast start, gentle landing.
+/// Matches the memories spring's snappy character without the overshoot.
+fn recents_ease(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    1.0 - (1.0 - t).powi(5)
+}
+
 pub fn render_recents(p: &mut FramePainter, state: &SimState) {
     let th = tp(p);
     clear(p);
 
+    // Entry reveal: the header slides down and every card rises from below
+    // while growing into its settled rect, staggered left-to-right.
+    // `recents_anim` is driven once per frame by the interactive loop and
+    // sits at 1.0 for headless paints (export, selftest walkthrough).
+    let reveal = recents_ease(state.recents_anim);
+
     // Header: title + live count.
-    text(p, MARGIN, 50, 15.5, "সাম্প্রতিক", th.text, true);
+    let hy = 50 + ((1.0 - reveal) * 16.0) as i16;
+    text(p, MARGIN, hy, 15.5, "সাম্প্রতিক", th.text, true);
     if !state.recent_apps.is_empty() {
         text_right(
             p,
             SW - MARGIN,
-            51,
+            hy + 1,
             12.0,
             &format!("{} টি অ্যাপ", bn(state.recent_apps.len())),
             th.med,
@@ -490,25 +505,38 @@ pub fn render_recents(p: &mut FramePainter, state: &SimState) {
     let offset = state.recents_scroll_offset.min(max_offset);
     let rail_offset = (offset as i16) * 286;
     let mut x = 60i16 - rail_offset;
-    for (app_id, name, _, _) in state.recent_apps.iter() {
-        let w = 268u16;
-        let y = 90i16;
-        let h = 470u16;
-        rr(p, x, y, w, h, 20, th.card);
-        outline(p, x, y, w, h, th.border);
-        text(p, x + 22, y + 20, 15.0, name, th.text, true);
+    for (i, (app_id, name, _, _)) in state.recent_apps.iter().enumerate() {
+        // Cards settle left-to-right: card i starts 0.08 later and eases
+        // through a 0.62 window, so a full rail settles in ~0.35 s.
+        let t = recents_ease(((state.recents_anim - i as f32 * 0.08) / 0.62).clamp(0.0, 1.0));
+        // Grow from the card's centre and rise from below; hit rects stay
+        // at the settled geometry so an early tap still lands correctly.
+        let w = (268.0 * (0.68 + 0.32 * t)) as u16;
+        let h = (470.0 * (0.80 + 0.20 * t)) as u16;
+        let dx = (x as f32 + (268.0 - w as f32) / 2.0) as i16;
+        let dy = (90.0 + (470.0 - h as f32) / 2.0 + (1.0 - t) * 36.0) as i16;
+        rr(p, dx, dy, w, h, 20, th.card);
+        outline(p, dx, dy, w, h, th.border);
+        text(p, dx + 22, dy + 20, 15.0, name, th.text, true);
         // Per-card close pill registered before the card button so tap-to-close wins.
-        rr(p, x + w as i16 - 40, y + 14, 24, 24, 12, th.tile);
-        text_center(p, x + w as i16 - 28, y + 16, 13.0, "×", th.med, true);
+        rr(p, dx + w as i16 - 40, dy + 14, 24, 24, 12, th.tile);
+        icon(
+            p,
+            "close",
+            (dx + w as i16 - 28) as f32,
+            (dy + 26) as f32,
+            11.0,
+            th.med,
+        );
         p.register_button(
-            x + w as i16 - 44,
-            y + 10,
+            x + 268 - 44,
+            100,
             32,
             32,
             &format!("rec_close:{}", app_id),
         );
         // Live thumbnail placeholder tinted with the app accent.
-        rr(p, x + 18, y + 52, w - 36, h - 78, 16, th.tile);
+        rr(p, dx + 18, dy + 52, w - 36, h - 78, 16, th.tile);
         // No live preview exists yet; show the app's own glyph instead of an
         // empty rectangle, so the card reads as "no thumbnail" rather than broken.
         let glyph = NATIVE_APPS
@@ -519,13 +547,13 @@ pub fn render_recents(p: &mut FramePainter, state: &SimState) {
         icon(
             p,
             glyph,
-            (x + w as i16 / 2) as f32,
-            (y + 52 + (h - 78) as i16 / 2) as f32,
+            (dx + w as i16 / 2) as f32,
+            (dy + 52 + (h - 78) as i16 / 2) as f32,
             44.0,
             th.dim,
         );
         let id = format!("rec:{}", app_id);
-        p.register_button(x, y, w, h, &id);
+        p.register_button(x, 90, 268, 470, &id);
         x += 286;
     }
 
